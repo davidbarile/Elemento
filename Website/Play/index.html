@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <title>Elemento</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+	<meta name="description" content="Play cards in Element Zones to defeat your opponent" />
+	<meta name="keywords" content="elements, cards, game, ipad, iphone, tablet, iOS, android, free" />
+	<link rel="icon" type="../image/x-icon" href="../images/favicon.png">
+
+    <script src="Build/UnityLoader.js"></script>
+    
+    <script>
+      var gameInstance = UnityLoader.instantiate("unityContainer", "Build/WebGL.json");
+	  
+	  var shouldPreventClose = 0;
+	  
+	  window.addEventListener('beforeunload', function (e) 
+	  {
+		  if(shouldPreventClose == 0)
+		  {
+				gameInstance.SendMessage("Managers", "PromptToQuitGame");
+				   
+				// Cancel the event
+				e.preventDefault(); // If you prevent default behavior in Mozilla Firefox prompt will always be shown
+				// Chrome requires returnValue to be set
+				e.returnValue = "Are you sure you want to leave?"; 
+		  } 
+	  });
+	  
+	  function OnGameDataSaveComplete()
+	  {
+		  shouldPreventClose = 1;
+		  
+		  window.open('http://um-macaroni.com/Elemento', '_self', '');
+	  }
+    </script>
+    
+  </head>
+  <body style="background-color: #23c4f2; position: relative; align: center; padding-left:25%; margin: 0px;">
+    <div id="unityContainer" style="position:relative; width: 60%; height:100vh; align: center; overflow:visible;"></div>
+  </body>
+</html>

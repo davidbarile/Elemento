@@ -1,0 +1,43 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1e38dfa211a6a49ea976909263075bcb, type: 3}
+  m_Name: Combo - Bomb Water 2 = Points Air 3
+  m_EditorClassIdentifier: 
+  Count: 1
+  FilterFlags: 4233
+  Prefab: {fileID: 5684185313904570275, guid: 61ef0ac52dadc4ffca3dc8e680fd56ab, type: 3}
+  AirPoints: 0
+  EarthPoints: 0
+  FirePoints: 0
+  WaterPoints: 0
+  AirMultiplier: 0
+  EarthMultiplier: 0
+  FireMultiplier: 0
+  WaterMultiplier: 0
+  AirBomb: 0
+  EarthBomb: 0
+  FireBomb: 0
+  WaterBomb: 0
+  AirShield: 0
+  EarthShield: 0
+  FireShield: 0
+  WaterShield: 0
+  WildPoints: 0
+  WildMultiplier: 0
+  WildBomb: 0
+  WildShield: 0
+  Points: 03000000000000000000000000000000
+  Multipliers: 00000000000000000000000000000000
+  Bombs: 00000000000000000000000002000000
+  Shields: 00000000000000000000000000000000
+  shouldValidate: 0
+  FileName: Combo - Bomb Water 2 = Points Air 3
