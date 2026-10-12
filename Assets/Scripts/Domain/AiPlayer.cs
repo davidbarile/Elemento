@@ -554,7 +554,7 @@ namespace Elemento.Domain
                             {
                                 int unseenBombCount;
                                 int unseenBombMax;
-                                GetUnseenBombPotential(inView, zone.ElementType, out unseenBombCount, out unseenBombMax);
+                                GetUnseenBombPotential(inView, inZone.ElementType, out unseenBombCount, out unseenBombMax);
                                 if (unseenBombMax > inView.Rules.FrozenZoneHealth)
                                     freeze -= 10f;
                                 freeze -= unseenBombCount * 2f;
