@@ -4,6 +4,7 @@ using System.Reflection;
 using NUnit.Framework;
 using TMPro;
 using UnityEngine;
+using UnityEngine.TestTools;
 using UnityEngine.UI;
 
 public class CurrentRulesRegressionTests
@@ -166,7 +167,7 @@ public class CurrentRulesRegressionTests
 
     private UIPlayerBoard CreateBoard(string name, int[] zonePoints, bool zonesDestroyed = false)
     {
-        var board = CreateComponent<UIPlayerBoard>(name);
+        var board = AddPlayerBoardIgnoringEditorCallbacks(CreateGameObject(name));
         var zones = new UIElementZone[zonePoints.Length];
 
         for (var i = 0; i < zonePoints.Length; i++)
@@ -180,6 +181,26 @@ public class CurrentRulesRegressionTests
         board.ElementZones = zones;
         SetField(board, "totalPointsDisplay", CreateTotalPointsDisplay(name + " Total", board.transform, zonePoints.Length));
         return board;
+    }
+
+    // In the editor, AddComponent<UIPlayerBoard> synchronously invokes Reset() and
+    // OnValidate(). Both dereference serialized refs (Hand, ElementZones,
+    // AiOutputBubble) that cannot be assigned until the component exists, so they
+    // throw NullReferenceException. The component is still added and the tests set
+    // up every field they need afterwards. Ignore failing log messages only for this
+    // single call so any other unexpected error still fails the test.
+    private static UIPlayerBoard AddPlayerBoardIgnoringEditorCallbacks(GameObject gameObject)
+    {
+        var previous = LogAssert.ignoreFailingMessages;
+        LogAssert.ignoreFailingMessages = true;
+        try
+        {
+            return gameObject.AddComponent<UIPlayerBoard>();
+        }
+        finally
+        {
+            LogAssert.ignoreFailingMessages = previous;
+        }
     }
 
     private UIWinLosePanel CreateWinLosePanel(int zoneCount)
