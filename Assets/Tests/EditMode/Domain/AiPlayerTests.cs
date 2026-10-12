@@ -71,6 +71,38 @@ namespace Elemento.Tests.Domain
             }
         }
 
+        [Test]
+        public void StrongAi_BombThatDestroysZoneBeatsOnePointPlay()
+        {
+            var view = CreateBombDecisionView();
+            var ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo("bomb"));
+            Assert.That(move.TargetPlayerId, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void StrongAi_HiddenCardOrderDoesNotChangeDeterministicChoice()
+        {
+            var simulator = new GameSimulator();
+            var original = simulator.CreateGame(12345);
+            var reordered = original.Clone();
+            reordered.Players[1].Hand.Reverse();
+            reordered.Deck.Reverse();
+            var ai = new StrongAiPlayer();
+
+            var originalMove = ai.ChooseMove(simulator.GetPlayerView(original, 0),
+                new DeterministicRandom(77));
+            var reorderedMove = ai.ChooseMove(simulator.GetPlayerView(reordered, 0),
+                new DeterministicRandom(77));
+
+            Assert.That(originalMove, Is.Not.Null);
+            Assert.That(reorderedMove, Is.Not.Null);
+            Assert.That(reorderedMove.Id, Is.EqualTo(originalMove.Id));
+        }
+
         private static PlayerViewData CreateRankedPointView()
         {
             var view = new PlayerViewData
@@ -117,6 +149,77 @@ namespace Elemento.Tests.Domain
                 });
             }
 
+            return view;
+        }
+
+        private static PlayerViewData CreateBombDecisionView()
+        {
+            var view = new PlayerViewData
+            {
+                CurrentPlayerId = 0,
+                MovesRemaining = 2,
+                Rules = new RulesConfigData
+                {
+                    ElementZoneStartingHealth = 1,
+                    ElementZonePointsRequiredToActivate = 10,
+                    TotalPointsRequiredToWin = 1000
+                },
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            view.Player.Zones.Add(new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Air,
+                Health = 1,
+                MaxHealth = 1
+            });
+            view.Opponents.Add(new OpponentViewData { Id = 1, Name = "Opponent" });
+            view.Opponents[0].Zones.Add(new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Air,
+                Health = 1,
+                MaxHealth = 1
+            });
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "point-1",
+                DefinitionName = "Point 1",
+                Points = new[] { 1, 0, 0, 0 },
+                Multipliers = new int[4],
+                Bombs = new int[4],
+                Shields = new int[4]
+            });
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "bomb",
+                DefinitionName = "Bomb",
+                WildBomb = 1,
+                Points = new int[4],
+                Multipliers = new int[4],
+                Bombs = new int[4],
+                Shields = new int[4]
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "point-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "point-1",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "bomb-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "bomb",
+                SourceZoneId = -1,
+                TargetPlayerId = 1,
+                TargetZoneId = 0
+            });
             return view;
         }
 

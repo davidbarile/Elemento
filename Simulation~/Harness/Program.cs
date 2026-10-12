@@ -15,7 +15,7 @@ namespace Elemento.Simulation
             catch (ArgumentException exception)
             {
                 Console.Error.WriteLine(exception.Message);
-                Console.Error.WriteLine("Usage: --games N --seed S --p1 hard|medium|easy|random --p2 hard|medium|easy|random");
+                Console.Error.WriteLine("Usage: --games N --seed S --cap N --p1 hard|medium|easy|random|strong|strong-medium|strong-easy --p2 hard|medium|easy|random|strong|strong-medium|strong-easy");
                 return 2;
             }
         }
@@ -25,6 +25,7 @@ namespace Elemento.Simulation
     {
         public int Games = 1000;
         public int Seed = 1;
+        public int Cap = 400;
         public string PlayerOne = "hard";
         public string PlayerTwo = "hard";
 
@@ -48,6 +49,11 @@ namespace Elemento.Simulation
                     if (!int.TryParse(value, out options.Seed))
                         throw new ArgumentException("--seed must be an integer.");
                 }
+                else if (name == "--cap")
+                {
+                    if (!int.TryParse(value, out options.Cap) || options.Cap <= 0)
+                        throw new ArgumentException("--cap must be a positive integer.");
+                }
                 else if (name == "--p1")
                 {
                     options.PlayerOne = ParseAi(value);
@@ -68,7 +74,8 @@ namespace Elemento.Simulation
         private static string ParseAi(string inValue)
         {
             string value = inValue.ToLowerInvariant();
-            if (value != "hard" && value != "medium" && value != "easy" && value != "random")
+            if (value != "hard" && value != "medium" && value != "easy" && value != "random"
+                && value != "strong" && value != "strong-medium" && value != "strong-easy")
                 throw new ArgumentException("Unknown AI: " + inValue);
             return value;
         }

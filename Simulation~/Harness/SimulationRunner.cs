@@ -1,13 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Elemento.Domain;
 
 namespace Elemento.Simulation
 {
     internal sealed class SimulationRunner
     {
-        private const int maxPlayerTurns = 400;
-
         private readonly SimulationOptions options;
         private readonly AgentStats playerOneStats;
         private readonly AgentStats playerTwoStats;
@@ -50,7 +49,7 @@ namespace Elemento.Simulation
             ++this.playerOneStats.Games;
             ++this.playerTwoStats.Games;
 
-            while (!simulator.IsGameOver(state) && playerTurns < maxPlayerTurns)
+            while (!simulator.IsGameOver(state) && playerTurns < this.options.Cap)
             {
                 int actingSeat = state.CurrentPlayerId;
                 int decisionBudget = GetDecisionBudget(simulator.GetPlayerView(state, actingSeat));
@@ -60,7 +59,10 @@ namespace Elemento.Simulation
                     && state.CurrentPlayerId == actingSeat; ++decision)
                 {
                     var view = simulator.GetPlayerView(state, actingSeat);
+                    long startedAt = Stopwatch.GetTimestamp();
                     var move = aiBySeat[actingSeat].ChooseMove(view, decisionRandom);
+                    statsBySeat[actingSeat].DecisionTicks += Stopwatch.GetTimestamp() - startedAt;
+                    ++statsBySeat[actingSeat].DecisionCalls;
                     if (move == null)
                         break;
 
@@ -145,6 +147,22 @@ namespace Elemento.Simulation
                 return new LegacyAiPlayer(EAiDifficulty.Easy);
             if (inKind == "medium")
                 return new LegacyAiPlayer(EAiDifficulty.Medium);
+            if (inKind == "strong")
+                return new StrongAiPlayer();
+            if (inKind == "strong-medium")
+            {
+                return new StrongAiPlayer(new StrongAiOptions
+                {
+                    Difficulty = EAiDifficulty.Medium
+                });
+            }
+            if (inKind == "strong-easy")
+            {
+                return new StrongAiPlayer(new StrongAiOptions
+                {
+                    Difficulty = EAiDifficulty.Easy
+                });
+            }
             return new LegacyAiPlayer(EAiDifficulty.Hard);
         }
 
@@ -153,7 +171,7 @@ namespace Elemento.Simulation
             Console.WriteLine("Elemento AI simulation");
             Console.WriteLine("games={0} seed={1} p1={2} p2={3} cap={4} player-turns",
                 this.options.Games, this.options.Seed, this.options.PlayerOne,
-                this.options.PlayerTwo, maxPlayerTurns);
+                this.options.PlayerTwo, this.options.Cap);
             Console.WriteLine("Seat assignment alternates every game; seat 0 is the first player.");
             Console.WriteLine();
             PrintAgent(this.playerOneStats);
@@ -176,6 +194,8 @@ namespace Elemento.Simulation
         {
             Console.WriteLine("{0} ({1}) wins: {2}/{3} = {4}", inStats.Label, inStats.Kind,
                 inStats.Wins, inStats.Games, FormatRate(inStats.Wins, inStats.Games));
+            Console.WriteLine("{0} ({1}) AI time: {2:F4} ms/decision ({3} calls)", inStats.Label,
+                inStats.Kind, MillisecondsPerDecision(inStats), inStats.DecisionCalls);
         }
 
         private static void PrintPatterns(AgentStats inStats)
@@ -215,6 +235,13 @@ namespace Elemento.Simulation
             return inDecisions == 0 ? 0.0 : inCount * 1000.0 / inDecisions;
         }
 
+        private static double MillisecondsPerDecision(AgentStats inStats)
+        {
+            return inStats.DecisionCalls == 0
+                ? 0.0
+                : inStats.DecisionTicks * 1000.0 / Stopwatch.Frequency / inStats.DecisionCalls;
+        }
+
         private static double Average(List<int> inValues)
         {
             long total = 0;
@@ -243,6 +270,8 @@ namespace Elemento.Simulation
         public int Games;
         public int Wins;
         public int Decisions;
+        public int DecisionCalls;
+        public long DecisionTicks;
         public int BombOverShield;
         public int WeakPointOverBomb;
         public List<string> Examples = new();

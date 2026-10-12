@@ -43,7 +43,7 @@ namespace Elemento.Domain
 
     // Faithful engine-free port of AIMoveCalculator. It intentionally considers hand cards,
     // not movable zone-top cards, because UIPlayerBoard.GenerateUsefulData did the same.
-    public sealed class LegacyAiPlayer : IAiPlayer
+    public class LegacyAiPlayer : IAiPlayer
     {
         private const float winningMoveValue = 99999f;
 
@@ -54,7 +54,7 @@ namespace Elemento.Domain
             public int Order;
         }
 
-        private sealed class BoardAnalysis
+        protected sealed class BoardAnalysis
         {
             public int TotalPoints;
             public int TotalFaceUpPoints;
@@ -189,7 +189,7 @@ namespace Elemento.Domain
             }
         }
 
-        private static void AddScoreCandidates(PlayerViewData inView, CardInstanceData inCard,
+        private void AddScoreCandidates(PlayerViewData inView, CardInstanceData inCard,
             ZoneStateData inZone, BoardAnalysis inOwn, int inNumMovesRemaining, bool inIsLastMove,
             MoveData inMove, List<ScoredMove> inCandidates, ref int inOrder, ref bool inStop)
         {
@@ -213,37 +213,47 @@ namespace Elemento.Domain
             {
                 bool moveWillWin = inOwn.TotalPoints + GetValue(inCard.Points, elementIndex)
                     >= inView.Rules.TotalPointsRequiredToWin;
-                float pointModifier = modifier;
-                if (moveWillWin)
+                float pointPlayValue = 0f;
+                bool hasPointPlayValue = !moveWillWin
+                    && TryGetPointPlayValue(inCard, inZone, out pointPlayValue);
+                if (hasPointPlayValue)
                 {
-                    pointModifier = winningMoveValue;
-                    inStop = true;
+                    AddCandidate(inCandidates, inMove, pointPlayValue, ref inOrder);
                 }
                 else
                 {
-                    float percentToWin = inView.Rules.ElementZonePointsRequiredToActivate == 0
-                        ? 0f
-                        : (float)inOwn.TotalPoints / inView.Rules.ElementZonePointsRequiredToActivate;
-                    bool hasValidShieldsInHand = shieldsInHand <= 0;
-                    if (!inIsLastMove || !hasValidShieldsInHand)
+                    float pointModifier = modifier;
+                    if (moveWillWin)
                     {
-                        if (percentToWin < .5f)
-                            pointModifier += percentToWin;
-                        else if (percentToWin < .8f)
-                            pointModifier += 1.2f * percentToWin;
+                        pointModifier = winningMoveValue;
+                        inStop = true;
                     }
+                    else
+                    {
+                        float percentToWin = inView.Rules.ElementZonePointsRequiredToActivate == 0
+                            ? 0f
+                            : (float)inOwn.TotalPoints / inView.Rules.ElementZonePointsRequiredToActivate;
+                        bool hasValidShieldsInHand = shieldsInHand <= 0;
+                        if (!inIsLastMove || !hasValidShieldsInHand)
+                        {
+                            if (percentToWin < .5f)
+                                pointModifier += percentToWin;
+                            else if (percentToWin < .8f)
+                                pointModifier += 1.2f * percentToWin;
+                        }
+                    }
+
+                    if (inNumMovesRemaining > shieldsInHand && shieldsInHand > 0)
+                        pointModifier += inNumMovesRemaining;
+
+                    float priority = inOwn.MultsInZone[elementIndex] * .02f
+                        + inOwn.MultsInHand[elementIndex] * .02f
+                        + inZone.Points * .01f
+                        + inOwn.PointsInHand[elementIndex] * .01f;
+                    AddCandidate(inCandidates, inMove,
+                        (maxPoints + inOwn.MultsInZone[elementIndex] * .3f) * pointModifier + priority,
+                        ref inOrder);
                 }
-
-                if (inNumMovesRemaining > shieldsInHand && shieldsInHand > 0)
-                    pointModifier += inNumMovesRemaining;
-
-                float priority = inOwn.MultsInZone[elementIndex] * .02f
-                    + inOwn.MultsInHand[elementIndex] * .02f
-                    + inZone.Points * .01f
-                    + inOwn.PointsInHand[elementIndex] * .01f;
-                AddCandidate(inCandidates, inMove,
-                    (maxPoints + inOwn.MultsInZone[elementIndex] * .3f) * pointModifier + priority,
-                    ref inOrder);
             }
 
             if (inStop)
@@ -376,7 +386,14 @@ namespace Elemento.Domain
             return value;
         }
 
-        private static bool TryScoreBomb(PlayerViewData inView, CardInstanceData inCard,
+        protected virtual bool TryGetPointPlayValue(CardInstanceData inCard, ZoneStateData inZone,
+            out float outValue)
+        {
+            outValue = 0f;
+            return false;
+        }
+
+        protected virtual bool TryScoreBomb(PlayerViewData inView, CardInstanceData inCard,
             ZoneStateData inZone, bool inIsOwnBoard, BoardAnalysis inOwn, BoardAnalysis inOpponent,
             int inNumMovesRemaining, out float outValue)
         {
@@ -722,7 +739,7 @@ namespace Elemento.Domain
             return analysis;
         }
 
-        private int GetDifficultyIndex(int inCount, IRandom inRandom)
+        protected virtual int GetDifficultyIndex(int inCount, IRandom inRandom)
         {
             if (this.Difficulty == EAiDifficulty.Hard || inCount <= 1)
                 return 0;
