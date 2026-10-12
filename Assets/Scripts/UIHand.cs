@@ -245,7 +245,7 @@ public class UIHand : MonoBehaviour
             {
                 GameManager.IN.DecrementMovesRemaining();
                 GameManager.IN.TryHighlightDiscardPile();
-                GameManager.IN.SaveBoardState(inSourceCell, inTargetCell);
+                GameManager.IN.SaveBoardState(inSourceCell, inTargetCell, inCardId: sourceTopCard.Id);
             }
         }
         else

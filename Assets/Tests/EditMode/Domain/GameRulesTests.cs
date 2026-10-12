@@ -131,6 +131,19 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public void MoveId_IsStableAcrossCreationAndClone()
+        {
+            string moveId = MoveData.CreateId(12);
+            var move = new MoveData { Id = moveId, CardId = CardInstanceData.CreateId(7) };
+
+            var clone = move.Clone();
+
+            Assert.That(moveId, Is.EqualTo("move-00000012"));
+            Assert.That(clone.Id, Is.EqualTo(move.Id));
+            Assert.That(clone.CardId, Is.EqualTo(move.CardId));
+        }
+
+        [Test]
         public void GameStateClone_RoundTripsSerializableStateWithoutSharedCollections()
         {
             var state = new GameStateData

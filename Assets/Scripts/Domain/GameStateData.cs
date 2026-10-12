@@ -231,6 +231,11 @@ namespace Elemento.Domain
         public int TargetZoneId;
         public int ExpectedRevision;
 
+        public static string CreateId(int inSequence)
+        {
+            return "move-" + inSequence.ToString("D8", CultureInfo.InvariantCulture);
+        }
+
         public MoveData Clone()
         {
             return new MoveData

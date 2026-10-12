@@ -124,6 +124,8 @@ public class UICardCell : MonoBehaviour
 
     public void HandleDrop(UICardCell inSourceCell)
     {
+        string cardId = inSourceCell.TopCard != null ? inSourceCell.TopCard.Id : null;
+
         if (this.CellType == ECellType.Discard)
         {
             if (SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn)
@@ -146,7 +148,7 @@ public class UICardCell : MonoBehaviour
             if (inSourceCell.ElementZone != null)
                 inSourceCell.ElementZone.CalculatePoints();
 
-            GameManager.IN.SaveBoardState(inSourceCell, this, true);
+            GameManager.IN.SaveBoardState(inSourceCell, this, true, inCardId: cardId);
 
             return;
         }
@@ -275,7 +277,7 @@ public class UICardCell : MonoBehaviour
 
                 DeleteCard(inSourceCell);
 
-                GameManager.IN.SaveBoardState(inSourceCell, this);
+                GameManager.IN.SaveBoardState(inSourceCell, this, inCardId: cardId);
 
                 inSourceCell.RefreshVisibleCardCount();
                 RefreshVisibleCardCount();
@@ -315,7 +317,7 @@ public class UICardCell : MonoBehaviour
 
             GameManager.IN.DecrementMovesRemaining();
 
-            GameManager.IN.SaveBoardState(inSourceCell, this);
+            GameManager.IN.SaveBoardState(inSourceCell, this, inCardId: cardId);
         }
 
         void TryLightningElementZone(UICardCell inSourceCell)
@@ -420,7 +422,7 @@ public class UICardCell : MonoBehaviour
             GameManager.IN.PlayerBoard.Hand.RefreshPlayerHandText();
 
             GameManager.IN.TryHighlightDiscardPile();
-            GameManager.IN.SaveBoardState(inSourceCell, this);
+            GameManager.IN.SaveBoardState(inSourceCell, this, inCardId: cardId);
 
             void SpawnLightningParticle()
             {
@@ -585,7 +587,7 @@ public class UICardCell : MonoBehaviour
 
             GameManager.IN.DecrementMovesRemaining();
             GameManager.IN.TryHighlightDiscardPile();
-            GameManager.IN.SaveBoardState(inSourceCell, this);
+            GameManager.IN.SaveBoardState(inSourceCell, this, inCardId: cardId);
 
             void SpawnExplosionParticle()
             {
@@ -745,7 +747,7 @@ public class UICardCell : MonoBehaviour
                 GameManager.IN.DecrementMovesRemaining();
                 GameManager.IN.TryHighlightDiscardPile();
 
-                GameManager.IN.SaveBoardState(inSourceCell, this);
+                GameManager.IN.SaveBoardState(inSourceCell, this, inCardId: cardId);
             }
 
             if (this.CellType == ECellType.Hand && inSourceCell.CellType != ECellType.Deck)
