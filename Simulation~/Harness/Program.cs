@@ -15,7 +15,7 @@ namespace Elemento.Simulation
             catch (ArgumentException exception)
             {
                 Console.Error.WriteLine(exception.Message);
-                Console.Error.WriteLine("Usage: --games N --seed S --cap N --p1 hard|medium|easy|random|strong|strong-medium|strong-easy --p2 hard|medium|easy|random|strong|strong-medium|strong-easy");
+                Console.Error.WriteLine("Usage: --games N --seed S --cap N --p1 hard|medium|easy|random|strong|strong-hard|strong-medium|strong-easy --p2 hard|medium|easy|random|strong|strong-hard|strong-medium|strong-easy");
                 return 2;
             }
         }
@@ -75,7 +75,8 @@ namespace Elemento.Simulation
         {
             string value = inValue.ToLowerInvariant();
             if (value != "hard" && value != "medium" && value != "easy" && value != "random"
-                && value != "strong" && value != "strong-medium" && value != "strong-easy")
+                && value != "strong" && value != "strong-hard"
+                && value != "strong-medium" && value != "strong-easy")
                 throw new ArgumentException("Unknown AI: " + inValue);
             return value;
         }

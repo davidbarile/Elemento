@@ -154,6 +154,44 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_HardDifficultyMatchesDefault()
+        {
+            var view = CreateWholeTurnPlanningView();
+            var defaultAi = new StrongAiPlayer();
+            var hardAi = new StrongAiPlayer(new StrongAiOptions
+            {
+                Difficulty = EAiDifficulty.Hard
+            });
+
+            for (int seed = 1; seed <= 20; ++seed)
+            {
+                var defaultMove = defaultAi.ChooseMove(view, new DeterministicRandom(seed));
+                var hardMove = hardAi.ChooseMove(view, new DeterministicRandom(seed));
+
+                Assert.That(hardMove.Id, Is.EqualTo(defaultMove.Id));
+            }
+        }
+
+        [Test]
+        public void StrongAi_DifficultyRandomnessSameSeedProducesSameChoices()
+        {
+            var view = CreateWholeTurnPlanningView();
+            var difficulties = new[] { EAiDifficulty.Medium, EAiDifficulty.Easy };
+            foreach (var difficulty in difficulties)
+            {
+                var ai = new StrongAiPlayer(new StrongAiOptions { Difficulty = difficulty });
+                var firstRandom = new DeterministicRandom(77);
+                var secondRandom = new DeterministicRandom(77);
+
+                for (int i = 0; i < 100; ++i)
+                {
+                    Assert.That(ai.ChooseMove(view, firstRandom).Id,
+                        Is.EqualTo(ai.ChooseMove(view, secondRandom).Id));
+                }
+            }
+        }
+
+        [Test]
         public void StrongAi_UnlimitedPlanPlacesMultiplierBelowPointsAndShield()
         {
             var view = CreateWholeTurnPlanningView();

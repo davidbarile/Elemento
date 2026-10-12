@@ -14,8 +14,8 @@ namespace Elemento.Domain
     {
         private const float zoneKillBonus = 5f;
         private const float multiplierStripBonus = 3f;
-        private const float mediumTemperature = 1f;
-        private const float easyTemperature = 2f;
+        private const float mediumTemperature = 2.5f;
+        private const float easyTemperature = 20f;
         private const float reorderPenalty = .35f;
         private const float b2MoveBonus = 20f;
         private const float winningPlanBonus = 10000f;
@@ -48,6 +48,7 @@ namespace Elemento.Domain
 
         private readonly bool useEffectBasedBombScoring;
         private readonly float temperature;
+        private readonly int maxDepth;
 
         public StrongAiPlayer()
             : this(new StrongAiOptions())
@@ -66,15 +67,16 @@ namespace Elemento.Domain
 
             this.useEffectBasedBombScoring = inOptions.UseEffectBasedBombScoring;
             this.temperature = ResolveTemperature(inOptions);
+            this.maxDepth = inOptions.Difficulty == EAiDifficulty.Easy ? 1 : maxPlanDepth;
         }
 
         public new MoveData ChooseMove(PlayerViewData inView, IRandom inRandom)
         {
             var b2Move = base.ChooseMove(inView, inRandom);
-            if (b2Move == null || !this.useEffectBasedBombScoring || this.temperature > 0f)
+            if (b2Move == null || !this.useEffectBasedBombScoring)
                 return b2Move;
 
-            var plannedMove = ChoosePlannedMove(inView, b2Move);
+            var plannedMove = ChoosePlannedMove(inView, inRandom, b2Move);
             if (plannedMove != null)
                 return plannedMove;
             if (inView.TurnNumber >= antiStallTurn && b2Move.Type == EMoveType.EndTurn)
@@ -86,7 +88,8 @@ namespace Elemento.Domain
             return b2Move;
         }
 
-        private MoveData ChoosePlannedMove(PlayerViewData inView, MoveData inB2Move)
+        private MoveData ChoosePlannedMove(PlayerViewData inView, IRandom inRandom,
+            MoveData inB2Move)
         {
             var simulator = new GameSimulator();
             var state = CreatePlanningState(inView);
@@ -110,9 +113,10 @@ namespace Elemento.Domain
                 OrderingValue = EvaluatePileOrdering(inView, state)
             };
             var frontier = new List<PlanNode> { root };
+            var planChoices = new List<PlanNode>();
             PlanNode best = null;
 
-            for (int depth = 0; depth < maxPlanDepth && frontier.Count > 0; ++depth)
+            for (int depth = 0; depth < this.maxDepth && frontier.Count > 0; ++depth)
             {
                 var next = new List<PlanNode>();
                 foreach (var node in frontier)
@@ -143,6 +147,7 @@ namespace Elemento.Domain
                                 : node.FirstMoveIsB2
                         };
                         next.Add(child);
+                        AddPlanChoice(planChoices, child);
                         if (best == null || ComparePlanNodes(child, best) < 0)
                             best = child;
                     }
@@ -154,7 +159,42 @@ namespace Elemento.Domain
                 frontier = next;
             }
 
-            return best == null ? null : best.FirstMove.Clone();
+            if (best == null || this.temperature <= 0f)
+                return best == null ? null : best.FirstMove.Clone();
+            return ChooseSoftmaxPlan(planChoices, inRandom).FirstMove.Clone();
+        }
+
+        private static void AddPlanChoice(List<PlanNode> inChoices, PlanNode inCandidate)
+        {
+            for (int i = 0; i < inChoices.Count; ++i)
+            {
+                if (!MovesMatch(inChoices[i].FirstMove, inCandidate.FirstMove))
+                    continue;
+                if (ComparePlanNodes(inCandidate, inChoices[i]) < 0)
+                    inChoices[i] = inCandidate;
+                return;
+            }
+
+            inChoices.Add(inCandidate);
+        }
+
+        private PlanNode ChooseSoftmaxPlan(List<PlanNode> inChoices, IRandom inRandom)
+        {
+            inChoices.Sort(ComparePlanNodes);
+            double bestValue = inChoices[0].Value;
+            double totalWeight = 0.0;
+            for (int i = 0; i < inChoices.Count; ++i)
+                totalWeight += Math.Exp((inChoices[i].Value - bestValue) / this.temperature);
+
+            double selectedWeight = inRandom.NextDouble() * totalWeight;
+            for (int i = 0; i < inChoices.Count; ++i)
+            {
+                selectedWeight -= Math.Exp((inChoices[i].Value - bestValue) / this.temperature);
+                if (selectedWeight <= 0.0)
+                    return inChoices[i];
+            }
+
+            return inChoices[inChoices.Count - 1];
         }
 
         private static int ComparePlanNodes(PlanNode inLeft, PlanNode inRight)

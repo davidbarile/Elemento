@@ -147,7 +147,7 @@ namespace Elemento.Simulation
                 return new LegacyAiPlayer(EAiDifficulty.Easy);
             if (inKind == "medium")
                 return new LegacyAiPlayer(EAiDifficulty.Medium);
-            if (inKind == "strong")
+            if (inKind == "strong" || inKind == "strong-hard")
                 return new StrongAiPlayer();
             if (inKind == "strong-medium")
             {
