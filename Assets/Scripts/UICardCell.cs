@@ -747,7 +747,7 @@ public class UICardCell : MonoBehaviour
                 GameManager.IN.DecrementMovesRemaining();
                 GameManager.IN.TryHighlightDiscardPile();
 
-                GameManager.IN.SaveBoardState(inSourceCell, this, inCardId: cardId);
+                GameManager.IN.SaveBoardState(inSourceCell, this, inCardId: sourceTopCard != null ? sourceTopCard.Id : null);
             }
 
             if (this.CellType == ECellType.Hand && inSourceCell.CellType != ECellType.Deck)
