@@ -47,19 +47,30 @@ namespace Elemento.Domain
         DiscardEndsTurn
     }
 
+    public enum EPowerCardType
+    {
+        None,
+        Heal,
+        Freeze,
+        Lightning
+    }
+
     [Serializable]
     public sealed class RulesConfigData
     {
         public int NumCardsToDeal = 5;
-        public int MaxCardsInHand = 20;
+        public int MaxCardsInHand = 7;
         public int MovesPerTurn;
-        public int ElementZoneStartingHealth = 10;
+        public int ElementZoneStartingHealth = 5;
         public int FrozenZoneHealth = 5;
         public int LightningDamage = 5;
         public int ElementZonePointsRequiredToActivate = 10;
         public int TotalPointsRequiredToWin = 50;
         public int FrozenZonesMeltAmountPerTurn = 1;
-        public EDiscardMode DiscardMode;
+        public int MaxCardsPerZone = 20;
+        public int CardSpawnBatchSize = 10;
+        public bool AllowSelectPowerCardType = true;
+        public EDiscardMode DiscardMode = EDiscardMode.AllowDiscard;
 
         public RulesConfigData Clone()
         {
@@ -74,6 +85,9 @@ namespace Elemento.Domain
                 ElementZonePointsRequiredToActivate = this.ElementZonePointsRequiredToActivate,
                 TotalPointsRequiredToWin = this.TotalPointsRequiredToWin,
                 FrozenZonesMeltAmountPerTurn = this.FrozenZonesMeltAmountPerTurn,
+                MaxCardsPerZone = this.MaxCardsPerZone,
+                CardSpawnBatchSize = this.CardSpawnBatchSize,
+                AllowSelectPowerCardType = this.AllowSelectPowerCardType,
                 DiscardMode = this.DiscardMode
             };
         }
@@ -229,6 +243,7 @@ namespace Elemento.Domain
         public int SourceZoneId;
         public int TargetPlayerId;
         public int TargetZoneId;
+        public EPowerCardType PowerCardType;
         public int ExpectedRevision;
 
         public static string CreateId(int inSequence)
@@ -247,6 +262,7 @@ namespace Elemento.Domain
                 SourceZoneId = this.SourceZoneId,
                 TargetPlayerId = this.TargetPlayerId,
                 TargetZoneId = this.TargetZoneId,
+                PowerCardType = this.PowerCardType,
                 ExpectedRevision = this.ExpectedRevision
             };
         }
@@ -270,6 +286,7 @@ namespace Elemento.Domain
         public RandomStateData Random = new();
         public List<PlayerStateData> Players = new();
         public List<CardInstanceData> Deck = new();
+        public List<CardInstanceData> ReserveDeck = new();
         public List<CardInstanceData> PowerDeck = new();
         public List<CardInstanceData> DiscardPile = new();
         public List<MoveData> Moves = new();
@@ -297,6 +314,7 @@ namespace Elemento.Domain
                 clone.Players.Add(player.Clone());
 
             CloneCards(this.Deck, clone.Deck);
+            CloneCards(this.ReserveDeck, clone.ReserveDeck);
             CloneCards(this.PowerDeck, clone.PowerDeck);
             CloneCards(this.DiscardPile, clone.DiscardPile);
 

@@ -120,7 +120,7 @@ namespace Elemento.Domain
 
             return inCard.IsPowerCard
                 && inCard.WildFreeze > 0
-                && inZone.FrozenHealth < inRules.FrozenZoneHealth;
+                && (inZone.IsDestroyed || inZone.FrozenHealth < inRules.FrozenZoneHealth);
         }
 
         public static bool CanBombZone(ZoneStateData inZone, CardInstanceData inCard, RulesConfigData inRules, bool inIsOwnZone)
@@ -288,7 +288,9 @@ namespace Elemento.Domain
         {
             inZone.Points = CalculateZonePoints(inZone);
             inZone.FaceUpPoints = CalculateZonePoints(inZone, true);
-            inZone.IsActivated = HasReachedActivationThreshold(inZone.Points, inRules.ElementZonePointsRequiredToActivate);
+            inZone.IsActivated = !inZone.IsFrozen
+                && !inZone.IsDestroyed
+                && HasReachedActivationThreshold(inZone.Points, inRules.ElementZonePointsRequiredToActivate);
         }
 
         private static void SetZoneHealth(ZoneStateData inZone, int inHealth, RulesConfigData inRules)

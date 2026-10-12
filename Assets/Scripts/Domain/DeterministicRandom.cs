@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace Elemento.Domain
 {
-    public sealed class DeterministicRandom
+    public sealed class DeterministicRandom : IRandom
     {
         private const uint ZeroSeedState = 0x6D2B79F5u;
 
@@ -56,6 +56,11 @@ namespace Elemento.Domain
                 if (value >= threshold)
                     return (int)(value % bound);
             }
+        }
+
+        public double NextDouble()
+        {
+            return NextUInt() / 4294967296.0;
         }
 
         public RandomStateData GetState()

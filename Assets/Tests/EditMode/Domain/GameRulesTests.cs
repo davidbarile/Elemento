@@ -222,6 +222,21 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public void ResolveBomb_EqualShieldIsRemovedAndProtectsLowerCard()
+        {
+            var lowerCard = CreateCard(points: 2);
+            lowerCard.Id = "lower";
+            var shield = CreateCard(shield: 3);
+            var zone = CreateZone(EElementType.Air, lowerCard, shield);
+            var bomb = CreateCard(bomb: 3);
+
+            var result = GameRules.ResolveBomb(zone, bomb, new RulesConfigData());
+
+            Assert.That(result.Cards.Count, Is.EqualTo(1));
+            Assert.That(result.Cards[0].Id, Is.EqualTo("lower"));
+        }
+
+        [Test]
         public void ResolveLightning_RemovesTopCardsWithoutShieldBlocking()
         {
             var bottom = CreateCard(points: 1);
@@ -284,7 +299,7 @@ namespace Elemento.Domain.Tests
         {
             var rules = new RulesConfigData();
             var zone = CreateZone(EElementType.Air);
-            zone.Health = 5;
+            zone.Health = 4;
             var heal = new CardInstanceData { IsPowerCard = true, WildZoneHeal = 1 };
             var freeze = new CardInstanceData { IsPowerCard = true, WildFreeze = 1 };
             var lightning = new CardInstanceData { IsPowerCard = true, WildLightning = 1 };
@@ -300,6 +315,18 @@ namespace Elemento.Domain.Tests
             Assert.That(GameRules.CanHealZone(zone, heal, rules, true), Is.False);
             Assert.That(GameRules.CanFreezeZone(zone, freeze, rules), Is.False);
             Assert.That(GameRules.CanLightningZone(zone, lightning, rules, false), Is.False);
+        }
+
+        [Test]
+        public void CanFreezeZone_AllowsDestroyedZoneEvenAtMaximumFrozenHealth()
+        {
+            var rules = new RulesConfigData { FrozenZoneHealth = 5 };
+            var zone = CreateZone(EElementType.Air);
+            zone.IsDestroyed = true;
+            zone.FrozenHealth = 5;
+            var freeze = new CardInstanceData { IsPowerCard = true, WildFreeze = 5 };
+
+            Assert.That(GameRules.CanFreezeZone(zone, freeze, rules), Is.True);
         }
 
         private static ZoneStateData CreateZone(EElementType inElementType, params CardInstanceData[] inCards)
