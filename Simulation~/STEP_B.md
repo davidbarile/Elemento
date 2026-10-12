@@ -43,6 +43,18 @@ B4 uses only `PlayerViewData.TurnNumber`, visible legal moves, and Strong's visi
 
 The first 200-game screen, which only disabled late reorders, still reproduced the cap hit. A temporary diagnostic identified a full-hand lock with both players holding seven cards and only one surviving zone each; the diagnostic was removed after adding the late discard fallback. The retained 200-game screen produced 157 Strong wins and zero timeouts. The full B3b+B4 run removed both B3b timeouts and increased Strong wins from 819 to 821, so B4 met the no-win-regression gate.
 
+## Step D difficulty
+
+All Step D measurements use the same 1,000-game seed `12345`, alternating-seat, 400-player-turn-cap protocol as the Step B table. Hard deterministically chooses the best whole-turn plan and is unchanged. Medium and Easy run the same public-view planner, then use the supplied `IRandom` to softmax-sample the best scored plan for each legal first move. Easy limits that planner to depth 1; Hard and Medium retain depth 3.
+
+| Difficulty | Plan selection | Search depth | Wins vs Strong Hard (95% CI) | ms/decision | Other 1,000-game references (95% CI) |
+| --- | --- | ---: | ---: | ---: | --- |
+| Hard | Best scored plan | 3 | — | 3.9668 | 821/1000 = 82.10% vs Legacy Hard (79.60–84.35%) |
+| Medium | Score softmax, temperature 2.5 | 3 | 339/1000 = 33.90% (31.03–36.89%) | 4.3193 | 709/1000 = 70.90% vs Legacy Hard (68.01–73.63%) |
+| Easy | Score softmax, temperature 20 | 1 | 127/1000 = 12.70% (10.78–14.91%) | 0.3795 | 990/1000 = 99.00% vs Random (98.17–99.46%); 264/1000 = 26.40% vs Legacy Hard (23.76–29.22%) |
+
+The retained 200-game screens were Medium 67/200 = 33.50% versus Strong Hard, Easy 23/200 = 11.50% versus Strong Hard, and Easy 197/200 = 98.50% versus Random. Every screen and full run had zero timeouts. The exact post-change Hard-vs-Legacy rerun reproduced B4's 821 wins, 551 first-player wins, win types, zero timeouts, and both players' bad-pattern counts, providing end-to-end evidence that Hard behavior did not change. Timings depend on matchup length and state distribution; the table reports each Strong difficulty from its Strong-Hard target run, except Hard's directly comparable Legacy baseline rerun.
+
 ## Legacy parity rerun
 
 The required Hard-vs-Hard rerun exactly reproduced the baseline in `RESULTS.md`: P1 475 wins, P2 517 wins, 528 first-player wins, 24.60 average / 17.0 median player-turns, 988 points wins, 4 zone-destruction wins, and 8 timeouts. All four decision and bad-pattern count sets also matched exactly. Measured AI time was 0.0047 ms/decision for P1 and 0.0051 ms/decision for P2.
@@ -53,7 +65,10 @@ The required Hard-vs-Hard rerun exactly reproduced the baseline in `RESULTS.md`:
 /home/box/.dotnet/dotnet build --no-restore Simulation~/Simulation.sln --configuration Release --maxcpucount:1
 /home/box/.dotnet/dotnet test --no-restore Simulation~/Simulation.sln --configuration Release --no-build
 /home/box/.dotnet/dotnet run --project Simulation~/Harness/Harness.csproj --configuration Release --no-build --no-restore -- --games 1000 --seed 12345 --cap 400 --p1 hard --p2 hard
-/home/box/.dotnet/dotnet run --project Simulation~/Harness/Harness.csproj --configuration Release --no-build --no-restore -- --games 1000 --seed 12345 --cap 400 --p1 strong --p2 hard
+/home/box/.dotnet/dotnet run --project Simulation~/Harness/Harness.csproj --configuration Release --no-build --no-restore -- --games 1000 --seed 12345 --cap 400 --p1 strong-hard --p2 hard
+/home/box/.dotnet/dotnet run --project Simulation~/Harness/Harness.csproj --configuration Release --no-build --no-restore -- --games 1000 --seed 12345 --cap 400 --p1 strong-medium --p2 strong-hard
+/home/box/.dotnet/dotnet run --project Simulation~/Harness/Harness.csproj --configuration Release --no-build --no-restore -- --games 1000 --seed 12345 --cap 400 --p1 strong-easy --p2 strong-hard
+/home/box/.dotnet/dotnet run --project Simulation~/Harness/Harness.csproj --configuration Release --no-build --no-restore -- --games 1000 --seed 12345 --cap 400 --p1 strong-easy --p2 random
 ```
 
-The VSTest command could not bind its local MSBuild socket in the sandbox (`SocketException: Permission denied`). The freshly built Release test assembly was therefore executed with an in-process reflection runner: 64 tests passed, 0 failed.
+The VSTest command could not bind its local MSBuild socket in the sandbox (`SocketException: Permission denied`). The freshly built Release test assembly was therefore executed with an in-process reflection runner: 66 tests passed, 0 failed.
