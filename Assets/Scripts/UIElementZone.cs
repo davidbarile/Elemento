@@ -1,6 +1,9 @@
 using System;
 using System.Collections;
 using DG.Tweening;
+using DomainElementType = Elemento.Domain.EElementType;
+using DomainGameRules = Elemento.Domain.GameRules;
+using DomainZoneStateData = Elemento.Domain.ZoneStateData;
 using Sirenix.OdinInspector;
 using UnityEngine;
 using static SettingsManager;
@@ -129,7 +132,7 @@ public class UIElementZone : MonoBehaviour
         }
         else
         {
-            bool hasEnoughPointsToActivate = this.Points >= SettingsManager.IN.ElementZonePointsRequiredToActivate;
+            bool hasEnoughPointsToActivate = DomainGameRules.HasReachedActivationThreshold(this.Points, SettingsManager.IN.ElementZonePointsRequiredToActivate);
             SetActiveState(hasEnoughPointsToActivate, false);
         }
 
@@ -178,44 +181,36 @@ public class UIElementZone : MonoBehaviour
 
     public void CalculatePoints()
     {
-        this.Points = 0;
-        this.FaceUpPoints = 0;
-
-        int index = (int)this.CardCell.ElementType - 1;
-
-        foreach (var card in this.CardCell.Cards)
-        {
-            var cardPoints = card.Data.WildPoints;
-            if (cardPoints == 0)
-                cardPoints = card.Data.Points[index];
-
-            this.Points += cardPoints;
-
-            if (card.CardFlip.IsFaceUp)
-                this.FaceUpPoints += cardPoints;
-        }
-
-        foreach (var card in this.CardCell.Cards)
-        {
-            var cardMult = card.Data.WildMultiplier;
-
-            if (cardMult == 0)
-                cardMult = card.Data.Multipliers[index];
-
-            if (cardMult > 1)
-            {
-                this.Points *= cardMult;
-
-                if (card.CardFlip.IsFaceUp)
-                    this.FaceUpPoints *= cardMult;
-            }
-        }
+        var state = CreateStateData();
+        this.Points = DomainGameRules.CalculateZonePoints(state);
+        this.FaceUpPoints = DomainGameRules.CalculateZonePoints(state, true);
 
         RefreshSiblingIndices();
 
         SetPointsCount(this.FaceUpPoints);
 
         GameManager.IN.CheckElementZoneActivateState(this);
+    }
+
+    public DomainZoneStateData CreateStateData()
+    {
+        var state = new DomainZoneStateData
+        {
+            Id = (int)this.CardCell.ElementType,
+            ElementType = (DomainElementType)this.CardCell.ElementType,
+            Points = this.Points,
+            FaceUpPoints = this.FaceUpPoints,
+            Health = this.Health,
+            MaxHealth = this.MaxHealth,
+            FrozenHealth = this.FrozenHealth,
+            IsActivated = this.IsActivated,
+            IsDestroyed = this.IsDestroyed
+        };
+
+        foreach (var card in this.CardCell.Cards)
+            state.Cards.Add(card.CreateInstanceData());
+
+        return state;
     }
 
     public void RefreshSiblingIndices()

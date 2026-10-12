@@ -1,6 +1,8 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using DG.Tweening;
+using DomainGameRules = Elemento.Domain.GameRules;
+using DomainPlayerStateData = Elemento.Domain.PlayerStateData;
 using Sirenix.OdinInspector;
 using TMPro;
 using UnityEngine;
@@ -315,12 +317,11 @@ public class UIPlayerBoard : MonoBehaviour
 
     public void CalculateTotalPoints(bool inShouldCheckWinLoseState = true)
     {
-        this.TotalPoints = 0;
+        this.TotalPoints = DomainGameRules.CalculatePlayerPoints(CreateStateData());
         this.TotalFaceUpPoints = 0;
 
         foreach (var zone in this.ElementZones)
         {
-            this.TotalPoints += zone.Points;
             this.TotalFaceUpPoints += zone.FaceUpPoints;
 
             int points = this.shouldDisplayFaceUpPoints ? zone.FaceUpPoints : zone.Points;
@@ -331,6 +332,20 @@ public class UIPlayerBoard : MonoBehaviour
 
         if (inShouldCheckWinLoseState)
             GameManager.IN.CheckWinLoseState(this);
+    }
+
+    public DomainPlayerStateData CreateStateData()
+    {
+        var state = new DomainPlayerStateData
+        {
+            Id = (int)this.PlayerType,
+            Name = this.Name
+        };
+
+        foreach (var zone in this.ElementZones)
+            state.Zones.Add(zone.CreateStateData());
+
+        return state;
     }
 
     public void Reset()
