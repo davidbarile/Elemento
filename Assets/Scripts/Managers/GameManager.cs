@@ -2,6 +2,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using DG.Tweening;
+using DomainGameRules = Elemento.Domain.GameRules;
+using DomainRulesConfigData = Elemento.Domain.RulesConfigData;
 using Sirenix.OdinInspector;
 using TMPro;
 using UnityEngine;
@@ -172,6 +174,7 @@ public class GameManager : MonoBehaviour
         BoardStateManager.IN.ClearBoardStates();
         BoardStateManager.IN.CurrentReplayBoardState = null;
         Move.ShouldRecordMoves = true;
+        Move.MoveId = 0;
         GameManager.IsDoingReplay = false;
 
         this.currentPlayerIndex = 0;
@@ -194,6 +197,8 @@ public class GameManager : MonoBehaviour
 
         if (this.isGameInitialized)
             CleanUpGameState();
+
+        CardsManager.IN.ResetCardInstanceIds();
 
         StartCoroutine(RestartGameCo());
     }
@@ -480,7 +485,7 @@ public class GameManager : MonoBehaviour
             var parentCell = powerCard.transform.GetComponentInParent<UICardCell>();
 
             if (inElementZone != null)
-                SaveBoardState(this.Deck, parentCell, false, inElementZone, false, powerCardType);
+                SaveBoardState(this.Deck, parentCell, false, inElementZone, false, powerCardType, powerCard.Id);
 
             AudioManager.IN.PlayClip(AudioManager.IN.UseActivationPowerClip, .5f);
 
@@ -715,7 +720,7 @@ public class GameManager : MonoBehaviour
 
         var pointsRequiredToActivate = UITutorialPanel.IsTutorialMode ? 10 : SettingsManager.IN.ElementZonePointsRequiredToActivate;
 
-        bool hasEnoughPointsToActivate = inElementZone.Points >= pointsRequiredToActivate;
+        bool hasEnoughPointsToActivate = DomainGameRules.HasReachedActivationThreshold(inElementZone.Points, pointsRequiredToActivate);
 
         bool isAlreadyActivated = inElementZone.IsActivated;
 
@@ -752,19 +757,19 @@ public class GameManager : MonoBehaviour
 
         if (inIsFromDestroyedZone)
         {
-            //check if all zones destroyed
-            foreach (var zone in inPlayerBoard.ElementZones)
-            {
-                if (!zone.IsDestroyed)
-                    return;
-            }
+            if (!DomainGameRules.AreAllZonesDestroyed(inPlayerBoard.CreateStateData())) return;
 
             message = LOC.IN.AllZonesDestroyedTitle[LOC.LI];//All Opponent's Zones Destroyed!
             playerWon = !inPlayerBoard.Equals(this.PlayerBoard);
         }
         else
         {
-            if (inPlayerBoard.TotalPoints < SettingsManager.IN.TotalPointsRequiredToWin) return;
+            var rules = new DomainRulesConfigData
+            {
+                TotalPointsRequiredToWin = SettingsManager.IN.TotalPointsRequiredToWin
+            };
+
+            if (!DomainGameRules.HasPointsTargetWin(inPlayerBoard.CreateStateData(), rules)) return;
 
             if (SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn && this.CurrentPlayerBoard.Hand.NumCardsInHand == 0)
                 return;
@@ -862,7 +867,7 @@ public class GameManager : MonoBehaviour
     }
 
     #region Save/Load Board State
-    public void SaveBoardState(UICardCell inSourceCell, UICardCell inTargetCell, bool inIsDiscard = false, UIElementZone inActivatedZone = null, bool inIsDealHand = false, ECardType inCardType = ECardType.None)
+    public void SaveBoardState(UICardCell inSourceCell, UICardCell inTargetCell, bool inIsDiscard = false, UIElementZone inActivatedZone = null, bool inIsDealHand = false, ECardType inCardType = ECardType.None, string inCardId = null)
     {
         if (!Move.ShouldRecordMoves || BoardStateManager.IsDoingReplay || UITutorialPanel.IsTutorialMode) return;
 
@@ -878,7 +883,7 @@ public class GameManager : MonoBehaviour
 
         if (this.lastCreatedBoardState != null)
         {
-            this.lastCreatedBoardState.Move = Move.CreateMove(inSourceCell, inTargetCell, inIsDiscard, inActivatedZone, inIsDealHand, inCardType);
+            this.lastCreatedBoardState.Move = Move.CreateMove(inSourceCell, inTargetCell, inIsDiscard, inActivatedZone, inIsDealHand, inCardType, (int)this.CurrentPlayer, inCardId);
         }
 
         this.lastCreatedBoardState = boardState;
