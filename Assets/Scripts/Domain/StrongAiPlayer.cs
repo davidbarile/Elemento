@@ -19,10 +19,12 @@ namespace Elemento.Domain
         private const float reorderPenalty = .35f;
         private const float b2MoveBonus = 20f;
         private const float winningPlanBonus = 10000f;
+        private const float antiStallProgressPerTurn = .05f;
         private const int maxPlanDepth = 3;
         private const int beamWidth = 6;
         private const int candidateWidth = 7;
         private const int maxReorderMoves = 3;
+        private const int antiStallTurn = 100;
 
         private sealed class PlanNode
         {
@@ -31,6 +33,7 @@ namespace Elemento.Domain
             public int MovesRemaining;
             public int ReorderMoves;
             public float Value;
+            public float OrderingValue;
             public bool FirstMoveIsB2;
         }
 
@@ -41,6 +44,7 @@ namespace Elemento.Domain
             public bool IsReorder;
             public float PruneValue;
             public float Value;
+            public float OrderingValue;
         }
 
         private readonly bool useEffectBasedBombScoring;
@@ -95,7 +99,8 @@ namespace Elemento.Domain
             {
                 State = state,
                 MovesRemaining = movesRemaining,
-                Value = EvaluateEndOfTurn(inView, state, 0)
+                Value = EvaluateEndOfTurn(inView, state, 0),
+                OrderingValue = EvaluatePileOrdering(inView, state)
             };
             var frontier = new List<PlanNode> { root };
             PlanNode best = null;
@@ -125,13 +130,13 @@ namespace Elemento.Domain
                                 - (candidate.Move.Type == EMoveType.PlayCard ? 1 : 0),
                             ReorderMoves = reorderMoves,
                             Value = candidate.Value,
+                            OrderingValue = candidate.OrderingValue,
                             FirstMoveIsB2 = node.FirstMove == null
                                 ? MovesMatch(firstMove, inB2Move)
                                 : node.FirstMoveIsB2
                         };
                         next.Add(child);
-                        if (best == null || child.Value > best.Value
-                            || (child.Value == best.Value && child.FirstMoveIsB2 && !best.FirstMoveIsB2))
+                        if (best == null || ComparePlanNodes(child, best) < 0)
                             best = child;
                     }
                 }
@@ -150,6 +155,9 @@ namespace Elemento.Domain
             int valueComparison = inRight.Value.CompareTo(inLeft.Value);
             if (valueComparison != 0)
                 return valueComparison;
+            int orderingComparison = inRight.OrderingValue.CompareTo(inLeft.OrderingValue);
+            if (orderingComparison != 0)
+                return orderingComparison;
             return inRight.FirstMoveIsB2.CompareTo(inLeft.FirstMoveIsB2);
         }
 
@@ -170,6 +178,8 @@ namespace Elemento.Domain
 
                 bool isReorder = move.Type == EMoveType.PlayCard && move.SourceZoneId >= 0;
                 if (isReorder && inNode.ReorderMoves >= maxReorderMoves)
+                    continue;
+                if (isReorder && inSourceView.TurnNumber >= antiStallTurn)
                     continue;
                 if (inNode.FirstMove == null && FindMatchingMove(inSourceView.LegalMoves, move) == null)
                     continue;
@@ -202,11 +212,42 @@ namespace Elemento.Domain
                 inSimulator.ApplyMove(candidate.State, candidate.Move);
                 int reorderMoves = inNode.ReorderMoves + (candidate.IsReorder ? 1 : 0);
                 candidate.Value = EvaluateEndOfTurn(inSourceView, candidate.State, reorderMoves);
+                candidate.OrderingValue = EvaluatePileOrdering(inSourceView, candidate.State);
                 candidate.PruneValue += candidate.Value - inNode.Value;
                 candidates.Add(candidate);
             }
-            candidates.Sort((inLeft, inRight) => inRight.PruneValue.CompareTo(inLeft.PruneValue));
+            candidates.Sort((inLeft, inRight) =>
+            {
+                int pruneComparison = inRight.PruneValue.CompareTo(inLeft.PruneValue);
+                return pruneComparison != 0
+                    ? pruneComparison
+                    : inRight.OrderingValue.CompareTo(inLeft.OrderingValue);
+            });
             return candidates;
+        }
+
+        private static float EvaluatePileOrdering(PlayerViewData inSourceView, GameStateData inState)
+        {
+            if (inSourceView.Rules.MovesPerTurn > 0)
+                return 0f;
+
+            float value = 0f;
+            foreach (var zone in FindPlayer(inState, inSourceView.Player.Id).Zones)
+            {
+                int elementIndex = (int)zone.ElementType - 1;
+                for (int i = 0; i < zone.Cards.Count; ++i)
+                {
+                    var card = zone.Cards[i];
+                    int cardsAbove = zone.Cards.Count - i - 1;
+                    int points = Math.Max(GetValue(card.Points, elementIndex), card.WildPoints);
+                    int multiplier = Math.Max(GetValue(card.Multipliers, elementIndex),
+                        card.WildMultiplier);
+                    int shield = Math.Max(GetValue(card.Shields, elementIndex), card.WildShield);
+                    value += cardsAbove * (points + multiplier * 10f);
+                    value += i * shield;
+                }
+            }
+            return value;
         }
 
         private static float GetB2PruneValue(PlayerViewData inView, MoveData inMove)
@@ -390,6 +431,9 @@ namespace Elemento.Domain
             float value = ownPoints * (1f + proximity) - opponentPoints;
             if (winTarget > 0 && ownPoints >= winTarget)
                 value += winningPlanBonus;
+            if (inSourceView.TurnNumber >= antiStallTurn)
+                value += ownPoints * (inSourceView.TurnNumber - antiStallTurn + 1)
+                    * antiStallProgressPerTurn;
 
             var planningView = CreatePlanningView(inSourceView, inState, 0);
             value -= GetExpectedExposure(planningView, ownPoints);

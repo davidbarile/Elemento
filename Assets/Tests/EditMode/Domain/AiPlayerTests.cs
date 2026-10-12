@@ -153,6 +153,105 @@ namespace Elemento.Tests.Domain
             Assert.That(plannedMove.TargetZoneId, Is.EqualTo(0));
         }
 
+        [Test]
+        public void StrongAi_UnlimitedPlanPlacesMultiplierBelowPointsAndShield()
+        {
+            var view = CreateWholeTurnPlanningView();
+            view.Rules.MovesPerTurn = 0;
+            view.MovesRemaining = 0;
+            view.Player.Hand.RemoveAt(2);
+            view.LegalMoves.RemoveAt(2);
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "shield",
+                IsFaceUp = true,
+                Shields = new[] { 1, 0, 0, 0 }
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "shield-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "shield",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            IAiPlayer ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo("multiplier"));
+        }
+
+        [Test]
+        public void StrongAi_LateTurnEndsInsteadOfReorderingExistingPile()
+        {
+            var view = new PlayerViewData
+            {
+                TurnNumber = 100,
+                CurrentPlayerId = 0,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                MovesRemaining = 99,
+                Rules = new RulesConfigData { TotalPointsRequiredToWin = 1000 },
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            var sourceZone = new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Air,
+                Health = 5,
+                MaxHealth = 5
+            };
+            sourceZone.Cards.Add(new CardInstanceData
+            {
+                Id = "multiplier",
+                IsFaceUp = true,
+                WildMultiplier = 2
+            });
+            var targetZone = new ZoneStateData
+            {
+                Id = 1,
+                ElementType = EElementType.Earth,
+                Health = 5,
+                MaxHealth = 5,
+                Points = 5,
+                FaceUpPoints = 5
+            };
+            targetZone.Cards.Add(new CardInstanceData
+            {
+                Id = "points",
+                IsFaceUp = true,
+                WildPoints = 5
+            });
+            view.Player.Zones.Add(sourceZone);
+            view.Player.Zones.Add(targetZone);
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "reorder",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "multiplier",
+                SourceZoneId = 0,
+                TargetPlayerId = 0,
+                TargetZoneId = 1
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "end-turn",
+                PlayerId = 0,
+                Type = EMoveType.EndTurn,
+                SourceZoneId = -1,
+                TargetPlayerId = -1,
+                TargetZoneId = -1
+            });
+            IAiPlayer ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.Type, Is.EqualTo(EMoveType.EndTurn));
+        }
+
         private static PlayerViewData CreateRankedPointView()
         {
             var view = new PlayerViewData
