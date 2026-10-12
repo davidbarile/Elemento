@@ -72,4 +72,4 @@ The pattern rate depends on opportunities created by the opponent and is not a c
 
 - Release solution build: succeeded with 0 warnings and 0 errors.
 - All 49 `[Test]` methods in the compiled Domain test assembly passed via an in-process reflection runner, including the three new AI tests.
-- Standard `dotnet test --no-restore` could not start in this restricted container because VSTest attempted to open a loopback TCP listener and received `SocketException (13): Permission denied`; this is an environment limitation rather than a test failure.
+- Outside the Codex sandbox, `~/.dotnet/dotnet test --no-restore Simulation~/Simulation.sln` passes: 56/56 tests (2026-10-12).
