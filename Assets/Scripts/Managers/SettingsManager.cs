@@ -63,6 +63,7 @@ public class SettingsManager : MonoBehaviour
     public EDiscardMode DiscardMode;
     public EPlayMode PlayMode;
     public EAiDifficulty AiDifficulty;
+    [SerializeField] public bool UseLegacyAi = false;
 
     public int TutorialSafeElementZoneHealth => UITutorialPanel.IsTutorialMode ? 5 : this.ElementZoneStartingHealth;
     public int TutorialSafeMovesPerTurn => UITutorialPanel.IsTutorialMode ? 0 : this.MovesPerTurn;

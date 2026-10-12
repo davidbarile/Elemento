@@ -1,8 +1,11 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using DG.Tweening;
 using DomainGameRules = Elemento.Domain.GameRules;
 using DomainPlayerStateData = Elemento.Domain.PlayerStateData;
+using DomainStrongAiOptions = Elemento.Domain.StrongAiOptions;
+using DomainStrongAiPlayer = Elemento.Domain.StrongAiPlayer;
 using Sirenix.OdinInspector;
 using TMPro;
 using UnityEngine;
@@ -397,7 +400,12 @@ public class UIPlayerBoard : MonoBehaviour
         for (int i = 0; i < numMoves || isHandDepleted; i++)
         {
             //Debug.Log($"Do Move {i}   numMoves = {numMoves}");
-            var move = this.AIMoveCalculator.CalculateBestMove(GameManager.IN.CurrentPlayerBoard);
+            if (!SettingsManager.IN.UseLegacyAi)
+                yield return null;
+
+            var move = GetAiMove(out bool shouldEndTurn, out int possibleMoveCount, out string moveInfo);
+            if (shouldEndTurn)
+                break;
 
             //TODO: adjust this so if many cards in hand, and moves out, force a discard move
 
@@ -405,9 +413,9 @@ public class UIPlayerBoard : MonoBehaviour
             {
                 isHandDepleted = this.CardsInHand.Count <= 0;
 
-                string output = $"<color=blue>Turn {GameManager.IN.CurrentTurnNumber}: Move {i}/{this.AIMoveCalculator.PossibleMoves.Count}</color>\n<color=red>{move.CardType}   Value: {move.Value}</color>\n[{move.SourceCell.CellType}, {move.SourceCell.ElementType} --> {move.TargetCell.CellType}, {move.TargetCell.ElementType}]";
+                string output = $"<color=blue>Turn {GameManager.IN.CurrentTurnNumber}: Move {i}/{possibleMoveCount}</color>\n<color=red>{move.CardType}   Value: {move.Value}</color>\n[{move.SourceCell.CellType}, {move.SourceCell.ElementType} --> {move.TargetCell.CellType}, {move.TargetCell.ElementType}]";
                 AddToAiOutputText(output);
-                AddToAiOutputText(this.AIMoveCalculator.MoveOutputInfo, 2);
+                AddToAiOutputText(moveInfo, 2);
 
                 Debug.Log(output);
 
@@ -497,6 +505,115 @@ public class UIPlayerBoard : MonoBehaviour
             this.Brain.gameObject.SetActive(false);
 
         this.IsTakingTurn = false;
+    }
+
+    private Move GetAiMove(out bool outShouldEndTurn, out int outPossibleMoveCount, out string outMoveInfo)
+    {
+        outShouldEndTurn = false;
+
+        if (SettingsManager.IN.UseLegacyAi)
+            return GetLegacyAiMove(out outPossibleMoveCount, out outMoveInfo);
+
+        try
+        {
+            GenerateUsefulData();
+
+            int cardSpawnBatchSize = CardsManager.IN == null ? 0 : CardsManager.IN.CardSpawnBatchSize;
+            int powerDeckCount = CardsManager.IN == null ? 0 : CardsManager.IN.PowerCardDatas.Count;
+            var rules = UnityDomainMapper.CreateRules(SettingsManager.IN, GameManager.IN.PlayerBoards,
+                cardSpawnBatchSize);
+            var view = UnityDomainMapper.CreatePlayerView(this, GameManager.IN.PlayerBoards,
+                GameManager.IN.Deck.Cards.Count, powerDeckCount, GameManager.IN.CurrentTurnNumber,
+                GameManager.IN.TurnPhase, GameManager.IN.MovesRemaining, rules);
+            outPossibleMoveCount = view.LegalMoves.Count;
+
+            var options = new DomainStrongAiOptions
+            {
+                Difficulty = UnityDomainMapper.MapDifficulty(SettingsManager.IN.AiDifficulty)
+            };
+            var domainMove = new DomainStrongAiPlayer(options).ChooseMove(view, new UnityDomainRandom());
+
+            if (!UnityDomainMapper.TryCreateMove(domainMove, view, this, GameManager.IN.PlayerBoards,
+                    out var move, out outShouldEndTurn, out string error))
+            {
+                throw new InvalidOperationException(error);
+            }
+            if (!outShouldEndTurn && !CanExecuteAiMove(move, out error))
+                throw new InvalidOperationException(error);
+
+            outMoveInfo = $"<color=black>Strong AI difficulty: {SettingsManager.IN.AiDifficulty} | Legal moves: {outPossibleMoveCount}</color>";
+            return move;
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning($"Strong AI decision failed; using legacy AI for this decision. {exception.Message}");
+            outShouldEndTurn = false;
+            return GetFallbackAiMove(out outPossibleMoveCount, out outMoveInfo);
+        }
+    }
+
+    private Move GetLegacyAiMove(out int outPossibleMoveCount, out string outMoveInfo)
+    {
+        var move = this.AIMoveCalculator.CalculateBestMove(GameManager.IN.CurrentPlayerBoard);
+        outPossibleMoveCount = this.AIMoveCalculator.PossibleMoves.Count;
+        outMoveInfo = this.AIMoveCalculator.MoveOutputInfo;
+        return move;
+    }
+
+    private Move GetFallbackAiMove(out int outPossibleMoveCount, out string outMoveInfo)
+    {
+        try
+        {
+            return GetLegacyAiMove(out outPossibleMoveCount, out outMoveInfo);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning($"Legacy AI fallback also failed; ending this AI turn. {exception.Message}");
+            outPossibleMoveCount = 0;
+            outMoveInfo = string.Empty;
+            return null;
+        }
+    }
+
+    private static bool CanExecuteAiMove(Move inMove, out string outError)
+    {
+        if (inMove == null || inMove.SourceCell == null || inMove.TargetCell == null)
+        {
+            outError = "Strong AI move is missing a live source or target cell.";
+            return false;
+        }
+        if (inMove.ActivatePowerZone != null)
+        {
+            bool canActivate = inMove.SourceCell.ElementZone == inMove.ActivatePowerZone;
+            outError = canActivate ? string.Empty : "Strong AI activation is no longer executable.";
+            return canActivate;
+        }
+        if (inMove.SourceCell.TopCard == null || inMove.SourceCell.TopCard.Draggable == null)
+        {
+            outError = "Strong AI source card is no longer executable.";
+            return false;
+        }
+        if (inMove.TargetCell.AnimTarget == null && inMove.TargetCell.CardHolder == null)
+        {
+            outError = "Strong AI target cell has no animation target.";
+            return false;
+        }
+        if (inMove.IsDiscard)
+        {
+            bool usesEndTurnDiscard = SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn
+                && inMove.SourceCell.PlayerType == EPlayerType.PlayerA;
+            var discardTarget = usesEndTurnDiscard
+                ? GameManager.IN.DiscardToEndTurnZoneTransform
+                : GameManager.IN.DiscardZoneTransform;
+            if (discardTarget == null)
+            {
+                outError = "Strong AI discard target is unavailable.";
+                return false;
+            }
+        }
+
+        outError = string.Empty;
+        return true;
     }
 
     //TODO: optimize with stringbuilder
