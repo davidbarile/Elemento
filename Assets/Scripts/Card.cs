@@ -1,4 +1,5 @@
 using System;
+using CardInstanceData = Elemento.Domain.CardInstanceData;
 using JoshH.UI;
 using Lean.Pool;
 using Sirenix.OdinInspector;
@@ -10,6 +11,7 @@ using static SkinManager;
 public class Card : MonoBehaviour
 {
     public CardData Data;
+    public string Id { get; private set; }
 
     public static Action<int> OnLightningDamageChanged;
     public static Action<int> OnFreezeHealthChanged;
@@ -75,9 +77,10 @@ public class Card : MonoBehaviour
 
     private bool isDestroyed;
 
-    public void Configure(CardData inCardData)
+    public void Configure(CardData inCardData, string inId = null)
     {
         this.Data = inCardData;
+        this.Id = inId;
 
         if (this.Data.WildLightning > 0)
         {
@@ -335,6 +338,29 @@ public class Card : MonoBehaviour
                 icons.HideIcons();
             }
         }
+    }
+
+    public CardInstanceData CreateInstanceData()
+    {
+        return new CardInstanceData
+        {
+            Id = this.Id,
+            DefinitionId = this.Data.Index,
+            DefinitionName = this.Data.Name,
+            IsFaceUp = this.CardFlip.IsFaceUp,
+            IsPowerCard = this.Data.IsPowerCard,
+            WildPoints = this.Data.WildPoints,
+            WildMultiplier = this.Data.WildMultiplier,
+            WildBomb = this.Data.WildBomb,
+            WildShield = this.Data.WildShield,
+            WildZoneHeal = this.Data.WildZoneHeal,
+            WildFreeze = this.Data.WildFreeze,
+            WildLightning = this.Data.WildLightning,
+            Points = (int[])this.Data.Points.Clone(),
+            Multipliers = (int[])this.Data.Multipliers.Clone(),
+            Bombs = (int[])this.Data.Bombs.Clone(),
+            Shields = (int[])this.Data.Shields.Clone()
+        };
     }
 
     public void SetShieldMultBgColors(SkinData inSkinData, Sprite inCardBackSprite)

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using CardInstanceData = Elemento.Domain.CardInstanceData;
 using Lean.Pool;
 using Sirenix.OdinInspector;
 using TMPro;
@@ -87,10 +88,16 @@ public class CardsManager : MonoBehaviour
     public GameObject CardBackPrefab;
 
     private int cardDataIndex = 0;
+    private int nextCardInstanceId;
 
     private void DealPowerCardFromEditor()
     {
         GameManager.IN.StartCoroutine(GameManager.IN.DealPowerCardCo());
+    }
+
+    public void ResetCardInstanceIds()
+    {
+        this.nextCardInstanceId = 0;
     }
 
     public void GenerateAllCardDatasFromScriptableObjects()
@@ -313,7 +320,9 @@ public class CardsManager : MonoBehaviour
 
         var card = go.GetComponent<Card>();
 
-        card.Configure(inCardData);
+        string cardId = CardInstanceData.CreateId(CardsManager.IN.nextCardInstanceId);
+        ++CardsManager.IN.nextCardInstanceId;
+        card.Configure(inCardData, cardId);
 
         card.transform.SetParent(inParent);
         card.transform.localScale = Vector3.one;
