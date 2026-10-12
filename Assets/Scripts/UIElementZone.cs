@@ -221,7 +221,7 @@ public class UIElementZone : MonoBehaviour
 
     public void HandleUseActivatePowerButtonClick()
     {
-        if (!GameManager.IN.IsPlayersTurn || GameManager.IsDealingHand) return;//TODO: bypass when AI is taking turn
+        if (!GameManager.IN.CanControlPlayer(this.PlayerType) || GameManager.IsDealingHand) return;
 
         if (UITutorialPanel.IsTutorialMode && UITutorialPanel.IN.ShouldBlockInput && UITutorialPanel.IN.AllowedActivateType != this.CardCell.ElementType) return;
 

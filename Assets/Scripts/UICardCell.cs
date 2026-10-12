@@ -134,7 +134,7 @@ public class UICardCell : MonoBehaviour
 
                 DeleteCard(inSourceCell);
 
-                if (GameManager.IN.IsPlayersTurn && !GameManager.IN.PlayerBoard.IsAutoPlay)
+                if (GameManager.IN.IsPlayersTurn && !GameManager.IN.IsCurrentSeatControlledByAI)
                     GameManager.IN.EndTurn();
 
                 AudioManager.IN.PlayCardDropSound(6, .5f, 1);
@@ -419,7 +419,7 @@ public class UICardCell : MonoBehaviour
             else
                 GameManager.IN.DecrementMovesRemaining();
 
-            GameManager.IN.PlayerBoard.Hand.RefreshPlayerHandText();
+            GameManager.IN.PlayerInputBoard.Hand.RefreshPlayerHandText();
 
             GameManager.IN.TryHighlightDiscardPile();
             GameManager.IN.SaveBoardState(inSourceCell, this, inCardId: cardId);
@@ -583,7 +583,7 @@ public class UICardCell : MonoBehaviour
 
             this.ElementZone.CalculatePoints();
 
-            GameManager.IN.PlayerBoard.Hand.RefreshPlayerHandText();
+            GameManager.IN.PlayerInputBoard.Hand.RefreshPlayerHandText();
 
             GameManager.IN.DecrementMovesRemaining();
             GameManager.IN.TryHighlightDiscardPile();
@@ -739,7 +739,7 @@ public class UICardCell : MonoBehaviour
 
             if (this.CellType == ECellType.Hand || inSourceCell.CellType == ECellType.Hand)
             {
-                GameManager.IN.PlayerBoard.Hand.RefreshPlayerHandText();
+                GameManager.IN.PlayerInputBoard.Hand.RefreshPlayerHandText();
             }
 
             if (inSourceCell.CellType != ECellType.Deck)

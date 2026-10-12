@@ -235,7 +235,7 @@ public class UIHand : MonoBehaviour
                         AudioManager.IN.PlayCardDropSound(9, .1f);
                     }
 
-                    GameManager.IN.PlayerBoard.Hand.RefreshPlayerHandText();
+                    GameManager.IN.PlayerInputBoard.Hand.RefreshPlayerHandText();
 
                     UIDraggable.ShouldBlockInput = false;
                 });
@@ -284,22 +284,36 @@ public class UIHand : MonoBehaviour
         return cardsInHand;
     }
 
+    public void SetHandVisible(bool inIsVisible)
+    {
+        var flipState = inIsVisible ? ECardFlipState.Front : ECardFlipState.Back;
+
+        foreach (var cell in this.CardCells)
+        {
+            foreach (var card in cell.Cards)
+                card.CardFlip.SetAnimState(flipState);
+        }
+    }
+
     public void RefreshPlayerHandText()
     {
         if (this.promptText == null) return;
 
-        bool isPlayerTurn = GameManager.IN.TurnPhase == ETurnPhase.PlayerDraw || GameManager.IN.TurnPhase == ETurnPhase.PlayerPlaying;
+        bool isDrawPhase = GameManager.IN.TurnPhase == ETurnPhase.PlayerDraw || (GameManager.IN.IsPassAndPlay && GameManager.IN.TurnPhase == ETurnPhase.OpponentDraw);
+        bool isPlayingPhase = GameManager.IN.TurnPhase == ETurnPhase.PlayerPlaying || (GameManager.IN.IsPassAndPlay && GameManager.IN.TurnPhase == ETurnPhase.OpponentPlaying);
+        bool isCurrentHand = this == GameManager.IN.PlayerInputBoard.Hand;
 
-        bool shouldShow = this.NumCardsInHand == 0 && isPlayerTurn && SettingsManager.IN.DiscardMode != EDiscardMode.DiscardEndsTurn && !GameManager.IN.PlayerBoard.IsAutoPlay &&
-            !(GameManager.IN.TurnPhase == ETurnPhase.PlayerDraw && SettingsManager.IN.ShouldAutoDealHand);
+        bool shouldShow = this.NumCardsInHand == 0 && isCurrentHand && GameManager.IN.IsPlayersTurn && (isDrawPhase || isPlayingPhase)
+            && SettingsManager.IN.DiscardMode != EDiscardMode.DiscardEndsTurn && !GameManager.IN.IsCurrentSeatControlledByAI
+            && !(isDrawPhase && SettingsManager.IN.ShouldAutoDealHand);
 
         this.promptText.gameObject.SetActive(shouldShow);
 
         if (shouldShow)
         {
-            if (GameManager.IN.TurnPhase == ETurnPhase.PlayerDraw)
+            if (isDrawPhase)
                 this.promptText.text = LOC.IN.ClickButtonToDrawCards[LOC.LI];// "Click Button\n To Draw Cards";
-            else if (GameManager.IN.TurnPhase == ETurnPhase.PlayerPlaying)
+            else if (isPlayingPhase)
                 this.promptText.text = LOC.IN.ClickButtonToEndTurn[LOC.LI];// "Click Button\n To End Turn";
         }
     }
