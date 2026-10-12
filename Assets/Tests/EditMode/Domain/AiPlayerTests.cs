@@ -138,6 +138,21 @@ namespace Elemento.Tests.Domain
             Assert.That(move.TargetZoneId, Is.EqualTo(0));
         }
 
+        [Test]
+        public void StrongAi_WholeTurnPlanChoosesSynergyOverBestImmediateMove()
+        {
+            var view = CreateWholeTurnPlanningView();
+            LegacyAiPlayer b2 = new StrongAiPlayer();
+            IAiPlayer ai = new StrongAiPlayer();
+
+            var immediateMove = b2.ChooseMove(view, new DeterministicRandom(17));
+            var plannedMove = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(immediateMove.CardId, Is.EqualTo("earth-points"));
+            Assert.That(plannedMove.CardId, Is.EqualTo("air-points"));
+            Assert.That(plannedMove.TargetZoneId, Is.EqualTo(0));
+        }
+
         private static PlayerViewData CreateRankedPointView()
         {
             var view = new PlayerViewData
@@ -334,6 +349,95 @@ namespace Elemento.Tests.Domain
                 PlayerId = 0,
                 Type = EMoveType.PlayCard,
                 CardId = "point-15",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 1
+            });
+            return view;
+        }
+
+        private static PlayerViewData CreateWholeTurnPlanningView()
+        {
+            var view = new PlayerViewData
+            {
+                CurrentPlayerId = 0,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                MovesRemaining = 2,
+                Rules = new RulesConfigData
+                {
+                    MovesPerTurn = 2,
+                    TotalPointsRequiredToWin = 1000,
+                    ElementZonePointsRequiredToActivate = 100
+                },
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            var airZone = new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Air,
+                Health = 5,
+                MaxHealth = 5,
+                Points = 3,
+                FaceUpPoints = 3
+            };
+            airZone.Cards.Add(new CardInstanceData
+            {
+                Id = "existing-air-points",
+                IsFaceUp = true,
+                Points = new[] { 3, 0, 0, 0 }
+            });
+            view.Player.Zones.Add(airZone);
+            view.Player.Zones.Add(new ZoneStateData
+            {
+                Id = 1,
+                ElementType = EElementType.Earth,
+                Health = 5,
+                MaxHealth = 5
+            });
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "multiplier",
+                IsFaceUp = true,
+                Multipliers = new[] { 2, 0, 0, 0 }
+            });
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "air-points",
+                IsFaceUp = true,
+                Points = new[] { 8, 0, 0, 0 }
+            });
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "earth-points",
+                IsFaceUp = true,
+                Points = new[] { 0, 10, 0, 0 }
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "multiplier-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "multiplier",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "air-points-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "air-points",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "earth-points-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "earth-points",
                 SourceZoneId = -1,
                 TargetPlayerId = 0,
                 TargetZoneId = 1

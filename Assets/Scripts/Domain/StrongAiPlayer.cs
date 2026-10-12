@@ -10,12 +10,38 @@ namespace Elemento.Domain
         public float Temperature;
     }
 
-    public sealed class StrongAiPlayer : LegacyAiPlayer
+    public sealed class StrongAiPlayer : LegacyAiPlayer, IAiPlayer
     {
         private const float zoneKillBonus = 5f;
         private const float multiplierStripBonus = 3f;
         private const float mediumTemperature = 1f;
         private const float easyTemperature = 2f;
+        private const float reorderPenalty = .35f;
+        private const float b2MoveBonus = 20f;
+        private const float winningPlanBonus = 10000f;
+        private const int maxPlanDepth = 3;
+        private const int beamWidth = 6;
+        private const int candidateWidth = 7;
+        private const int maxReorderMoves = 3;
+
+        private sealed class PlanNode
+        {
+            public GameStateData State;
+            public MoveData FirstMove;
+            public int MovesRemaining;
+            public int ReorderMoves;
+            public float Value;
+            public bool FirstMoveIsB2;
+        }
+
+        private sealed class PlanCandidate
+        {
+            public MoveData Move;
+            public GameStateData State;
+            public bool IsReorder;
+            public float PruneValue;
+            public float Value;
+        }
 
         private readonly bool useEffectBasedBombScoring;
         private readonly float temperature;
@@ -37,6 +63,411 @@ namespace Elemento.Domain
 
             this.useEffectBasedBombScoring = inOptions.UseEffectBasedBombScoring;
             this.temperature = ResolveTemperature(inOptions);
+        }
+
+        public new MoveData ChooseMove(PlayerViewData inView, IRandom inRandom)
+        {
+            var b2Move = base.ChooseMove(inView, inRandom);
+            if (b2Move == null || !this.useEffectBasedBombScoring || this.temperature > 0f)
+                return b2Move;
+
+            var plannedMove = ChoosePlannedMove(inView, b2Move);
+            return plannedMove ?? b2Move;
+        }
+
+        private MoveData ChoosePlannedMove(PlayerViewData inView, MoveData inB2Move)
+        {
+            var simulator = new GameSimulator();
+            var state = CreatePlanningState(inView);
+            var b2StateMove = FindMatchingMove(simulator.GetLegalMoves(state, inView.Player.Id), inB2Move);
+            if (b2StateMove != null)
+            {
+                var b2State = state.Clone();
+                simulator.ApplyMove(b2State, b2StateMove);
+                if (b2State.WinnerPlayerId == inView.Player.Id)
+                    return inB2Move.Clone();
+            }
+
+            int movesRemaining = inView.Rules.MovesPerTurn > 0
+                ? Math.Max(0, inView.MovesRemaining)
+                : maxPlanDepth;
+            var root = new PlanNode
+            {
+                State = state,
+                MovesRemaining = movesRemaining,
+                Value = EvaluateEndOfTurn(inView, state, 0)
+            };
+            var frontier = new List<PlanNode> { root };
+            PlanNode best = null;
+
+            for (int depth = 0; depth < maxPlanDepth && frontier.Count > 0; ++depth)
+            {
+                var next = new List<PlanNode>();
+                foreach (var node in frontier)
+                {
+                    var candidates = GetPlanCandidates(inView, simulator, node);
+                    int count = Math.Min(beamWidth, candidates.Count);
+                    for (int i = 0; i < count; ++i)
+                    {
+                        var candidate = candidates[i];
+                        var firstMove = node.FirstMove;
+                        if (firstMove == null)
+                            firstMove = FindMatchingMove(inView.LegalMoves, candidate.Move);
+                        if (firstMove == null)
+                            continue;
+
+                        int reorderMoves = node.ReorderMoves + (candidate.IsReorder ? 1 : 0);
+                        var child = new PlanNode
+                        {
+                            State = candidate.State,
+                            FirstMove = firstMove,
+                            MovesRemaining = node.MovesRemaining
+                                - (candidate.Move.Type == EMoveType.PlayCard ? 1 : 0),
+                            ReorderMoves = reorderMoves,
+                            Value = candidate.Value,
+                            FirstMoveIsB2 = node.FirstMove == null
+                                ? MovesMatch(firstMove, inB2Move)
+                                : node.FirstMoveIsB2
+                        };
+                        next.Add(child);
+                        if (best == null || child.Value > best.Value
+                            || (child.Value == best.Value && child.FirstMoveIsB2 && !best.FirstMoveIsB2))
+                            best = child;
+                    }
+                }
+
+                next.Sort(ComparePlanNodes);
+                if (next.Count > beamWidth)
+                    next.RemoveRange(beamWidth, next.Count - beamWidth);
+                frontier = next;
+            }
+
+            return best == null ? null : best.FirstMove.Clone();
+        }
+
+        private static int ComparePlanNodes(PlanNode inLeft, PlanNode inRight)
+        {
+            int valueComparison = inRight.Value.CompareTo(inLeft.Value);
+            if (valueComparison != 0)
+                return valueComparison;
+            return inRight.FirstMoveIsB2.CompareTo(inLeft.FirstMoveIsB2);
+        }
+
+        private List<PlanCandidate> GetPlanCandidates(PlayerViewData inSourceView,
+            GameSimulator inSimulator, PlanNode inNode)
+        {
+            var planningView = CreatePlanningView(inSourceView, inNode.State, inNode.MovesRemaining);
+            var legalMoves = inSimulator.GetLegalMoves(inNode.State, inSourceView.Player.Id);
+            var prunedMoves = new List<PlanCandidate>();
+            foreach (var move in legalMoves)
+            {
+                if (move.Type == EMoveType.PlayCard && inNode.MovesRemaining <= 0)
+                    continue;
+                if (move.Type != EMoveType.PlayCard && move.Type != EMoveType.ActivateZone)
+                    continue;
+                if (move.Type == EMoveType.ActivateZone && move.PowerCardType == EPowerCardType.None)
+                    continue;
+
+                bool isReorder = move.Type == EMoveType.PlayCard && move.SourceZoneId >= 0;
+                if (isReorder && inNode.ReorderMoves >= maxReorderMoves)
+                    continue;
+                if (inNode.FirstMove == null && FindMatchingMove(inSourceView.LegalMoves, move) == null)
+                    continue;
+
+                prunedMoves.Add(new PlanCandidate
+                {
+                    Move = move,
+                    IsReorder = isReorder,
+                    PruneValue = GetB2PruneValue(planningView, move)
+                });
+            }
+
+            planningView.LegalMoves.Clear();
+            foreach (var candidate in prunedMoves)
+                planningView.LegalMoves.Add(candidate.Move.Clone());
+            var b2Move = base.ChooseMove(planningView, new DeterministicRandom(1));
+            foreach (var candidate in prunedMoves)
+            {
+                if (b2Move != null && MovesMatch(candidate.Move, b2Move))
+                    candidate.PruneValue += b2MoveBonus;
+            }
+            prunedMoves.Sort((inLeft, inRight) => inRight.PruneValue.CompareTo(inLeft.PruneValue));
+
+            var candidates = new List<PlanCandidate>();
+            int count = Math.Min(candidateWidth, prunedMoves.Count);
+            for (int i = 0; i < count; ++i)
+            {
+                var candidate = prunedMoves[i];
+                candidate.State = inNode.State.Clone();
+                inSimulator.ApplyMove(candidate.State, candidate.Move);
+                int reorderMoves = inNode.ReorderMoves + (candidate.IsReorder ? 1 : 0);
+                candidate.Value = EvaluateEndOfTurn(inSourceView, candidate.State, reorderMoves);
+                candidate.PruneValue += candidate.Value - inNode.Value;
+                candidates.Add(candidate);
+            }
+            candidates.Sort((inLeft, inRight) => inRight.PruneValue.CompareTo(inLeft.PruneValue));
+            return candidates;
+        }
+
+        private static float GetB2PruneValue(PlayerViewData inView, MoveData inMove)
+        {
+            if (inMove.Type == EMoveType.ActivateZone)
+                return 1f;
+
+            var card = FindSourceCard(inView.Player, inMove);
+            var targetZone = FindTargetZone(inView, inMove.TargetPlayerId, inMove.TargetZoneId);
+            if (card == null || targetZone == null)
+                return inMove.SourceZoneId >= 0 ? -reorderPenalty : 0f;
+
+            float value;
+            bool isOwnBoard = inMove.TargetPlayerId == inView.Player.Id;
+            if (card.IsPowerCard)
+            {
+                ZoneStateData result;
+                if (card.WildZoneHeal > 0)
+                    result = GameRules.ResolveHeal(targetZone, inView.Rules);
+                else if (card.WildFreeze > 0)
+                    result = GameRules.ResolveFreeze(targetZone, inView.Rules);
+                else
+                    result = GameRules.ResolveLightning(targetZone, card, inView.Rules);
+                value = Math.Abs(targetZone.Points - result.Points)
+                    + Math.Abs(targetZone.Health - result.Health)
+                    + Math.Abs(targetZone.FrozenHealth - result.FrozenHealth);
+            }
+            else if (!isOwnBoard)
+            {
+                var result = GameRules.ResolveBomb(targetZone, card, inView.Rules);
+                value = ScoreBombEffect(targetZone, result, GetTotalPoints(inView.Opponents[0].Zones),
+                    inView.Rules.TotalPointsRequiredToWin);
+            }
+            else
+            {
+                var result = targetZone.Clone();
+                var playedCard = card.Clone();
+                playedCard.IsFaceUp = true;
+                result.Cards.Add(playedCard);
+                result.Points = GameRules.CalculateZonePoints(result);
+                value = Math.Max(0, result.Points - targetZone.Points);
+                int elementIndex = (int)targetZone.ElementType - 1;
+                value += Math.Max(GetValue(card.Multipliers, elementIndex), card.WildMultiplier);
+                value += .5f * Math.Max(GetValue(card.Shields, elementIndex), card.WildShield);
+            }
+
+            if (inMove.SourceZoneId >= 0)
+                value -= reorderPenalty;
+            return value;
+        }
+
+        private static CardInstanceData FindSourceCard(PlayerStateData inPlayer, MoveData inMove)
+        {
+            if (inMove.SourceZoneId < 0)
+            {
+                foreach (var card in inPlayer.Hand)
+                {
+                    if (card.Id == inMove.CardId)
+                        return card;
+                }
+                return null;
+            }
+
+            foreach (var zone in inPlayer.Zones)
+            {
+                if (zone.Id == inMove.SourceZoneId && zone.Cards.Count > 0)
+                    return zone.Cards[zone.Cards.Count - 1];
+            }
+            return null;
+        }
+
+        private static ZoneStateData FindTargetZone(PlayerViewData inView, int inPlayerId, int inZoneId)
+        {
+            if (inZoneId < 0)
+                return null;
+            if (inPlayerId == inView.Player.Id)
+                return FindZone(inView.Player.Zones, inZoneId);
+            foreach (var opponent in inView.Opponents)
+            {
+                if (opponent.Id == inPlayerId)
+                    return FindZone(opponent.Zones, inZoneId);
+            }
+            return null;
+        }
+
+        private static ZoneStateData FindZone(List<ZoneStateData> inZones, int inZoneId)
+        {
+            foreach (var zone in inZones)
+            {
+                if (zone.Id == inZoneId)
+                    return zone;
+            }
+            return null;
+        }
+
+        private static GameStateData CreatePlanningState(PlayerViewData inView)
+        {
+            var rules = inView.Rules.Clone();
+            rules.MovesPerTurn = 0;
+            var state = new GameStateData
+            {
+                MatchId = "strong-ai-plan",
+                Revision = inView.Revision,
+                TurnNumber = inView.TurnNumber,
+                CurrentPlayerId = inView.Player.Id,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                MovesRemaining = maxPlanDepth,
+                WinnerPlayerId = -1,
+                Rules = rules,
+                Random = new RandomStateData { State = 1 },
+                NextCardInstanceId = 1000000
+            };
+
+            state.Players.Add(inView.Player.Clone());
+            foreach (var opponent in inView.Opponents)
+            {
+                var player = new PlayerStateData
+                {
+                    Id = opponent.Id,
+                    Name = opponent.Name
+                };
+                foreach (var zone in opponent.Zones)
+                    player.Zones.Add(zone.Clone());
+                state.Players.Add(player);
+            }
+
+            // Opponent hands and both decks intentionally remain empty: plans use only PlayerViewData.
+            return state;
+        }
+
+        private static PlayerViewData CreatePlanningView(PlayerViewData inSource,
+            GameStateData inState, int inMovesRemaining)
+        {
+            var view = new PlayerViewData
+            {
+                Revision = inState.Revision,
+                TurnNumber = inState.TurnNumber,
+                CurrentPlayerId = inSource.Player.Id,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                MovesRemaining = inMovesRemaining,
+                WinnerPlayerId = -1,
+                WinType = EWinCondition.None,
+                DeckCount = inSource.DeckCount,
+                PowerDeckCount = inSource.PowerDeckCount,
+                Rules = inSource.Rules.Clone(),
+                Player = FindPlayer(inState, inSource.Player.Id).Clone()
+            };
+
+            foreach (var player in inState.Players)
+            {
+                if (player.Id == inSource.Player.Id)
+                    continue;
+
+                var opponent = new OpponentViewData
+                {
+                    Id = player.Id,
+                    Name = player.Name,
+                    HandCount = FindOpponentHandCount(inSource, player.Id)
+                };
+                foreach (var zone in player.Zones)
+                    opponent.Zones.Add(zone.Clone());
+                view.Opponents.Add(opponent);
+            }
+            return view;
+        }
+
+        private static float EvaluateEndOfTurn(PlayerViewData inSourceView,
+            GameStateData inState, int inReorderMoves)
+        {
+            var own = FindPlayer(inState, inSourceView.Player.Id);
+            int ownPoints = GetTotalPoints(own.Zones);
+            int opponentPoints = 0;
+            foreach (var player in inState.Players)
+            {
+                if (player.Id != own.Id)
+                    opponentPoints += GetTotalPoints(player.Zones);
+            }
+
+            int winTarget = inSourceView.Rules.TotalPointsRequiredToWin;
+            float proximity = winTarget <= 0 ? 0f : Math.Min(1f, (float)ownPoints / winTarget);
+            float value = ownPoints * (1f + proximity) - opponentPoints;
+            if (winTarget > 0 && ownPoints >= winTarget)
+                value += winningPlanBonus;
+
+            var planningView = CreatePlanningView(inSourceView, inState, 0);
+            value -= GetExpectedExposure(planningView, ownPoints);
+            return value - inReorderMoves * reorderPenalty;
+        }
+
+        private static float GetExpectedExposure(PlayerViewData inView, int inOwnPoints)
+        {
+            int opponentHandSize = 0;
+            foreach (var opponent in inView.Opponents)
+                opponentHandSize += opponent.HandCount;
+
+            float exposure = 0f;
+            foreach (var zone in inView.Player.Zones)
+            {
+                CardDefinitionData strongestBomb;
+                int unseenCount;
+                int threateningCount;
+                GetUnseenBombThreat(inView, zone, out strongestBomb, out unseenCount, out threateningCount);
+                if (strongestBomb == null)
+                    continue;
+
+                double probability = ProbabilityOfAtLeastOne(unseenCount, threateningCount,
+                    opponentHandSize);
+                var bombedZone = GameRules.ResolveBomb(zone, strongestBomb.CreateCard(), inView.Rules);
+                exposure += (float)probability * ScoreBombEffect(zone, bombedZone, inOwnPoints,
+                    inView.Rules.TotalPointsRequiredToWin);
+            }
+            return exposure;
+        }
+
+        private static int GetTotalPoints(List<ZoneStateData> inZones)
+        {
+            int points = 0;
+            foreach (var zone in inZones)
+                points += zone.Points;
+            return points;
+        }
+
+        private static PlayerStateData FindPlayer(GameStateData inState, int inPlayerId)
+        {
+            foreach (var player in inState.Players)
+            {
+                if (player.Id == inPlayerId)
+                    return player;
+            }
+            throw new InvalidOperationException("The planning player no longer exists.");
+        }
+
+        private static int FindOpponentHandCount(PlayerViewData inView, int inPlayerId)
+        {
+            foreach (var opponent in inView.Opponents)
+            {
+                if (opponent.Id == inPlayerId)
+                    return opponent.HandCount;
+            }
+            return 0;
+        }
+
+        private static MoveData FindMatchingMove(List<MoveData> inMoves, MoveData inMove)
+        {
+            foreach (var move in inMoves)
+            {
+                if (MovesMatch(move, inMove))
+                    return move;
+            }
+            return null;
+        }
+
+        private static bool MovesMatch(MoveData inFirst, MoveData inSecond)
+        {
+            return inFirst.PlayerId == inSecond.PlayerId
+                && inFirst.Type == inSecond.Type
+                && inFirst.CardId == inSecond.CardId
+                && inFirst.SourceZoneId == inSecond.SourceZoneId
+                && inFirst.TargetPlayerId == inSecond.TargetPlayerId
+                && inFirst.TargetZoneId == inSecond.TargetZoneId
+                && inFirst.PowerCardType == inSecond.PowerCardType;
         }
 
         protected override bool TryGetPointPlayValue(PlayerViewData inView, CardInstanceData inCard,
