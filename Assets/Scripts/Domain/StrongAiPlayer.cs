@@ -19,7 +19,6 @@ namespace Elemento.Domain
         private const float reorderPenalty = .35f;
         private const float b2MoveBonus = 20f;
         private const float winningPlanBonus = 10000f;
-        private const float antiStallProgressPerTurn = .05f;
         private const int maxPlanDepth = 3;
         private const int beamWidth = 6;
         private const int candidateWidth = 7;
@@ -76,7 +75,15 @@ namespace Elemento.Domain
                 return b2Move;
 
             var plannedMove = ChoosePlannedMove(inView, b2Move);
-            return plannedMove ?? b2Move;
+            if (plannedMove != null)
+                return plannedMove;
+            if (inView.TurnNumber >= antiStallTurn && b2Move.Type == EMoveType.EndTurn)
+            {
+                var discard = FindHandDiscard(inView);
+                if (discard != null)
+                    return discard;
+            }
+            return b2Move;
         }
 
         private MoveData ChoosePlannedMove(PlayerViewData inView, MoveData inB2Move)
@@ -431,10 +438,6 @@ namespace Elemento.Domain
             float value = ownPoints * (1f + proximity) - opponentPoints;
             if (winTarget > 0 && ownPoints >= winTarget)
                 value += winningPlanBonus;
-            if (inSourceView.TurnNumber >= antiStallTurn)
-                value += ownPoints * (inSourceView.TurnNumber - antiStallTurn + 1)
-                    * antiStallProgressPerTurn;
-
             var planningView = CreatePlanningView(inSourceView, inState, 0);
             value -= GetExpectedExposure(planningView, ownPoints);
             return value - inReorderMoves * reorderPenalty;
@@ -499,6 +502,16 @@ namespace Elemento.Domain
             {
                 if (MovesMatch(move, inMove))
                     return move;
+            }
+            return null;
+        }
+
+        private static MoveData FindHandDiscard(PlayerViewData inView)
+        {
+            foreach (var move in inView.LegalMoves)
+            {
+                if (move.Type == EMoveType.DiscardCard && move.SourceZoneId < 0)
+                    return move.Clone();
             }
             return null;
         }

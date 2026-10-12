@@ -182,6 +182,21 @@ namespace Elemento.Tests.Domain
             var move = ai.ChooseMove(view, new DeterministicRandom(17));
 
             Assert.That(move.CardId, Is.EqualTo("multiplier"));
+
+            view.Player.Hand.RemoveAt(0);
+            view.LegalMoves.RemoveAt(0);
+            view.Player.Zones[0].Cards.Add(new CardInstanceData
+            {
+                Id = "multiplier",
+                IsFaceUp = true,
+                Multipliers = new[] { 2, 0, 0, 0 }
+            });
+            view.Player.Zones[0].Points = 6;
+            view.Player.Zones[0].FaceUpPoints = 6;
+
+            move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo("air-points"));
         }
 
         [Test]
@@ -250,6 +265,44 @@ namespace Elemento.Tests.Domain
             var move = ai.ChooseMove(view, new DeterministicRandom(17));
 
             Assert.That(move.Type, Is.EqualTo(EMoveType.EndTurn));
+        }
+
+        [Test]
+        public void StrongAi_LateTurnDiscardsLockedHandInsteadOfEndingTurn()
+        {
+            var view = new PlayerViewData
+            {
+                TurnNumber = 100,
+                CurrentPlayerId = 0,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                MovesRemaining = 99,
+                Rules = new RulesConfigData(),
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            view.Player.Hand.Add(new CardInstanceData { Id = "locked-card", IsFaceUp = true });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "discard",
+                PlayerId = 0,
+                Type = EMoveType.DiscardCard,
+                CardId = "locked-card",
+                SourceZoneId = -1
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "end-turn",
+                PlayerId = 0,
+                Type = EMoveType.EndTurn,
+                SourceZoneId = -1,
+                TargetPlayerId = -1,
+                TargetZoneId = -1
+            });
+            IAiPlayer ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.Type, Is.EqualTo(EMoveType.DiscardCard));
+            Assert.That(move.CardId, Is.EqualTo("locked-card"));
         }
 
         private static PlayerViewData CreateRankedPointView()
