@@ -84,6 +84,22 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_ThreeDamageBombBeatsTwoPointPlay()
+        {
+            var view = CreateBombDecisionView();
+            view.Player.Hand[0].Points[0] = 2;
+            view.Opponents[0].Zones[0].Health = 5;
+            view.Opponents[0].Zones[0].MaxHealth = 5;
+            view.Player.Hand[1].WildBomb = 3;
+            var ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo("bomb"));
+            Assert.That(move.TargetPlayerId, Is.EqualTo(1));
+        }
+
+        [Test]
         public void StrongAi_HiddenCardOrderDoesNotChangeDeterministicChoice()
         {
             var simulator = new GameSimulator();
@@ -101,6 +117,25 @@ namespace Elemento.Tests.Domain
             Assert.That(originalMove, Is.Not.Null);
             Assert.That(reorderedMove, Is.Not.Null);
             Assert.That(reorderedMove.Id, Is.EqualTo(originalMove.Id));
+        }
+
+        [Test]
+        public void StrongAi_EmergencyShieldProtectsExposedMultipliedZone()
+        {
+            var view = CreateEmergencyShieldView();
+            var withoutEmergencyShield = new StrongAiPlayer(new StrongAiOptions
+            {
+                UseEffectBasedBombScoring = false
+            });
+            var ai = new StrongAiPlayer();
+
+            var ordinaryMove = withoutEmergencyShield.ChooseMove(view, new DeterministicRandom(17));
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(ordinaryMove.CardId, Is.EqualTo("point-15"));
+            Assert.That(move.CardId, Is.EqualTo("shield"));
+            Assert.That(move.TargetPlayerId, Is.EqualTo(0));
+            Assert.That(move.TargetZoneId, Is.EqualTo(0));
         }
 
         private static PlayerViewData CreateRankedPointView()
@@ -219,6 +254,89 @@ namespace Elemento.Tests.Domain
                 SourceZoneId = -1,
                 TargetPlayerId = 1,
                 TargetZoneId = 0
+            });
+            return view;
+        }
+
+        private static PlayerViewData CreateEmergencyShieldView()
+        {
+            var view = new PlayerViewData
+            {
+                CurrentPlayerId = 0,
+                MovesRemaining = 2,
+                Rules = new RulesConfigData
+                {
+                    ElementZoneStartingHealth = 5,
+                    ElementZonePointsRequiredToActivate = 10,
+                    TotalPointsRequiredToWin = 100
+                },
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            var zone = new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Air,
+                Health = 5,
+                MaxHealth = 5,
+                Points = 20,
+                FaceUpPoints = 20
+            };
+            zone.Cards.Add(new CardInstanceData
+            {
+                Id = "zone-points",
+                DefinitionId = 4,
+                IsFaceUp = true,
+                Points = new[] { 10, 0, 0, 0 }
+            });
+            zone.Cards.Add(new CardInstanceData
+            {
+                Id = "zone-multiplier",
+                DefinitionId = 20,
+                IsFaceUp = true,
+                Multipliers = new[] { 2, 0, 0, 0 }
+            });
+            view.Player.Zones.Add(zone);
+            view.Player.Zones.Add(new ZoneStateData
+            {
+                Id = 1,
+                ElementType = EElementType.Earth,
+                Health = 5,
+                MaxHealth = 5
+            });
+            view.Opponents.Add(new OpponentViewData { Id = 1, Name = "Opponent", HandCount = 10 });
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "shield",
+                DefinitionId = 215,
+                DefinitionName = "Shield",
+                WildShield = 1
+            });
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "point-15",
+                DefinitionId = 5,
+                DefinitionName = "Point 15",
+                Points = new[] { 0, 15, 0, 0 }
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "shield-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "shield",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "point-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "point-15",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 1
             });
             return view;
         }

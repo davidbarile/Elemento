@@ -215,7 +215,7 @@ namespace Elemento.Domain
                     >= inView.Rules.TotalPointsRequiredToWin;
                 float pointPlayValue = 0f;
                 bool hasPointPlayValue = !moveWillWin
-                    && TryGetPointPlayValue(inCard, inZone, out pointPlayValue);
+                    && TryGetPointPlayValue(inView, inCard, inZone, inOwn, out pointPlayValue);
                 if (hasPointPlayValue)
                 {
                     AddCandidate(inCandidates, inMove, pointPlayValue, ref inOrder);
@@ -347,7 +347,11 @@ namespace Elemento.Domain
                     shieldModifier += 3 - inNumMovesRemaining;
             }
 
-            AddCandidate(inCandidates, inMove, maxShield * shieldModifier, ref inOrder);
+            float shieldPlayValue = maxShield * shieldModifier;
+            float emergencyShieldValue;
+            if (TryGetShieldPlayValue(inView, inCard, inZone, inOwn, out emergencyShieldValue))
+                shieldPlayValue = Math.Max(shieldPlayValue, emergencyShieldValue);
+            AddCandidate(inCandidates, inMove, shieldPlayValue, ref inOrder);
         }
 
         private static float ScorePowerCard(CardInstanceData inCard, ZoneStateData inZone,
@@ -386,8 +390,15 @@ namespace Elemento.Domain
             return value;
         }
 
-        protected virtual bool TryGetPointPlayValue(CardInstanceData inCard, ZoneStateData inZone,
-            out float outValue)
+        protected virtual bool TryGetPointPlayValue(PlayerViewData inView, CardInstanceData inCard,
+            ZoneStateData inZone, BoardAnalysis inOwn, out float outValue)
+        {
+            outValue = 0f;
+            return false;
+        }
+
+        protected virtual bool TryGetShieldPlayValue(PlayerViewData inView, CardInstanceData inCard,
+            ZoneStateData inZone, BoardAnalysis inOwn, out float outValue)
         {
             outValue = 0f;
             return false;
