@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using DG.Tweening;
 using DomainGameRules = Elemento.Domain.GameRules;
 using DomainRulesConfigData = Elemento.Domain.RulesConfigData;
+using DomainTurnRules = Elemento.Domain.TurnRules;
 using Sirenix.OdinInspector;
 using TMPro;
 using UnityEngine;
@@ -20,7 +21,7 @@ public class GameManager : MonoBehaviour
     public static bool IsDealingHand;
     public static bool IsDoingActivateSequence;
     public static bool IsDoingReplay;
-    public static bool ShouldBlockInput => IsDealingHand || IsDoingActivateSequence || IsDoingReplay;
+    public static bool ShouldBlockInput => IsDealingHand || IsDoingActivateSequence || IsDoingReplay || (IN != null && IN.isHandoffPending);
 
     private readonly string ANIM_STATE = "state";
 
@@ -103,16 +104,28 @@ public class GameManager : MonoBehaviour
     public GameObject HealParticlePrefab;
 
     private int currentPlayerIndex = 0;
+    private int previousPlayerIndex = -1;
     public UIPlayerBoard CurrentPlayerBoard => this.PlayerBoards[this.currentPlayerIndex];
+    public UIPlayerBoard PlayerInputBoard => this.IsPassAndPlay ? this.CurrentPlayerBoard : this.PlayerBoard;
     public EPlayerType CurrentPlayer => (EPlayerType)this.currentPlayerIndex + 1;
-    public bool IsPlayersTurn => this.currentPlayerIndex == 0;
+    public bool IsPlayersTurn => this.gameSession == null ? this.currentPlayerIndex == 0 : (this.gameSession.IsHumanSeat(this.currentPlayerIndex) && !this.isHandoffPending);
+    public bool IsPassAndPlay => this.gameSession != null && this.gameSession.GameMode == Elemento.Domain.EGameMode.PassAndPlay;
+    public bool IsCurrentSeatControlledByAI => !this.IsPassAndPlay && ((this.gameSession != null && this.gameSession.ShouldRunAI(this.currentPlayerIndex)) || this.CurrentPlayerBoard.IsAutoPlay);
+
+    public bool CanControlPlayer(EPlayerType inPlayerType)
+    {
+        return this.IsPlayersTurn && (!this.IsPassAndPlay || this.CurrentPlayer == inPlayerType);
+    }
 
     public float GameSpeed => this.gameSpeed;
     private float gameSpeed = 1;
     private bool isGameManagerInitialized;
     private bool isGameInitialized;
     private bool isDoingCleanup;
+    private bool isHandoffPending;
     private int cachedRandomSeed = -1;
+    private IGameSession gameSession;
+    private UISeatHandoffPanel handoffPanel;
 
     private BoardState lastCreatedBoardState;
 
@@ -138,6 +151,9 @@ public class GameManager : MonoBehaviour
 
         SaveManager.IN.LoadGame();
 
+        this.handoffPanel = UISeatHandoffPanel.Create(this.mainCanvas);
+        ConfigureSession();
+
         UISplashScreen.IN.SetVisible(PlayerData.Data.ShouldShowSplashScreen);
         UIGameBoard.IN.SetVisible(!PlayerData.Data.ShouldShowSplashScreen);
 
@@ -160,6 +176,10 @@ public class GameManager : MonoBehaviour
 
     public void RestartGame()
     {
+        ConfigureSession();
+        this.handoffPanel.Hide();
+        this.isHandoffPending = false;
+
         if (this.cachedRandomSeed == -1)
             this.cachedRandomSeed = this.randomSeed;
 
@@ -178,6 +198,7 @@ public class GameManager : MonoBehaviour
         GameManager.IsDoingReplay = false;
 
         this.currentPlayerIndex = 0;
+        this.previousPlayerIndex = -1;
         this.CurrentTurnNumber = 0;
 
         ResetMovesRemaining();
@@ -293,7 +314,7 @@ public class GameManager : MonoBehaviour
 
     private void DealCards()
     {
-        int numCardsInHand = this.PlayerBoard.Hand.NumCardsInHand;
+        int numCardsInHand = this.CurrentPlayerBoard.Hand.NumCardsInHand;
 
         if (numCardsInHand >= SettingsManager.IN.MaxCardsInHand)
         {
@@ -305,10 +326,10 @@ public class GameManager : MonoBehaviour
 
         RefreshTurnAndMoveCountDisplay();
 
-        if (this.PlayerBoard.IsAutoPlay)
+        if (this.IsCurrentSeatControlledByAI)
             StartCoroutine(OpponentsTurnCo(true));
         else
-            StartCoroutine(DealCardsCo(SettingsManager.IN.NumCardsToDeal, this.PlayerBoard.Hand.transform));
+            StartCoroutine(DealCardsCo(SettingsManager.IN.NumCardsToDeal, this.CurrentPlayerBoard.Hand.transform));
     }
 
     //called by End Turn Button
@@ -602,9 +623,8 @@ public class GameManager : MonoBehaviour
 
     private void SelectNextPlayer()
     {
-        ++this.currentPlayerIndex;
-
-        this.currentPlayerIndex %= this.PlayerBoards.Length;
+        this.previousPlayerIndex = this.currentPlayerIndex;
+        this.currentPlayerIndex = DomainTurnRules.GetNextPlayerIndex(this.currentPlayerIndex, this.PlayerBoards.Length);
 
         var nextTurnPhase = this.currentPlayerIndex == 0 ? ETurnPhase.PlayerDraw : ETurnPhase.OpponentDraw;
 
@@ -638,10 +658,8 @@ public class GameManager : MonoBehaviour
                 ResetMovesRemaining();
                 IncrementTurn();
 
-                if (SettingsManager.IN.ShouldAutoDealHand)
-                    DealCards();
-                else
-                    this.beginTurnButton.SetActive(true);
+                if (!TryShowPassAndPlayHandoff())
+                    BeginHumanDrawPhase();
 
                 break;
 
@@ -649,7 +667,7 @@ public class GameManager : MonoBehaviour
 
                 MeltFrozenZones();
 
-                if (this.PlayerBoard.IsAutoPlay)
+                if (this.IsCurrentSeatControlledByAI)
                 {
                     StopAllCoroutines();
                     StartCoroutine(OpponentsTurnCo(true, false));
@@ -668,27 +686,94 @@ public class GameManager : MonoBehaviour
                 ResetMovesRemaining();
                 this.PlayerBoard.Hand.RefreshPlayerHandText();
                 this.CurrentPlayerBoard.CurrentMoveNumber = 0;
-                this.speedUpOpponentTurnButton.SetActive(true);
-                StartCoroutine(OpponentsTurnCo());
+
+                if (this.gameSession.ShouldRunAI(this.currentPlayerIndex))
+                {
+                    this.speedUpOpponentTurnButton.SetActive(true);
+                    StartCoroutine(OpponentsTurnCo());
+                }
+                else if (!TryShowPassAndPlayHandoff())
+                {
+                    BeginHumanDrawPhase();
+                }
                 break;
 
             case ETurnPhase.OpponentPlaying:
 
-                this.speedUpOpponentTurnButton.SetActive(true);
+                if (this.IsPassAndPlay)
+                {
+                    MeltFrozenZones();
+                    SetMovesRemaining(SettingsManager.IN.TutorialSafeMovesPerTurn);
+                    this.endTurnButton.SetActive(SettingsManager.IN.DiscardMode != EDiscardMode.DiscardEndsTurn);
+                    this.discardToEndTurnZone.SetActive(SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn);
+                    this.CurrentPlayerBoard.Hand.RefreshPlayerHandText();
+                }
+                else
+                {
+                    this.speedUpOpponentTurnButton.SetActive(true);
+                }
                 break;
         }
+    }
 
-        void IncrementTurn()
+    private void ConfigureSession()
+    {
+        this.gameSession = SessionFactory.Create(SettingsManager.IN.PlayMode);
+    }
+
+    private void BeginHumanDrawPhase()
+    {
+        RefreshPassAndPlayHandVisibility();
+        RefreshTurnAndMoveCountDisplay();
+        this.CurrentPlayerBoard.Hand.RefreshPlayerHandText();
+
+        if (SettingsManager.IN.ShouldAutoDealHand)
+            DealCards();
+        else
+            this.beginTurnButton.SetActive(true);
+    }
+
+    private bool TryShowPassAndPlayHandoff()
+    {
+        if (!this.IsPassAndPlay || !this.gameSession.RequiresHandoff(this.previousPlayerIndex, this.currentPlayerIndex))
+            return false;
+
+        this.isHandoffPending = true;
+        RefreshPassAndPlayHandVisibility();
+
+        string message = $"Pass to Player {this.currentPlayerIndex + 1} - tap to continue";
+        this.handoffPanel.Show(message, ContinuePassAndPlayTurn);
+        return true;
+    }
+
+    private void ContinuePassAndPlayTurn()
+    {
+        this.isHandoffPending = false;
+        RefreshPassAndPlayHandVisibility();
+        BeginHumanDrawPhase();
+    }
+
+    private void RefreshPassAndPlayHandVisibility()
+    {
+        if (!this.IsPassAndPlay) return;
+
+        for (int i = 0; i < this.PlayerBoards.Length; i++)
         {
-            ++this.CurrentTurnNumber;
-
-            this.PlayerBoard.CurrentMoveNumber = 0;
-
-            if (this.CurrentTurnNumber > 1)
-                SetReplayButtonVisibility(true);
-
-            this.PlayerBoard.Hand.RefreshPlayerHandText();
+            bool isVisible = this.gameSession.IsHandVisible(i, this.currentPlayerIndex, this.isHandoffPending);
+            this.PlayerBoards[i].Hand.SetHandVisible(isVisible);
         }
+    }
+
+    private void IncrementTurn()
+    {
+        ++this.CurrentTurnNumber;
+
+        this.PlayerBoard.CurrentMoveNumber = 0;
+
+        if (this.CurrentTurnNumber > 1)
+            SetReplayButtonVisibility(true);
+
+        this.PlayerBoard.Hand.RefreshPlayerHandText();
     }
 
     private void MeltFrozenZones()
@@ -1174,7 +1259,7 @@ public class GameManager : MonoBehaviour
 
         if (SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn)
         {
-            if (this.IsPlayersTurn && this.MovesRemaining < 1 && !this.PlayerBoard.IsAutoPlay)
+            if (this.IsPlayersTurn && this.MovesRemaining < 1 && !this.IsCurrentSeatControlledByAI)
                 SetDiscardHighlightsVisible(true);
         }
         else if (this.MovesRemaining < 1 && this.IsPlayersTurn)
@@ -1183,9 +1268,10 @@ public class GameManager : MonoBehaviour
 
     public void TryHighlightDiscardPile()
     {
-        if (this.TurnPhase != ETurnPhase.PlayerPlaying || this.PlayerBoard.IsAutoPlay) return;
+        bool isHumanPlayingPhase = this.TurnPhase == ETurnPhase.PlayerPlaying || (this.IsPassAndPlay && this.TurnPhase == ETurnPhase.OpponentPlaying);
+        if (!isHumanPlayingPhase || this.IsCurrentSeatControlledByAI) return;
 
-        bool isLastCard = this.PlayerBoard.Hand.NumCardsInHand <= 1;
+        bool isLastCard = this.CurrentPlayerBoard.Hand.NumCardsInHand <= 1;
 
         //Debug.Log($"TryHighlightDiscardPile({isLastCard})");
         if (this.IsPlayersTurn)
@@ -1205,6 +1291,8 @@ public class GameManager : MonoBehaviour
     public void OnSettingsChanged()
     {
         //TODO: if settings changes require restart, do it here
+
+        ConfigureSession();
 
         this.DiscardZone.SetActive(SettingsManager.IN.DiscardMode == EDiscardMode.AllowDiscard);
 
