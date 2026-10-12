@@ -29,6 +29,9 @@ public class UISettingsPanel : UIPanelBase
     public bool IsResettingData;
 
     private bool isInitialized;
+    private bool isPlayModeLayoutDone;
+
+    [SerializeField] private float playModeSpacing = 20f;
 
     private void Start()
     {
@@ -90,7 +93,7 @@ public class UISettingsPanel : UIPanelBase
         this.aiDifficultyDropdown.value = (int)SettingsManager.IN.AiDifficulty;
         this.aiDifficultyDropdown.RefreshShownValue();
 
-        this.aiDifficultyDropdown.gameObject.SetActive(SettingsManager.IN.PlayMode == EPlayMode.AgainstAI);
+        RefreshAiDifficultyVisibility();
     }
 
     public void HandleSliderChanged(int inSliderIndex)
@@ -163,11 +166,48 @@ public class UISettingsPanel : UIPanelBase
         this.IsDirty = true;
     }
 
+    private void LayoutPlayModeControls()
+    {
+        if (this.isPlayModeLayoutDone)
+            return;
+
+        var playModeParent = this.playModeDropdown.transform.parent as RectTransform;
+        var aiDifficultyParent = this.aiDifficultyDropdown.transform.parent as RectTransform;
+
+        if (playModeParent == null || aiDifficultyParent == null)
+            return;
+
+        playModeParent.gameObject.SetActive(true);
+        playModeParent.SetParent(aiDifficultyParent.parent, false);
+        playModeParent.anchorMin = aiDifficultyParent.anchorMin;
+        playModeParent.anchorMax = aiDifficultyParent.anchorMax;
+        playModeParent.pivot = aiDifficultyParent.pivot;
+        playModeParent.anchoredPosition = aiDifficultyParent.anchoredPosition;
+
+        var offset = aiDifficultyParent.rect.height + this.playModeSpacing;
+        aiDifficultyParent.anchoredPosition -= new Vector2(0f, offset);
+
+        this.isPlayModeLayoutDone = true;
+    }
+
+    private void RefreshAiDifficultyVisibility()
+    {
+        LayoutPlayModeControls();
+
+        var aiDifficultyParent = this.aiDifficultyDropdown.transform.parent;
+        var isAgainstAi = SettingsManager.IN.PlayMode == EPlayMode.AgainstAI;
+
+        if (aiDifficultyParent != null)
+            aiDifficultyParent.gameObject.SetActive(isAgainstAi);
+        else
+            this.aiDifficultyDropdown.gameObject.SetActive(isAgainstAi);
+    }
+
     public void HandlePlayModeDropdownChange(Int32 inValue)
     {
         SettingsManager.IN.PlayMode = (EPlayMode)inValue;
 
-        this.aiDifficultyDropdown.gameObject.SetActive(SettingsManager.IN.PlayMode == EPlayMode.AgainstAI);
+        RefreshAiDifficultyVisibility();
 
         this.IsDirty = true;
     }
