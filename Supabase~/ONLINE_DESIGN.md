@@ -1,6 +1,8 @@
 # Elemento Online Multiplayer: Protocol and Authority Design (draft)
 
-Status: design + schema drafts only. No Supabase project exists; nothing has been deployed.
+Status: drafts only. Project 'Elemento' exists (ref dgmpxhxsfgfxaidxwmzq, us-west-1, free plan) but no migration has been applied and nothing is configured.
+
+Decided: anonymous sign-in + unique username (profiles.username, citext, 3-20 [A-Za-z0-9_]); optional later identity linking (Apple on iOS, Google on Android, both on desktop/web). Authority: Edge Function with a TS rules port + golden fixtures.
 (`Supabase~` ends in `~` so Unity ignores the folder.)
 
 ## Protocol (Elemento.Domain.Net)

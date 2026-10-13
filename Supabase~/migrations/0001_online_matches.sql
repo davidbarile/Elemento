@@ -10,11 +10,26 @@ create extension if not exists pgcrypto;
 create type public.match_status as enum ('waiting', 'active', 'finished', 'abandoned');
 create type public.match_mode as enum ('live', 'async');
 
+-- Auth: Supabase anonymous sign-in (auth.users.is_anonymous = true) + a chosen username.
+-- Anonymous users can later link Apple (iOS) / Google (Android) / both (desktop/web) via
+-- identity linking; the auth.users id stays the same, so profiles and match history carry over.
+create extension if not exists citext;
+
 create table public.profiles (
     id           uuid primary key references auth.users (id) on delete cascade,
-    display_name text not null default 'Player' check (char_length(display_name) between 1 and 32),
-    created_at   timestamptz not null default now()
+    username     citext not null unique                      -- case-insensitive unique handle
+                 check (username ~ '^[A-Za-z0-9_]{3,20}$'),
+    created_at   timestamptz not null default now(),
+    updated_at   timestamptz not null default now()
 );
+
+-- Cheap availability check for the username picker (does not expose other profile data).
+create or replace function public.is_username_available(p_username text)
+returns boolean language sql stable security definer set search_path = public as $$
+    select p_username ~ '^[A-Za-z0-9_]{3,20}$'
+       and not exists (select 1 from public.profiles where username = p_username::citext);
+$$;
+grant execute on function public.is_username_available(text) to anon, authenticated;
 
 create table public.matches (
     id               uuid primary key default gen_random_uuid(),
@@ -96,11 +111,15 @@ alter table public.match_secrets    enable row level security;   -- no policies 
 alter table public.match_moves      enable row level security;
 alter table public.match_seat_views enable row level security;
 
+-- Anonymous users are role "authenticated" (with is_anonymous claim), so these cover them too.
 create policy profiles_select on public.profiles for select to authenticated using (true);
-create policy profiles_update_own on public.profiles for update to authenticated
-    using (id = auth.uid()) with check (id = auth.uid());
 create policy profiles_insert_own on public.profiles for insert to authenticated
-    with check (id = auth.uid());
+    with check (id = (select auth.uid()));
+create policy profiles_update_own on public.profiles for update to authenticated
+    using (id = (select auth.uid())) with check (id = (select auth.uid()));
+-- Only username/updated_at are client-editable.
+revoke update on public.profiles from authenticated;
+grant update (username, updated_at) on public.profiles to authenticated;
 
 -- Members see their matches; waiting matches are discoverable only via invite code in the join function.
 create policy matches_select_member on public.matches for select to authenticated
