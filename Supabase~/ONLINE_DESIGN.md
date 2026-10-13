@@ -59,3 +59,10 @@ Transport behind an interface (`IMatchTransport`); this step ships an in-memory/
 - Pile point totals (`ZoneStateData.Points`, including face-down cards) are PUBLIC to both players (David, 2026-10-12).
   Face-down card identities are masked to `{Id, IsFaceUp=false}` in opponent views and snapshots.
 - Never sent to clients: seed, deck/reserve order, opponent hand contents (count only).
+
+## TODOs after U2
+- Validate the online board projection, drag/drop, panel prefabs, and reconnect behavior in the Unity Editor; U2 was completed with static review only because Unity was unavailable.
+- Add explicit online game-over presentation from `WinnerPlayerId`/`WinType` instead of relying on local board-side win checks.
+- Drive online-only rule affordances and counters entirely from `PlayerViewData.Rules` (including power-deck/discard presentation) if server match rules can differ from the local settings asset.
+- Add cancellation/lifetime guards for requests that complete after leaving a match, plus a user-facing reconnect/retry state for prolonged network failures.
+- Decide and implement async-turn deadlines, forfeits, and APNs/FCM notifications before shipping async matches.

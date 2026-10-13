@@ -311,7 +311,7 @@ public class CardsManager : MonoBehaviour
         return spawnedCard;
     }
 
-    public static Card SpawnCard(CardData inCardData, Transform inParent, bool inIsFaceDown, bool inIsDraggable = true, bool inShouldSnapToCenter = false)
+    public static Card SpawnCard(CardData inCardData, Transform inParent, bool inIsFaceDown, bool inIsDraggable = true, bool inShouldSnapToCenter = false, string inCardId = null)
     {
         var prefab = Resources.Load($"Card Prefabs/{inCardData.PrefabName}");
 
@@ -320,8 +320,12 @@ public class CardsManager : MonoBehaviour
 
         var card = go.GetComponent<Card>();
 
-        string cardId = CardInstanceData.CreateId(CardsManager.IN.nextCardInstanceId);
-        ++CardsManager.IN.nextCardInstanceId;
+        string cardId = inCardId;
+        if (string.IsNullOrEmpty(cardId))
+        {
+            cardId = CardInstanceData.CreateId(CardsManager.IN.nextCardInstanceId);
+            ++CardsManager.IN.nextCardInstanceId;
+        }
         card.Configure(inCardData, cardId);
 
         card.transform.SetParent(inParent);
@@ -351,6 +355,11 @@ public class CardsManager : MonoBehaviour
         CardsManager.IN.SpawnedCards.Add(card);
 
         return card;
+    }
+
+    public void SetOnlineDeckCount(int inCount)
+    {
+        this.gameDeckText.text = Mathf.Max(0, inCount).ToString();
     }
 
     //call when loading a new deck in editor

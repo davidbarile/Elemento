@@ -3,9 +3,14 @@ using System.Collections;
 using System.Collections.Generic;
 using DG.Tweening;
 using Elemento.Domain.Net;
+using DomainCardInstanceData = Elemento.Domain.CardInstanceData;
 using DomainGameRules = Elemento.Domain.GameRules;
+using DomainMoveData = Elemento.Domain.MoveData;
+using DomainOpponentViewData = Elemento.Domain.OpponentViewData;
+using DomainPlayerStateData = Elemento.Domain.PlayerStateData;
 using DomainRulesConfigData = Elemento.Domain.RulesConfigData;
 using DomainTurnRules = Elemento.Domain.TurnRules;
+using DomainZoneStateData = Elemento.Domain.ZoneStateData;
 using Sirenix.OdinInspector;
 using TMPro;
 using UnityEngine;
@@ -22,7 +27,8 @@ public class GameManager : MonoBehaviour
     public static bool IsDealingHand;
     public static bool IsDoingActivateSequence;
     public static bool IsDoingReplay;
-    public static bool ShouldBlockInput => IsDealingHand || IsDoingActivateSequence || IsDoingReplay || (IN != null && (IN.isHandoffPending || IN.IsOnline));
+    public static bool ShouldBlockInput => IsDealingHand || IsDoingActivateSequence || IsDoingReplay
+        || (IN != null && (IN.isHandoffPending || IN.IsOnlineInputBlocked));
 
     private readonly string ANIM_STATE = "state";
 
@@ -109,14 +115,20 @@ public class GameManager : MonoBehaviour
     public UIPlayerBoard CurrentPlayerBoard => this.PlayerBoards[this.currentPlayerIndex];
     public UIPlayerBoard PlayerInputBoard => this.IsOnline ? this.PlayerBoards[((OnlineSession)this.gameSession).LocalSeat] : this.IsPassAndPlay ? this.CurrentPlayerBoard : this.PlayerBoard;
     public EPlayerType CurrentPlayer => (EPlayerType)this.currentPlayerIndex + 1;
-    public bool IsPlayersTurn => this.gameSession == null ? this.currentPlayerIndex == 0 : (this.gameSession.IsHumanSeat(this.currentPlayerIndex) && !this.isHandoffPending);
+    public bool IsPlayersTurn => this.IsOnline
+        ? this.onlineClient?.CurrentView?.View != null && this.onlineClient.CurrentView.View.CurrentPlayerId == ((OnlineSession)this.gameSession).LocalSeat
+        : this.gameSession == null ? this.currentPlayerIndex == 0 : (this.gameSession.IsHumanSeat(this.currentPlayerIndex) && !this.isHandoffPending);
     public bool IsPassAndPlay => this.gameSession != null && this.gameSession.GameMode == Elemento.Domain.EGameMode.PassAndPlay;
     public bool IsOnline => this.gameSession is OnlineSession;
+    private bool IsOnlineInputBlocked => this.IsOnline && (this.isOnlineMovePending || !this.IsPlayersTurn || !IsHumanPlayingPhase());
     public bool IsCurrentSeatControlledByAI => !this.IsOnline && !this.IsPassAndPlay && ((this.gameSession != null && this.gameSession.ShouldRunAI(this.currentPlayerIndex)) || this.CurrentPlayerBoard.IsAutoPlay);
 
     public bool CanControlPlayer(EPlayerType inPlayerType)
     {
-        return !this.IsOnline && this.IsPlayersTurn && (!this.IsPassAndPlay || this.CurrentPlayer == inPlayerType);
+        if (this.IsOnline)
+            return this.IsPlayersTurn && (int)inPlayerType - 1 == ((OnlineSession)this.gameSession).LocalSeat;
+
+        return this.IsPlayersTurn && (!this.IsPassAndPlay || this.CurrentPlayer == inPlayerType);
     }
 
     public float GameSpeed => this.gameSpeed;
@@ -130,6 +142,7 @@ public class GameManager : MonoBehaviour
     private SeatViewBinder seatViewBinder;
     private UIPlayerBoard[] boardSlots;
     private OnlineMatchClient onlineClient;
+    private bool isOnlineMovePending;
 
     private BoardState lastCreatedBoardState;
 
@@ -355,6 +368,15 @@ public class GameManager : MonoBehaviour
     {
         if (GameManager.ShouldBlockInput || UIDraggable.ShouldBlockInput || UITutorialPanel.IsTutorialMode) return;
         if (!IsHumanPlayingPhase()) return;//ignore stale/double end-turn requests
+
+        if (this.IsOnline)
+        {
+            if (UnityDomainMapper.TryGetOnlineEndTurnMove(this.onlineClient.CurrentView.View, out DomainMoveData move))
+                SubmitOnlineMove(move);
+            else
+                RejectOnlineMove("End turn is not legal in the current server view.");
+            return;
+        }
 
         SelectNextPlayer();
     }
@@ -773,6 +795,7 @@ public class GameManager : MonoBehaviour
             this.onlineClient.ViewChanged -= HandleOnlineViewChanged;
 
         this.onlineClient = null;
+        this.isOnlineMovePending = false;
         UIOnlineLobbyPanel.IN.ReleaseMatch();
         this.gameSession = null;
     }
@@ -790,6 +813,7 @@ public class GameManager : MonoBehaviour
         this.speedUpOpponentTurnButton.SetActive(false);
         SetReplayButtonVisibility(false);
         this.TurnPhase = ETurnPhase.None;
+        this.isOnlineMovePending = false;
 
         if (this.onlineClient.CurrentView != null)
             HandleOnlineViewChanged(this.onlineClient.CurrentView);
@@ -809,13 +833,198 @@ public class GameManager : MonoBehaviour
         this.currentPlayerIndex = inSeatView.View.CurrentPlayerId;
         this.CurrentTurnNumber = inSeatView.View.TurnNumber;
         this.MovesRemaining = inSeatView.View.MovesRemaining;
+        this.TurnPhase = (ETurnPhase)inSeatView.View.TurnPhase;
         ApplyViewingSeat(this.onlineClient.LocalSeat);
+        RenderOnlineView(inSeatView.View);
         RefreshPassAndPlayHandVisibility();
         RefreshTurnAndMoveCountDisplay();
+        RefreshOnlineControls();
+    }
 
-        // TODO U1: Project authoritative cards/zones into Unity boards before enabling online input.
-        // TODO U1: Map Unity's 1-based player/zone IDs and card IDs to the seat view, then SubmitMoveAsync.
-        // shortcut: online sessions display seat/turn metadata only; keep input blocked until projection exists.
+    private void RenderOnlineView(Elemento.Domain.PlayerViewData inView)
+    {
+        CleanUpGameState();
+        this.isDoingCleanup = true;
+        RenderOnlineSeat(inView.Player.Id, inView.Player, null);
+        foreach (var opponent in inView.Opponents)
+            RenderOnlineSeat(opponent.Id, null, opponent);
+        this.isDoingCleanup = false;
+
+        CardsManager.IN.SetOnlineDeckCount(inView.DeckCount);
+        this.Deck.RefreshCellsList();
+    }
+
+    private void RenderOnlineSeat(int inSeat, DomainPlayerStateData inPlayer, DomainOpponentViewData inOpponent)
+    {
+        if (inSeat < 0 || inSeat >= this.PlayerBoards.Length)
+            return;
+
+        var board = this.PlayerBoards[inSeat];
+        board.Hand.RefreshCardCells();
+        if (inPlayer != null)
+        {
+            for (int i = 0; i < inPlayer.Hand.Count && i < board.Hand.CardCells.Count; i++)
+                AddOnlineHandCard(board, i, inPlayer.Hand[i], inSeat == this.onlineClient.LocalSeat);
+            RenderOnlineZones(board, inPlayer.Zones, inSeat == this.onlineClient.LocalSeat);
+        }
+        else if (inOpponent != null)
+        {
+            for (int i = 0; i < inOpponent.HandCount && i < board.Hand.CardCells.Count; i++)
+            {
+                AddOnlineHandCard(board, i, new DomainCardInstanceData
+                {
+                    Id = $"hidden-{inSeat}-{i}",
+                    IsFaceUp = false
+                }, false);
+            }
+            RenderOnlineZones(board, inOpponent.Zones, false);
+        }
+
+        board.CalculateTotalPoints(false, true);
+        board.Hand.RefreshPlayerHandText();
+    }
+
+    private void AddOnlineHandCard(UIPlayerBoard inBoard, int inCellIndex, DomainCardInstanceData inCard, bool inIsDraggable)
+    {
+        var cell = inBoard.Hand.CardCells[inCellIndex];
+        var card = SpawnOnlineCard(inCard, cell.CardHolder, inIsDraggable);
+        if (card == null)
+            return;
+
+        cell.Cards.Clear();
+        cell.AddCardToCell(card);
+        cell.gameObject.SetActive(true);
+    }
+
+    private void RenderOnlineZones(UIPlayerBoard inBoard, List<DomainZoneStateData> inZones, bool inIsDraggable)
+    {
+        foreach (var zoneData in inZones)
+        {
+            if (zoneData.Id < 0 || zoneData.Id >= inBoard.ElementZones.Length)
+                continue;
+
+            var zone = inBoard.ElementZones[zoneData.Id];
+            foreach (var cardData in zoneData.Cards)
+            {
+                var card = SpawnOnlineCard(cardData, zone.CardCell.CardHolder, inIsDraggable);
+                if (card == null)
+                    continue;
+
+                zone.CardCell.AddCardToCell(card);
+                card.SetDimmedDecorations(zone.CardCell.ElementType);
+            }
+
+            zone.Points = zoneData.Points;
+            zone.FaceUpPoints = zoneData.FaceUpPoints;
+            zone.SetMaxHealth(zoneData.MaxHealth);
+            zone.SetZoneHealth(zoneData.Health);
+            zone.SetFrozenHealth(zoneData.FrozenHealth, false);
+            zone.SetActiveState(zoneData.IsActivated && !zoneData.IsDestroyed, false);
+            zone.SetPointsCount(zoneData.Points);
+        }
+    }
+
+    private Card SpawnOnlineCard(DomainCardInstanceData inCard, Transform inParent, bool inIsDraggable)
+    {
+        if (inCard == null)
+            return null;
+
+        CardData cardData = FindOnlineCardData(inCard);
+        if (cardData == null)
+        {
+            Debug.LogWarning($"Online view contains unknown card definition {inCard.DefinitionId}.");
+            return null;
+        }
+
+        return CardsManager.SpawnCard(cardData, inParent, !inCard.IsFaceUp, inIsDraggable, false, inCard.Id);
+    }
+
+    private CardData FindOnlineCardData(DomainCardInstanceData inCard)
+    {
+        var definitions = inCard.IsPowerCard ? CardsManager.IN.SinglePowerCardDatas : CardsManager.IN.AllCardDatas;
+        CardData definition = null;
+        foreach (var cardData in definitions)
+        {
+            if (cardData.Index == inCard.DefinitionId)
+            {
+                definition = cardData;
+                break;
+            }
+        }
+
+        if (definition == null && !inCard.IsFaceUp && CardsManager.IN.AllCardDatas.Count > 0)
+            definition = CardsManager.IN.AllCardDatas[0];
+        if (definition == null)
+            return null;
+
+        var result = CardData.Clone(definition);
+        if (!inCard.IsFaceUp)
+            return result;
+
+        result.Name = string.IsNullOrEmpty(inCard.DefinitionName) ? result.Name : inCard.DefinitionName;
+        result.Index = inCard.DefinitionId;
+        result.IsPowerCard = inCard.IsPowerCard;
+        result.WildPoints = inCard.WildPoints;
+        result.WildMultiplier = inCard.WildMultiplier;
+        result.WildBomb = inCard.WildBomb;
+        result.WildShield = inCard.WildShield;
+        result.WildZoneHeal = inCard.WildZoneHeal;
+        result.WildFreeze = inCard.WildFreeze;
+        result.WildLightning = inCard.WildLightning;
+        result.Points = inCard.Points;
+        result.Multipliers = inCard.Multipliers;
+        result.Bombs = inCard.Bombs;
+        result.Shields = inCard.Shields;
+        return result;
+    }
+
+    private void RefreshOnlineControls()
+    {
+        bool canMove = this.IsPlayersTurn && IsHumanPlayingPhase() && !this.isOnlineMovePending;
+        bool canEndTurn = canMove && UnityDomainMapper.TryGetOnlineEndTurnMove(this.onlineClient.CurrentView.View, out _);
+        this.beginTurnButton.SetActive(false);
+        this.endTurnButton.SetActive(canEndTurn);
+        this.discardToEndTurnZone.SetActive(canMove && SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn);
+        this.DiscardZone.SetActive(canMove && SettingsManager.IN.DiscardMode == EDiscardMode.AllowDiscard);
+    }
+
+    private void SubmitOnlineMove(DomainMoveData inMove)
+    {
+        if (!this.IsOnline || this.isOnlineMovePending)
+            return;
+
+        this.isOnlineMovePending = true;
+        RefreshOnlineControls();
+        _ = this.onlineClient.SubmitMoveAsync(inMove, HandleOnlineMoveCompleted, HandleOnlineMoveFailed);
+    }
+
+    private void HandleOnlineMoveCompleted(MoveResultData inResult)
+    {
+        this.isOnlineMovePending = false;
+        if (!inResult.Accepted)
+        {
+            UIAlertPanel.IN.Show(string.IsNullOrEmpty(inResult.Reason) ? "The server rejected the move." : inResult.Reason);
+            HandleOnlineViewChanged(this.onlineClient.CurrentView);
+            return;
+        }
+
+        RefreshOnlineControls();
+    }
+
+    private void HandleOnlineMoveFailed(Exception inException)
+    {
+        this.isOnlineMovePending = false;
+        UIAlertPanel.IN.Show(inException.Message);
+        _ = this.onlineClient.RefreshAsync(HandleOnlineViewChanged,
+            inError => Debug.LogWarning("Online resync failed: " + inError.Message));
+        RefreshOnlineControls();
+    }
+
+    private void RejectOnlineMove(string inReason)
+    {
+        UIAlertPanel.IN.Show(inReason);
+        if (this.onlineClient.CurrentView != null)
+            HandleOnlineViewChanged(this.onlineClient.CurrentView);
     }
 
     private void OnDestroy()
@@ -1083,6 +1292,17 @@ public class GameManager : MonoBehaviour
     #region Save/Load Board State
     public void SaveBoardState(UICardCell inSourceCell, UICardCell inTargetCell, bool inIsDiscard = false, UIElementZone inActivatedZone = null, bool inIsDealHand = false, ECardType inCardType = ECardType.None, string inCardId = null)
     {
+        if (this.IsOnline)
+        {
+            var unityMove = Move.CreateMove(inSourceCell, inTargetCell, inIsDiscard, inActivatedZone,
+                inIsDealHand, inCardType, (int)this.CurrentPlayer, inCardId);
+            if (UnityDomainMapper.TryCreateOnlineMove(unityMove, this.onlineClient.CurrentView.View, out DomainMoveData move))
+                SubmitOnlineMove(move);
+            else
+                RejectOnlineMove("The move is not legal in the current server view.");
+            return;
+        }
+
         if (!Move.ShouldRecordMoves || BoardStateManager.IsDoingReplay || UITutorialPanel.IsTutorialMode) return;
 
         var boardState = new BoardState

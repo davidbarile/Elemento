@@ -320,13 +320,15 @@ public class UIPlayerBoard : MonoBehaviour
         Reset();
     }
 
-    public void CalculateTotalPoints(bool inShouldCheckWinLoseState = true)
+    public void CalculateTotalPoints(bool inShouldCheckWinLoseState = true, bool inUseCurrentZonePoints = false)
     {
-        this.TotalPoints = DomainGameRules.CalculatePlayerPoints(CreateStateData());
+        this.TotalPoints = inUseCurrentZonePoints ? 0 : DomainGameRules.CalculatePlayerPoints(CreateStateData());
         this.TotalFaceUpPoints = 0;
 
         foreach (var zone in this.ElementZones)
         {
+            if (inUseCurrentZonePoints)
+                this.TotalPoints += zone.Points;
             this.TotalFaceUpPoints += zone.FaceUpPoints;
 
             int points = this.shouldDisplayFaceUpPoints ? zone.FaceUpPoints : zone.Points;
