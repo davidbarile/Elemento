@@ -823,8 +823,10 @@ public class GameManager : MonoBehaviour
 
     private void HandleOnlineViewChanged(MatchSeatViewData inSeatView)
     {
-        if (!this.IsOnline || inSeatView?.View == null || inSeatView.MatchId != this.onlineClient.MatchId
-            || inSeatView.Seat != this.onlineClient.LocalSeat)
+        if (!this.IsOnline || this.onlineClient == null || inSeatView?.View == null || inSeatView.MatchId != this.onlineClient.MatchId
+            || inSeatView.Seat != this.onlineClient.LocalSeat || inSeatView.View.Player == null
+            || inSeatView.View.Player.Hand == null || inSeatView.View.Player.Zones == null
+            || inSeatView.View.Opponents == null)
             return;
 
         if (inSeatView.View.CurrentPlayerId < 0 || inSeatView.View.CurrentPlayerId >= this.PlayerBoards.Length)
@@ -845,10 +847,19 @@ public class GameManager : MonoBehaviour
     {
         CleanUpGameState();
         this.isDoingCleanup = true;
-        RenderOnlineSeat(inView.Player.Id, inView.Player, null);
-        foreach (var opponent in inView.Opponents)
-            RenderOnlineSeat(opponent.Id, null, opponent);
-        this.isDoingCleanup = false;
+        try
+        {
+            RenderOnlineSeat(inView.Player.Id, inView.Player, null);
+            foreach (var opponent in inView.Opponents)
+            {
+                if (opponent?.Zones != null)
+                    RenderOnlineSeat(opponent.Id, null, opponent);
+            }
+        }
+        finally
+        {
+            this.isDoingCleanup = false;
+        }
 
         CardsManager.IN.SetOnlineDeckCount(inView.DeckCount);
         this.Deck.RefreshCellsList();
@@ -880,7 +891,7 @@ public class GameManager : MonoBehaviour
             RenderOnlineZones(board, inOpponent.Zones, false);
         }
 
-        board.CalculateTotalPoints(false, true);
+        board.CalculateOnlineTotalPoints();
         board.Hand.RefreshPlayerHandText();
     }
 
@@ -980,8 +991,18 @@ public class GameManager : MonoBehaviour
 
     private void RefreshOnlineControls()
     {
+        var view = this.onlineClient?.CurrentView?.View;
+        if (view == null)
+        {
+            this.beginTurnButton.SetActive(false);
+            this.endTurnButton.SetActive(false);
+            this.discardToEndTurnZone.SetActive(false);
+            this.DiscardZone.SetActive(false);
+            return;
+        }
+
         bool canMove = this.IsPlayersTurn && IsHumanPlayingPhase() && !this.isOnlineMovePending;
-        bool canEndTurn = canMove && UnityDomainMapper.TryGetOnlineEndTurnMove(this.onlineClient.CurrentView.View, out _);
+        bool canEndTurn = canMove && UnityDomainMapper.TryGetOnlineEndTurnMove(view, out _);
         this.beginTurnButton.SetActive(false);
         this.endTurnButton.SetActive(canEndTurn);
         this.discardToEndTurnZone.SetActive(canMove && SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn);
@@ -990,7 +1011,7 @@ public class GameManager : MonoBehaviour
 
     private void SubmitOnlineMove(DomainMoveData inMove)
     {
-        if (!this.IsOnline || this.isOnlineMovePending)
+        if (!this.IsOnline || this.onlineClient == null || inMove == null || this.isOnlineMovePending)
             return;
 
         this.isOnlineMovePending = true;
@@ -1001,9 +1022,15 @@ public class GameManager : MonoBehaviour
     private void HandleOnlineMoveCompleted(MoveResultData inResult)
     {
         this.isOnlineMovePending = false;
-        if (!inResult.Accepted)
+        if (!this.IsOnline || this.onlineClient == null)
+            return;
+
+        if (inResult == null || !inResult.Accepted)
         {
-            UIAlertPanel.IN.Show(string.IsNullOrEmpty(inResult.Reason) ? "The server rejected the move." : inResult.Reason);
+            string reason = inResult == null || string.IsNullOrEmpty(inResult.Reason)
+                ? "The server rejected the move."
+                : inResult.Reason;
+            UIAlertPanel.IN.Show(reason);
             HandleOnlineViewChanged(this.onlineClient.CurrentView);
             return;
         }
@@ -1014,7 +1041,10 @@ public class GameManager : MonoBehaviour
     private void HandleOnlineMoveFailed(Exception inException)
     {
         this.isOnlineMovePending = false;
-        UIAlertPanel.IN.Show(inException.Message);
+        if (!this.IsOnline || this.onlineClient == null)
+            return;
+
+        UIAlertPanel.IN.Show(inException?.Message ?? "The online move failed.");
         _ = this.onlineClient.RefreshAsync(HandleOnlineViewChanged,
             inError => Debug.LogWarning("Online resync failed: " + inError.Message));
         RefreshOnlineControls();
@@ -1023,7 +1053,7 @@ public class GameManager : MonoBehaviour
     private void RejectOnlineMove(string inReason)
     {
         UIAlertPanel.IN.Show(inReason);
-        if (this.onlineClient.CurrentView != null)
+        if (this.onlineClient?.CurrentView != null)
             HandleOnlineViewChanged(this.onlineClient.CurrentView);
     }
 
@@ -1294,9 +1324,16 @@ public class GameManager : MonoBehaviour
     {
         if (this.IsOnline)
         {
+            var view = this.onlineClient?.CurrentView?.View;
+            if (view == null)
+            {
+                RejectOnlineMove("The current server view is unavailable.");
+                return;
+            }
+
             var unityMove = Move.CreateMove(inSourceCell, inTargetCell, inIsDiscard, inActivatedZone,
                 inIsDealHand, inCardType, (int)this.CurrentPlayer, inCardId);
-            if (UnityDomainMapper.TryCreateOnlineMove(unityMove, this.onlineClient.CurrentView.View, out DomainMoveData move))
+            if (UnityDomainMapper.TryCreateOnlineMove(unityMove, view, out DomainMoveData move))
                 SubmitOnlineMove(move);
             else
                 RejectOnlineMove("The move is not legal in the current server view.");
