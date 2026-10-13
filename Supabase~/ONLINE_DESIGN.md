@@ -54,3 +54,8 @@ Transport behind an interface (`IMatchTransport`); this step ships an in-memory/
 6. Authority choice (recommend A, TS port + golden fixtures) and acceptable anti-cheat level.
 7. Push notifications for async turns (APNs/FCM) now or later.
 8. Data retention for finished matches/move logs; privacy policy update.
+
+## Hidden-information rules (decided)
+- Pile point totals (`ZoneStateData.Points`, including face-down cards) are PUBLIC to both players (David, 2026-10-12).
+  Face-down card identities are masked to `{Id, IsFaceUp=false}` in opponent views and snapshots.
+- Never sent to clients: seed, deck/reserve order, opponent hand contents (count only).
