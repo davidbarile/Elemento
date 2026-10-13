@@ -11307,44 +11307,44 @@ MonoBehaviour:
   - Tap to Continue
   - Toca para Continuar
   OnlineUsername:
-  - Choose a username
-  - Elige un nombre de usuario
+  - Choose a Username
+  - Elige un Nombre de Usuario
   OnlineUsernameHint:
   - 3-20 letters, numbers or underscores
   - "3-20 letras, n\xFAmeros o guiones bajos"
   OnlineUsernamePlaceholder:
   - Username
-  - Nombre de usuario
+  - Nombre de Usuario
   OnlineCheckUsername:
-  - Check availability
-  - Comprobar disponibilidad
+  - Check Availability
+  - Comprobar Disponibilidad
   OnlineUsernameAvailable:
-  - Username available
-  - Nombre disponible
+  - Username Available
+  - Nombre Disponible
   OnlineUsernameUnavailable:
-  - Username unavailable or invalid
-  - "Nombre no disponible o no v\xE1lido"
+  - Username Unavailable or Invalid
+  - "Nombre no Disponible o No V\xE1lido"
   OnlineContinue:
   - Continue
   - Continuar
   OnlineLobby:
   - Online Match
-  - "Partida en l\xEDnea"
+  - "Partida en L\xEDnea"
   OnlineCreateMatch:
   - Create Match
-  - Crear partida
+  - Crear Partida
   OnlineJoinMatch:
   - Join Match
-  - Unirse a partida
+  - Unirse a Partida
   OnlineInviteCode:
-  - Join with a code
-  - "Unirse con un c\xF3digo"
+  - Join with a Code
+  - "Unirse con un C\xF3digo"
   OnlineInviteCodePlaceholder:
-  - Enter code
-  - "Introduce el c\xF3digo"
+  - Enter Code
+  - "Introduce el C\xF3digo"
   OnlineWaiting:
-  - "Invite code: {0} \u2014 waiting for opponent"
-  - "C\xF3digo: {0} \u2014 esperando rival"
+  - "Invite Code: {0} \u2014 Waiting for Opponent"
+  - "C\xF3digo: {0} \u2014 Esperando Rival"
   OnlineBack:
   - Back
   - Volver
