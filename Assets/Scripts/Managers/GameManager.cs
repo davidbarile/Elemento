@@ -1043,6 +1043,8 @@ public class GameManager : MonoBehaviour
         UIWinLosePanel.IN.Show(winLoseState, message, wrapupItems, () =>
         {
             BoardStateManager.IsDoingReplay = false;
+            if (this.IsOnline)
+                ReleaseOnlineSession();
             RestartGame();
         },
         () =>
@@ -1510,6 +1512,9 @@ public class GameManager : MonoBehaviour
         {
             BoardStateManager.IsDoingReplay = false;
             CleanUpGameState();
+
+            if (this.IsOnline)
+                ReleaseOnlineSession();
 
             UISplashScreen.IN.Show();
             UIGameBoard.IN.Hide();

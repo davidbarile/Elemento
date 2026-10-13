@@ -17,6 +17,7 @@ namespace Elemento.Networking.Supabase
     public sealed class SupabaseMatchTransport : IAsyncMatchTransport, IDisposable
     {
         public event Action<string, int> RevisionCommitted;
+        public event Action<Exception> RequestFailed;
 
         private readonly MonoBehaviour runner;
         private readonly SupabaseAuthClient auth;
@@ -67,6 +68,7 @@ namespace Elemento.Networking.Supabase
             this.realtime?.Dispose();
             this.realtime = new SupabaseRealtimeClient(this.runner, this.auth, inMatchId, () => FetchSeatView(inMatchId));
             this.realtime.RevisionCommitted += HandleRevisionCommitted;
+            this.realtime.RequestFailed += HandleRequestFailed;
             this.realtime.Start(inMode == "live");
         }
 
@@ -74,6 +76,12 @@ namespace Elemento.Networking.Supabase
         {
             if (!this.disposed)
                 this.RevisionCommitted?.Invoke(inMatchId, inRevision);
+        }
+
+        private void HandleRequestFailed(Exception inException)
+        {
+            if (!this.disposed)
+                this.RequestFailed?.Invoke(inException);
         }
 
         private async Task<string> PostAsync(string inFunction, string inBody)

@@ -15,6 +15,7 @@ namespace Elemento.Networking.Supabase
     public sealed class SupabaseRealtimeClient : IDisposable
     {
         public event Action<string, int> RevisionCommitted;
+        public event Action<Exception> RequestFailed;
 
         private readonly MonoBehaviour runner;
         private readonly SupabaseAuthClient auth;
@@ -22,6 +23,7 @@ namespace Elemento.Networking.Supabase
         private readonly Func<Task<MatchSeatViewData>> fetchView;
         private Coroutine polling;
         private bool disposed;
+        private string lastFailure;
 #if !UNITY_WEBGL
         private readonly CancellationTokenSource cancellation = new();
         private readonly SemaphoreSlim sendLock = new(1, 1);
@@ -69,17 +71,18 @@ namespace Elemento.Networking.Supabase
                 var view = await this.fetchView();
                 NotifyRevision(view.View.Revision);
             }
-            catch (Exception)
+            catch (SupabaseHttpException exception) when (exception.ResponseCode == 404)
             {
                 // A waiting match has no seat view until a second player joins.
-                // Transient network failures are retried on the next polling tick.
             }
+            catch (Exception exception) { ReportFailure(exception); }
         }
 
         private void NotifyRevision(int inRevision)
         {
             if (this.disposed)
                 return;
+            this.lastFailure = null;
             this.RevisionCommitted?.Invoke(this.matchId, inRevision);
         }
 
@@ -115,14 +118,20 @@ namespace Elemento.Networking.Supabase
                         if (result.MessageType != WebSocketMessageType.Text)
                             continue;
                         var envelope = NetJson.Deserialize<RealtimeMessageData>(Encoding.UTF8.GetString(message.ToArray()));
+                        if (envelope.Event == "phx_reply" && envelope.Payload?.Status == "error")
+                        {
+                            ReportFailure(new InvalidOperationException("Supabase Realtime rejected the private channel request."));
+                            continue;
+                        }
                         if (envelope.Topic == "realtime:match:" + this.matchId && envelope.Event == "broadcast" && envelope.Payload?.Payload != null)
                             NotifyRevision(envelope.Payload.Payload.Revision);
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception exception)
             {
                 // Polling remains active when WebSockets or private channel auth fail.
+                ReportFailure(exception);
             }
         }
 
@@ -138,9 +147,11 @@ namespace Elemento.Networking.Supabase
                     await SendAsync("realtime:match:" + this.matchId, "access_token", "{\"access_token\":" + NetJson.Serialize(session.AccessToken) + "}");
                 }
             }
-            catch (Exception)
+            catch (Exception exception)
             {
                 // Polling remains active after socket loss or disposal.
+                if (!this.disposed)
+                    ReportFailure(exception);
             }
         }
 
@@ -166,6 +177,7 @@ namespace Elemento.Networking.Supabase
         [Serializable]
         public sealed class RealtimeBroadcastData
         {
+            [NetJsonName("status")] public string Status;
             [NetJsonName("payload")] public RealtimeRevisionData Payload;
         }
 
@@ -175,6 +187,20 @@ namespace Elemento.Networking.Supabase
             [NetJsonName("revision")] public int Revision;
         }
 #endif
+
+        private void ReportFailure(Exception inException)
+        {
+            if (this.disposed)
+                return;
+
+            string failure = inException.GetType().Name + ":" + inException.Message;
+            if (failure == this.lastFailure)
+                return;
+
+            this.lastFailure = failure;
+            Debug.LogWarning("Supabase realtime fallback: " + inException.Message);
+            this.RequestFailed?.Invoke(inException);
+        }
 
         public void Dispose()
         {

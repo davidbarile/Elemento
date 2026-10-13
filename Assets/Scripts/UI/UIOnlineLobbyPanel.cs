@@ -80,6 +80,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         try
         {
             this.transport = new SupabaseMatchTransport(this, this.auth);
+            this.transport.RequestFailed += HandleTransportFailed;
             var match = await this.transport.CreateMatch("live");
             this.inviteCode = match.InviteCode;
             this.statusText.text = string.Format(LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineWaiting), this.inviteCode);
@@ -102,6 +103,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         try
         {
             this.transport = new SupabaseMatchTransport(this, this.auth);
+            this.transport.RequestFailed += HandleTransportFailed;
             var match = await this.transport.JoinMatch(code);
             StartMatch(match);
         }
@@ -144,7 +146,11 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             this.client.Dispose();
             this.client = null;
         }
-        this.transport?.Dispose();
+        if (this.transport != null)
+        {
+            this.transport.RequestFailed -= HandleTransportFailed;
+            this.transport.Dispose();
+        }
         this.transport = null;
     }
 
@@ -152,6 +158,11 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     {
         Debug.LogWarning("Online lobby failed: " + inException.Message);
         this.statusText.text = LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineError);
+    }
+
+    private void HandleTransportFailed(Exception inException)
+    {
+        ShowError(inException);
     }
 
     private void SetBusy(bool inIsBusy)

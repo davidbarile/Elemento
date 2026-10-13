@@ -7,6 +7,16 @@ using UnityEngine.Networking;
 
 namespace Elemento.Networking.Supabase
 {
+    internal sealed class SupabaseHttpException : InvalidOperationException
+    {
+        public long ResponseCode { get; }
+
+        public SupabaseHttpException(long inResponseCode, string inMessage) : base(inMessage)
+        {
+            this.ResponseCode = inResponseCode;
+        }
+    }
+
     internal sealed class SupabaseHttpClient
     {
         private readonly MonoBehaviour runner;
@@ -36,7 +46,8 @@ namespace Elemento.Networking.Supabase
                 request.SetRequestHeader("Authorization", "Bearer " + (inAccessToken ?? SupabaseConfig.AnonKey));
                 yield return request.SendWebRequest();
                 if (request.result != UnityWebRequest.Result.Success)
-                    inCompletion.TrySetException(new InvalidOperationException("Supabase HTTP " + request.responseCode + ": " + request.downloadHandler.text));
+                    inCompletion.TrySetException(new SupabaseHttpException(request.responseCode,
+                        "Supabase HTTP " + request.responseCode + ": " + request.downloadHandler.text));
                 else
                     inCompletion.TrySetResult(request.downloadHandler.text);
             }
