@@ -211,6 +211,8 @@ RectTransform:
   - {fileID: 360990133}
   - {fileID: 1349713262}
   - {fileID: 1812156663608734450}
+  - {fileID: 7300000000000000002}
+  - {fileID: 7300000000000000012}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -12143,6 +12145,8 @@ MonoBehaviour:
   winLosePanel: {fileID: 126042204616027644}
   alertPanel: {fileID: 8540150000929475380}
   seatHandoffPanel: {fileID: 1812156663608734451}
+  usernamePanel: {fileID: 7300000000000000003}
+  onlineLobbyPanel: {fileID: 7300000000000000013}
 --- !u!114 &523220442
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -48845,6 +48849,72 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 9095895148664334326, guid: 2695effa51e7645b1b3b8d494f5a3c04, type: 3}
   m_PrefabInstance: {fileID: 126042204616027643}
   m_PrefabAsset: {fileID: 0}
+--- !u!1001 &7300000000000000001
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 1769517}
+    m_Modifications:
+    - target: {fileID: 7100000000000000001, guid: e304a252833e479a81b380e8213f1082, type: 3}
+      propertyPath: m_Name
+      value: Username Panel
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: e304a252833e479a81b380e8213f1082, type: 3}
+--- !u!224 &7300000000000000002 stripped
+RectTransform:
+  m_CorrespondingSourceObject: {fileID: 7100000000000000002, guid: e304a252833e479a81b380e8213f1082, type: 3}
+  m_PrefabInstance: {fileID: 7300000000000000001}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &7300000000000000003 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7100000000000000008, guid: e304a252833e479a81b380e8213f1082, type: 3}
+  m_PrefabInstance: {fileID: 7300000000000000001}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5adc19c70a724c03807ee9db16f020b9, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::UIUsernamePanel
+--- !u!1001 &7300000000000000011
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 1769517}
+    m_Modifications:
+    - target: {fileID: 7200000000000000001, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_Name
+      value: Online Lobby Panel
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+--- !u!224 &7300000000000000012 stripped
+RectTransform:
+  m_CorrespondingSourceObject: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+  m_PrefabInstance: {fileID: 7300000000000000011}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &7300000000000000013 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7200000000000000008, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+  m_PrefabInstance: {fileID: 7300000000000000011}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cb83b271f11c49388527caac6a47a720, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::UIOnlineLobbyPanel
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
