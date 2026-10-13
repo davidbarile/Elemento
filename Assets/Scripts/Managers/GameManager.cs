@@ -70,7 +70,6 @@ public class GameManager : MonoBehaviour
     [Space]
     [SerializeField] private Slider gameSpeedSlider;
     [SerializeField] private TextMeshProUGUI gameSpeedText;
-    [SerializeField] private TMP_FontAsset handoffFont;
     [SerializeField] private TextMeshProUGUI playerTurnText;
     [SerializeField] private TextMeshProUGUI turnAndMoveCountText;
 
@@ -126,7 +125,6 @@ public class GameManager : MonoBehaviour
     private bool isHandoffPending;
     private int cachedRandomSeed = -1;
     private IGameSession gameSession;
-    private UISeatHandoffPanel handoffPanel;
     private SeatViewBinder seatViewBinder;
     private UIPlayerBoard[] boardSlots;
 
@@ -154,7 +152,6 @@ public class GameManager : MonoBehaviour
 
         SaveManager.IN.LoadGame();
 
-        this.handoffPanel = UISeatHandoffPanel.Create(this.mainCanvas, this.handoffFont);
         ConfigureSession();
 
         UISplashScreen.IN.SetVisible(PlayerData.Data.ShouldShowSplashScreen);
@@ -180,7 +177,7 @@ public class GameManager : MonoBehaviour
     public void RestartGame()
     {
         ConfigureSession();
-        this.handoffPanel.Hide();
+        UISeatHandoffPanel.IN.Hide();
         this.isHandoffPending = false;
 
         if (this.cachedRandomSeed == -1)
@@ -761,7 +758,7 @@ public class GameManager : MonoBehaviour
             return false;
 
         this.isHandoffPending = true;
-        this.handoffPanel.Show(this.currentPlayerIndex + 1, ContinuePassAndPlayTurn);
+        UISeatHandoffPanel.IN.Show(this.currentPlayerIndex + 1, ContinuePassAndPlayTurn);
         ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
         RefreshPassAndPlayHandVisibility();
         return true;

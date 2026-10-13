@@ -22,6 +22,7 @@ public class SingletonManager : MonoBehaviour
     [SerializeField] private UIPowerCardPanel powerCardPanel;
     [SerializeField] private UIWinLosePanel winLosePanel;
     [SerializeField] private UIAlertPanel alertPanel;
+    [SerializeField] private UISeatHandoffPanel seatHandoffPanel;
 
     public void Init()
     {
@@ -45,6 +46,7 @@ public class SingletonManager : MonoBehaviour
         UIPowerCardPanel.IN = this.powerCardPanel;
         UIWinLosePanel.IN = this.winLosePanel;
         UIAlertPanel.IN = this.alertPanel;
+        UISeatHandoffPanel.IN = this.seatHandoffPanel;
 
         UIDeckEditor.IN.SetVisible(false);
         UIDeckListPanel.IN.SetVisible(false);
@@ -54,5 +56,6 @@ public class SingletonManager : MonoBehaviour
         UIWinLosePanel.IN.SetVisible(false);
         UIAlertPanel.IN.SetVisible(false);
         UITutorialPanel.IN.SetVisible(false);
+        UISeatHandoffPanel.IN.SetVisible(false);
     }
 }
