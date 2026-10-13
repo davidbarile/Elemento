@@ -135,7 +135,7 @@ serve(async (request) => {
       revision: result.NewRevision,
       view,
       updated_at: new Date().toISOString(),
-    })),
+    }))),
   ]);
   if (secretUpdate.error != null) databaseFailure("update match state", secretUpdate.error);
   if (viewsUpdate.error != null) databaseFailure("update seat views", viewsUpdate.error);
