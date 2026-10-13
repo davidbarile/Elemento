@@ -40,8 +40,10 @@ notification / poll on `turn_deadline`, resume by fetching the seat view at curr
 
 ## Client (Unity)
 `OnlineSession : IGameSession`, viewing seat = local seat via `SeatViewBinder` (local player always
-at bottom). Local input becomes `MoveCommandData`; UI mutates only on accepted results/new views.
-Transport behind an interface (`IMatchTransport`); this step ships an in-memory/loopback one only.
+at bottom). Local input is matched to an authoritative legal `MoveData` and submitted through
+`OnlineMatchClient`; each returned or pushed `MatchSeatViewData` fully rebuilds the visible board.
+Rejected optimistic UI changes are discarded by re-rendering the last server view. Supabase uses
+`IAsyncMatchTransport`; the in-memory transport remains available for simulation tests.
 
 ## Decisions David must make
 1. Supabase org + project (new org vs existing; project name; region, e.g. us-west-1).
@@ -59,3 +61,10 @@ Transport behind an interface (`IMatchTransport`); this step ships an in-memory/
 - Pile point totals (`ZoneStateData.Points`, including face-down cards) are PUBLIC to both players (David, 2026-10-12).
   Face-down card identities are masked to `{Id, IsFaceUp=false}` in opponent views and snapshots.
 - Never sent to clients: seed, deck/reserve order, opponent hand contents (count only).
+
+## TODOs after U2
+- Validate the online board projection, drag/drop, panel prefabs, and reconnect behavior in the Unity Editor; U2 was completed with static review only because Unity was unavailable.
+- Add explicit online game-over presentation from `WinnerPlayerId`/`WinType` instead of relying on local board-side win checks.
+- Drive online-only rule affordances and counters entirely from `PlayerViewData.Rules` (including power-deck/discard presentation) if server match rules can differ from the local settings asset.
+- Add cancellation/lifetime guards for requests that complete after leaving a match, plus a user-facing reconnect/retry state for prolonged network failures.
+- Decide and implement async-turn deadlines, forfeits, and APNs/FCM notifications before shipping async matches.

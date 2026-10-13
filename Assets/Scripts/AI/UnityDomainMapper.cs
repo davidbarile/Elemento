@@ -203,6 +203,58 @@ public static class UnityDomainMapper
         return true;
     }
 
+    public static bool TryCreateOnlineMove(Move inMove, PlayerViewData inView, out MoveData outMove)
+    {
+        outMove = null;
+        if (inMove == null || inView?.Player == null || inView.LegalMoves == null)
+            return false;
+
+        var candidate = inMove.Data == null ? new MoveData() : inMove.Data.Clone();
+        candidate.PlayerId = inView.Player.Id;
+        candidate.Type = inMove.IsDiscard ? DomainMoveType.DiscardCard
+            : inMove.ActivatePowerZone != null ? DomainMoveType.ActivateZone : DomainMoveType.PlayCard;
+        bool isActivation = inMove.ActivatePowerZone != null;
+        candidate.CardId = isActivation ? null : candidate.CardId;
+        candidate.SourceZoneId = isActivation
+            ? GetOnlineZoneId(inMove.ActivatePowerZone.CardCell) : GetOnlineZoneId(inMove.SourceCell);
+        candidate.TargetPlayerId = inMove.IsDiscard ? -1
+            : isActivation ? candidate.PlayerId : GetOnlinePlayerId(inMove.TargetCell, candidate.PlayerId);
+        candidate.TargetZoneId = inMove.IsDiscard ? -1
+            : isActivation ? GetOnlineZoneId(inMove.ActivatePowerZone.CardCell)
+            : GetOnlineZoneId(inMove.TargetCell);
+        candidate.PowerCardType = isActivation && inView.Rules?.AllowSelectPowerCardType == true
+            ? MapPowerCardType(inMove.CardType) : DomainPowerCardType.None;
+
+        foreach (var legalMove in inView.LegalMoves)
+        {
+            if (MovesMatch(legalMove, candidate))
+            {
+                outMove = legalMove.Clone();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static bool TryGetOnlineEndTurnMove(PlayerViewData inView, out MoveData outMove)
+    {
+        outMove = null;
+        if (inView?.LegalMoves == null)
+            return false;
+
+        foreach (var legalMove in inView.LegalMoves)
+        {
+            if (legalMove.Type == DomainMoveType.EndTurn)
+            {
+                outMove = legalMove.Clone();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static void FilterMappableMoves(PlayerViewData inView, HashSet<string> inRejectedMoveKeys = null)
     {
         if (inView == null || inView.LegalMoves == null)
@@ -401,6 +453,20 @@ public static class UnityDomainMapper
             : -1;
     }
 
+    private static int GetOnlineZoneId(UICardCell inCell)
+    {
+        return inCell != null && inCell.CellType == UICardCell.ECellType.ElementZone
+            ? (int)inCell.ElementType - 1
+            : -1;
+    }
+
+    private static int GetOnlinePlayerId(UICardCell inCell, int inFallbackPlayerId)
+    {
+        return inCell != null && inCell.PlayerType != UIPlayerBoard.EPlayerType.None
+            ? (int)inCell.PlayerType - 1
+            : inFallbackPlayerId;
+    }
+
     private static Card.ECardType MapPowerCardType(DomainPowerCardType inPowerCardType)
     {
         switch (inPowerCardType)
@@ -415,6 +481,21 @@ public static class UnityDomainMapper
                 return Card.ECardType.Lightning;
             default:
                 throw new ArgumentOutOfRangeException(nameof(inPowerCardType));
+        }
+    }
+
+    private static DomainPowerCardType MapPowerCardType(Card.ECardType inPowerCardType)
+    {
+        switch (inPowerCardType)
+        {
+            case Card.ECardType.Heal:
+                return DomainPowerCardType.Heal;
+            case Card.ECardType.Freeze:
+                return DomainPowerCardType.Freeze;
+            case Card.ECardType.Lightning:
+                return DomainPowerCardType.Lightning;
+            default:
+                return DomainPowerCardType.None;
         }
     }
 

@@ -323,6 +323,20 @@ public class UIPlayerBoard : MonoBehaviour
     public void CalculateTotalPoints(bool inShouldCheckWinLoseState = true)
     {
         this.TotalPoints = DomainGameRules.CalculatePlayerPoints(CreateStateData());
+        RefreshTotalPointsDisplay(inShouldCheckWinLoseState);
+    }
+
+    public void CalculateOnlineTotalPoints()
+    {
+        this.TotalPoints = 0;
+        foreach (var zone in this.ElementZones)
+            this.TotalPoints += zone.Points;
+
+        RefreshTotalPointsDisplay(false);
+    }
+
+    private void RefreshTotalPointsDisplay(bool inShouldCheckWinLoseState)
+    {
         this.TotalFaceUpPoints = 0;
 
         foreach (var zone in this.ElementZones)
