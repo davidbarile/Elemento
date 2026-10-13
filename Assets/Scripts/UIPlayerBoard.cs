@@ -394,30 +394,58 @@ public class UIPlayerBoard : MonoBehaviour
 
         var numPossibleMoves = GetNumPossibleMoves();
         var movesOffset = SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn ? 1 : 0;
-        var numMoves = Mathf.Min(numPossibleMoves, GameManager.IN.MovesRemaining + movesOffset);
-        var isHandDepleted = false;
+        var plannedMoveCount = Mathf.Min(numPossibleMoves, GameManager.IN.MovesRemaining + movesOffset);
+        var rejectedMoveKeys = new HashSet<string>();
+        int completedMoveCount = 0;
+        int decisionCount = 0;
+        bool useLegacyFallback = false;
 
-        for (int i = 0; i < numMoves || isHandDepleted; i++)
+        while (!UnityDomainMapper.ShouldStopAiTurn(completedMoveCount, plannedMoveCount,
+            decisionCount, GameManager.IN.MovesRemaining + movesOffset, IsAiTurnActive()))
         {
-            //Debug.Log($"Do Move {i}   numMoves = {numMoves}");
-            if (!SettingsManager.IN.UseLegacyAi)
+            if (!SettingsManager.IN.UseLegacyAi && !useLegacyFallback)
                 yield return null;
 
-            var move = GetAiMove(out bool shouldEndTurn, out int possibleMoveCount, out string moveInfo);
+            if (UnityDomainMapper.ShouldStopAiTurn(completedMoveCount, plannedMoveCount,
+                decisionCount, GameManager.IN.MovesRemaining + movesOffset, IsAiTurnActive()))
+                break;
+
+            ++decisionCount;
+            Move move;
+            bool shouldEndTurn;
+            bool usedLegacyFallback;
+            string moveInfo;
+            if (useLegacyFallback)
+            {
+                usedLegacyFallback = true;
+                move = GetFallbackAiMove(out _, out moveInfo);
+                shouldEndTurn = move == null;
+            }
+            else
+            {
+                move = GetAiMove(rejectedMoveKeys, out shouldEndTurn, out usedLegacyFallback,
+                    out _, out moveInfo);
+            }
+            useLegacyFallback = false;
+
             if (shouldEndTurn)
                 break;
 
-            //TODO: adjust this so if many cards in hand, and moves out, force a discard move
-
             if (move != null && (move.Value > 0 || move.IsDiscard))
             {
-                isHandDepleted = this.CardsInHand.Count <= 0;
+                string moveKey = UnityDomainMapper.CreateMoveKey(move);
+                if (usedLegacyFallback && rejectedMoveKeys.Contains(moveKey))
+                {
+                    Debug.LogWarning("Legacy AI selected the same move rejected by the Unity drop path; ending turn.");
+                    break;
+                }
 
-                string output = $"<color=blue>Turn {GameManager.IN.CurrentTurnNumber}: Move {i}/{possibleMoveCount}</color>\n<color=red>{move.CardType}   Value: {move.Value}</color>\n[{move.SourceCell.CellType}, {move.SourceCell.ElementType} --> {move.TargetCell.CellType}, {move.TargetCell.ElementType}]";
+                string output = $"<color=blue>Turn {GameManager.IN.CurrentTurnNumber}: Move {completedMoveCount + 1}/{plannedMoveCount}</color>\n<color=red>{move.CardType}   Value: {move.Value}</color>\n[{move.SourceCell.CellType}, {move.SourceCell.ElementType} --> {move.TargetCell.CellType}, {move.TargetCell.ElementType}]";
                 AddToAiOutputText(output);
                 AddToAiOutputText(moveInfo, 2);
 
                 Debug.Log(output);
+                var sourceCard = move.SourceCell.TopCard;
 
                 if (move.IsDiscard && !isPlayer)
                 {
@@ -470,8 +498,24 @@ public class UIPlayerBoard : MonoBehaviour
                         yield return new WaitForSeconds(.1f);
                     }
 
+                    if (ReferenceEquals(move.SourceCell.TopCard, sourceCard))
+                    {
+                        if (!string.IsNullOrEmpty(moveKey))
+                            rejectedMoveKeys.Add(moveKey);
+
+                        Debug.LogWarning("AI move was rejected by the Unity drop path.");
+                        if (!usedLegacyFallback && !SettingsManager.IN.UseLegacyAi)
+                        {
+                            useLegacyFallback = true;
+                            continue;
+                        }
+
+                        break;
+                    }
+
                     if (move.IsDiscard && !isPlayer)
                     {
+                        ++completedMoveCount;
                         yield return new WaitForSeconds(.6f);
                         GameManager.IN.ResetMovesRemaining();
                         GameManager.IN.DiscardZone.SetActive(SettingsManager.IN.DiscardMode == EDiscardMode.AllowDiscard);
@@ -486,6 +530,7 @@ public class UIPlayerBoard : MonoBehaviour
                     }
                 }
 
+                ++completedMoveCount;
                 yield return new WaitForSeconds(.5f);
             }
             else
@@ -507,12 +552,21 @@ public class UIPlayerBoard : MonoBehaviour
         this.IsTakingTurn = false;
     }
 
-    private Move GetAiMove(out bool outShouldEndTurn, out int outPossibleMoveCount, out string outMoveInfo)
+    private Move GetAiMove(HashSet<string> inRejectedMoveKeys, out bool outShouldEndTurn,
+        out bool outUsedLegacyFallback, out int outPossibleMoveCount, out string outMoveInfo)
     {
         outShouldEndTurn = false;
+        outUsedLegacyFallback = false;
+        outPossibleMoveCount = 0;
+        outMoveInfo = string.Empty;
 
         if (SettingsManager.IN.UseLegacyAi)
-            return GetLegacyAiMove(out outPossibleMoveCount, out outMoveInfo);
+        {
+            outUsedLegacyFallback = true;
+            var legacyMove = GetFallbackAiMove(out outPossibleMoveCount, out outMoveInfo);
+            outShouldEndTurn = legacyMove == null;
+            return legacyMove;
+        }
 
         try
         {
@@ -525,7 +579,13 @@ public class UIPlayerBoard : MonoBehaviour
             var view = UnityDomainMapper.CreatePlayerView(this, GameManager.IN.PlayerBoards,
                 GameManager.IN.Deck.Cards.Count, powerDeckCount, GameManager.IN.CurrentTurnNumber,
                 GameManager.IN.TurnPhase, GameManager.IN.MovesRemaining, rules);
+            UnityDomainMapper.FilterMappableMoves(view, inRejectedMoveKeys);
             outPossibleMoveCount = view.LegalMoves.Count;
+            if (outPossibleMoveCount <= 0)
+            {
+                outShouldEndTurn = true;
+                return null;
+            }
 
             var options = new DomainStrongAiOptions
             {
@@ -536,10 +596,14 @@ public class UIPlayerBoard : MonoBehaviour
             if (!UnityDomainMapper.TryCreateMove(domainMove, view, this, GameManager.IN.PlayerBoards,
                     out var move, out outShouldEndTurn, out string error))
             {
+                inRejectedMoveKeys?.Add(UnityDomainMapper.CreateMoveKey(domainMove));
                 throw new InvalidOperationException(error);
             }
             if (!outShouldEndTurn && !CanExecuteAiMove(move, out error))
+            {
+                inRejectedMoveKeys?.Add(UnityDomainMapper.CreateMoveKey(domainMove));
                 throw new InvalidOperationException(error);
+            }
 
             outMoveInfo = $"<color=black>Strong AI difficulty: {SettingsManager.IN.AiDifficulty} | Legal moves: {outPossibleMoveCount}</color>";
             return move;
@@ -547,8 +611,10 @@ public class UIPlayerBoard : MonoBehaviour
         catch (Exception exception)
         {
             Debug.LogWarning($"Strong AI decision failed; using legacy AI for this decision. {exception.Message}");
-            outShouldEndTurn = false;
-            return GetFallbackAiMove(out outPossibleMoveCount, out outMoveInfo);
+            outUsedLegacyFallback = true;
+            var fallbackMove = GetFallbackAiMove(out outPossibleMoveCount, out outMoveInfo);
+            outShouldEndTurn = fallbackMove == null;
+            return fallbackMove;
         }
     }
 
@@ -614,6 +680,15 @@ public class UIPlayerBoard : MonoBehaviour
 
         outError = string.Empty;
         return true;
+    }
+
+    private bool IsAiTurnActive()
+    {
+        if (GameManager.IN == null || GameManager.IN.CurrentPlayerBoard != this)
+            return false;
+
+        return GameManager.IN.TurnPhase == GameManager.ETurnPhase.PlayerPlaying
+            || GameManager.IN.TurnPhase == GameManager.ETurnPhase.OpponentPlaying;
     }
 
     //TODO: optimize with stringbuilder

@@ -36,6 +36,118 @@ public class UnityDomainMapperTests
     }
 
     [Test]
+    public void ShouldStopAiTurn_WhenMoveBudgetIsExhausted_PreventsAnotherDecision()
+    {
+        bool shouldStop = UnityDomainMapper.ShouldStopAiTurn(1, 1, 1, 0, true);
+
+        Assert.That(shouldStop, Is.True);
+        Assert.That(UnityDomainMapper.ShouldStopAiTurn(0, 100,
+            UnityDomainMapper.MaxAiDecisionsPerTurn, 100, true), Is.True);
+    }
+
+    [Test]
+    public void TryCreateMove_NullEmptyOrEndTurn_EndsTurnWithoutCreatingUnityMove()
+    {
+        Assert.That(UnityDomainMapper.TryCreateMove(null, null, null, null,
+            out var nullMove, out bool nullShouldEndTurn, out string nullError), Is.True, nullError);
+        Assert.That(nullShouldEndTurn, Is.True);
+        Assert.That(nullMove, Is.Null);
+
+        Assert.That(UnityDomainMapper.TryCreateMove(new MoveData(), null, null, null,
+            out var emptyMove, out bool emptyShouldEndTurn, out string emptyError), Is.True, emptyError);
+        Assert.That(emptyShouldEndTurn, Is.True);
+        Assert.That(emptyMove, Is.Null);
+
+        var board = CreateBoard("AI", UIPlayerBoard.EPlayerType.PlayerB);
+        var endTurn = new MoveData
+        {
+            PlayerId = (int)board.PlayerType,
+            Type = DomainMoveType.EndTurn,
+            SourceZoneId = -1,
+            TargetZoneId = -1
+        };
+        var view = new PlayerViewData();
+        view.LegalMoves.Add(endTurn);
+
+        Assert.That(UnityDomainMapper.TryCreateMove(endTurn, view, board, new[] { board },
+            out var endTurnMove, out bool endTurnShouldEndTurn, out string endTurnError),
+            Is.True, endTurnError);
+        Assert.That(endTurnShouldEndTurn, Is.True);
+        Assert.That(endTurnMove, Is.Null);
+    }
+
+    [Test]
+    public void FilterMappableMoves_ExcludesZoneToHandButKeepsZoneToZone()
+    {
+        var zoneToHand = new MoveData
+        {
+            PlayerId = (int)UIPlayerBoard.EPlayerType.PlayerB,
+            Type = DomainMoveType.PlayCard,
+            CardId = "zone-top",
+            SourceZoneId = (int)CardData.EElementType.Air,
+            TargetPlayerId = (int)UIPlayerBoard.EPlayerType.PlayerB,
+            TargetZoneId = -1
+        };
+        var zoneToZone = zoneToHand.Clone();
+        zoneToZone.TargetZoneId = (int)CardData.EElementType.Earth;
+        var view = new PlayerViewData();
+        view.LegalMoves.Add(zoneToHand);
+        view.LegalMoves.Add(zoneToZone);
+
+        UnityDomainMapper.FilterMappableMoves(view);
+
+        Assert.That(view.LegalMoves, Has.Count.EqualTo(1));
+        Assert.That(view.LegalMoves[0].TargetZoneId, Is.EqualTo((int)CardData.EElementType.Earth));
+    }
+
+    [Test]
+    public void FilterMappableMoves_ExcludesPreviouslyRejectedMove()
+    {
+        var move = new MoveData
+        {
+            PlayerId = (int)UIPlayerBoard.EPlayerType.PlayerB,
+            Type = DomainMoveType.PlayCard,
+            CardId = "rejected",
+            SourceZoneId = -1,
+            TargetPlayerId = (int)UIPlayerBoard.EPlayerType.PlayerB,
+            TargetZoneId = (int)CardData.EElementType.Air
+        };
+        var view = new PlayerViewData();
+        view.LegalMoves.Add(move);
+        var rejectedMoveKeys = new HashSet<string> { UnityDomainMapper.CreateMoveKey(move) };
+
+        UnityDomainMapper.FilterMappableMoves(view, rejectedMoveKeys);
+
+        Assert.That(view.LegalMoves, Is.Empty);
+    }
+
+    [Test]
+    public void TryCreateMove_Discard_UsesLegacyDiscardPath()
+    {
+        var board = CreateBoard("AI", UIPlayerBoard.EPlayerType.PlayerB);
+        var sourceCell = board.Hand.CardCells[0];
+        AddCard(sourceCell, "discard-me", 12);
+        var discard = new MoveData
+        {
+            PlayerId = (int)board.PlayerType,
+            Type = DomainMoveType.DiscardCard,
+            CardId = "discard-me",
+            SourceZoneId = -1,
+            TargetPlayerId = (int)board.PlayerType,
+            TargetZoneId = -1
+        };
+        var view = new PlayerViewData();
+        view.LegalMoves.Add(discard);
+
+        Assert.That(UnityDomainMapper.TryCreateMove(discard, view, board, new[] { board },
+            out var unityMove, out bool shouldEndTurn, out string error), Is.True, error);
+        Assert.That(shouldEndTurn, Is.False);
+        Assert.That(unityMove.IsDiscard, Is.True);
+        Assert.That(unityMove.SourceCell, Is.SameAs(sourceCell));
+        Assert.That(unityMove.TargetCell, Is.SameAs(sourceCell));
+    }
+
+    [Test]
     public void CreatePlayerView_MapsOnlyOwnHandAndMapsReturnedMove()
     {
         var aiBoard = CreateBoard("AI", UIPlayerBoard.EPlayerType.PlayerB);

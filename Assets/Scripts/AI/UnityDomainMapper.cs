@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Elemento.Domain;
 using UnityEngine;
 using DomainAiDifficulty = Elemento.Domain.EAiDifficulty;
@@ -9,6 +10,8 @@ using DomainTurnPhase = Elemento.Domain.ETurnPhase;
 
 public static class UnityDomainMapper
 {
+    public const int MaxAiDecisionsPerTurn = 20;
+
     public static RulesConfigData CreateRules(SettingsManager inSettings, UIPlayerBoard[] inPlayerBoards,
         int inCardSpawnBatchSize)
     {
@@ -143,20 +146,18 @@ public static class UnityDomainMapper
         outShouldEndTurn = false;
         outError = string.Empty;
 
-        if (inDomainMove == null)
-            return Fail("Strong AI returned no move.", out outError);
+        if (inDomainMove == null || inDomainMove.Type == DomainMoveType.None
+            || inDomainMove.Type == DomainMoveType.EndTurn)
+        {
+            outShouldEndTurn = true;
+            return true;
+        }
         if (inView == null || inPlayerBoard == null || inPlayerBoards == null)
             return Fail("Strong AI move mapping received incomplete live state.", out outError);
         if (!IsLegalMove(inDomainMove, inView))
             return Fail("Strong AI returned a move outside the supplied legal move list.", out outError);
         if (inDomainMove.PlayerId != (int)inPlayerBoard.PlayerType)
             return Fail("Strong AI returned a move for the wrong player.", out outError);
-
-        if (inDomainMove.Type == DomainMoveType.EndTurn)
-        {
-            outShouldEndTurn = true;
-            return true;
-        }
 
         if (inDomainMove.Type == DomainMoveType.ActivateZone)
         {
@@ -167,7 +168,7 @@ public static class UnityDomainMapper
             var powerCardType = MapPowerCardType(inDomainMove.PowerCardType);
             outMove = Move.CreateMove(activationZone.CardCell, activationZone.CardCell,
                 false, activationZone, false, powerCardType, inDomainMove.PlayerId);
-            outMove.Data.PowerCardType = inDomainMove.PowerCardType;
+            outMove.Data = inDomainMove.Clone();
             return true;
         }
 
@@ -179,30 +180,109 @@ public static class UnityDomainMapper
         {
             outMove = Move.CreateMove(sourceCell, sourceCell, true, null, false,
                 sourceCell.TopCard.CardType, inDomainMove.PlayerId, inDomainMove.CardId);
+            outMove.Data = inDomainMove.Clone();
             return true;
         }
 
         if (inDomainMove.Type != DomainMoveType.PlayCard)
             return Fail("Strong AI returned an unsupported move type.", out outError);
 
-        UICardCell targetCell;
         if (inDomainMove.TargetZoneId < 0)
-        {
-            targetCell = inPlayerBoard.Hand == null ? null : inPlayerBoard.Hand.GetFirstOpenCell();
-        }
-        else
-        {
-            var targetBoard = FindBoard(inPlayerBoards, inDomainMove.TargetPlayerId);
-            var targetZone = FindZone(targetBoard, inDomainMove.TargetZoneId);
-            targetCell = targetZone == null ? null : targetZone.CardCell;
-        }
+            return Fail("Strong AI zone-to-hand moves are not executable by the Unity AI path.", out outError);
+
+        var targetBoard = FindBoard(inPlayerBoards, inDomainMove.TargetPlayerId);
+        var targetZone = FindZone(targetBoard, inDomainMove.TargetZoneId);
+        var targetCell = targetZone == null ? null : targetZone.CardCell;
 
         if (targetCell == null)
             return Fail("Strong AI target is no longer available.", out outError);
 
         outMove = Move.CreateMove(sourceCell, targetCell, false, null, false,
             sourceCell.TopCard.CardType, inDomainMove.PlayerId, inDomainMove.CardId);
+        outMove.Data = inDomainMove.Clone();
         return true;
+    }
+
+    public static void FilterMappableMoves(PlayerViewData inView, HashSet<string> inRejectedMoveKeys = null)
+    {
+        if (inView == null || inView.LegalMoves == null)
+            return;
+
+        for (int i = inView.LegalMoves.Count - 1; i >= 0; --i)
+        {
+            var move = inView.LegalMoves[i];
+            if (!IsMappableMove(move)
+                || inRejectedMoveKeys != null && inRejectedMoveKeys.Contains(CreateMoveKey(move)))
+            {
+                inView.LegalMoves.RemoveAt(i);
+            }
+        }
+    }
+
+    public static bool IsMappableMove(MoveData inMove)
+    {
+        if (inMove == null)
+            return false;
+
+        switch (inMove.Type)
+        {
+            case DomainMoveType.EndTurn:
+                return true;
+            case DomainMoveType.DiscardCard:
+                return !string.IsNullOrEmpty(inMove.CardId) && inMove.TargetZoneId < 0;
+            case DomainMoveType.ActivateZone:
+                return inMove.SourceZoneId >= 0
+                    && inMove.TargetPlayerId == inMove.PlayerId
+                    && inMove.TargetZoneId == inMove.SourceZoneId;
+            case DomainMoveType.PlayCard:
+                return !string.IsNullOrEmpty(inMove.CardId)
+                    && inMove.TargetPlayerId > 0
+                    && inMove.TargetZoneId >= 0;
+            default:
+                return false;
+        }
+    }
+
+    public static string CreateMoveKey(MoveData inMove)
+    {
+        if (inMove == null)
+            return string.Empty;
+
+        if (inMove.Type == DomainMoveType.DiscardCard)
+            return $"{inMove.PlayerId}:{inMove.Type}:{inMove.CardId}:{inMove.SourceZoneId}";
+
+        return $"{inMove.PlayerId}:{inMove.Type}:{inMove.CardId}:{inMove.SourceZoneId}:"
+            + $"{inMove.TargetPlayerId}:{inMove.TargetZoneId}:{inMove.PowerCardType}";
+    }
+
+    public static string CreateMoveKey(Move inMove)
+    {
+        if (inMove == null)
+            return string.Empty;
+        if (inMove.Data != null)
+            return CreateMoveKey(inMove.Data);
+
+        var sourceCard = inMove.SourceCell == null ? null : inMove.SourceCell.TopCard;
+        int playerId = inMove.SourceCell == null ? 0 : (int)inMove.SourceCell.PlayerType;
+        int sourceZoneId = GetZoneId(inMove.SourceCell);
+        if (inMove.IsDiscard)
+            return $"{playerId}:{DomainMoveType.DiscardCard}:{sourceCard?.Id}:{sourceZoneId}";
+
+        int targetPlayerId = inMove.TargetCell == null ? playerId : (int)inMove.TargetCell.PlayerType;
+        int targetZoneId = GetZoneId(inMove.TargetCell);
+        var moveType = inMove.ActivatePowerZone == null ? DomainMoveType.PlayCard : DomainMoveType.ActivateZone;
+        return $"{playerId}:{moveType}:{sourceCard?.Id}:{sourceZoneId}:"
+            + $"{targetPlayerId}:{targetZoneId}:{inMove.Data?.PowerCardType}";
+    }
+
+    public static bool ShouldStopAiTurn(int inCompletedMoveCount, int inPlannedMoveCount,
+        int inDecisionCount, int inRemainingMoveBudget, bool inIsTurnActive)
+    {
+        return !inIsTurnActive
+            || inPlannedMoveCount <= 0
+            || inCompletedMoveCount >= inPlannedMoveCount
+            || inRemainingMoveBudget <= 0
+            || inDecisionCount >= MaxAiDecisionsPerTurn;
     }
 
     public static bool IsLegalMove(MoveData inMove, PlayerViewData inView)
@@ -312,6 +392,13 @@ public static class UnityDomainMapper
         }
 
         return null;
+    }
+
+    private static int GetZoneId(UICardCell inCell)
+    {
+        return inCell != null && inCell.CellType == UICardCell.ECellType.ElementZone
+            ? (int)inCell.ElementType
+            : -1;
     }
 
     private static Card.ECardType MapPowerCardType(DomainPowerCardType inPowerCardType)
