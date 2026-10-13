@@ -51,6 +51,8 @@ public class UIPlayerBoard : MonoBehaviour
     [SerializeField] private TextMeshProUGUI aiOutputText;
 
     private bool cachedIsAutoPlay;
+    private DomainStrongAiPlayer strongAiPlayer;
+    private SettingsManager.EAiDifficulty? strongAiDifficulty;
 
     #region Data for doing calculations
     [Header("Data for doing calculations")]
@@ -591,7 +593,13 @@ public class UIPlayerBoard : MonoBehaviour
             {
                 Difficulty = UnityDomainMapper.MapDifficulty(SettingsManager.IN.AiDifficulty)
             };
-            var domainMove = new DomainStrongAiPlayer(options).ChooseMove(view, new UnityDomainRandom());
+            if (this.strongAiPlayer == null
+                || this.strongAiDifficulty != SettingsManager.IN.AiDifficulty)
+            {
+                this.strongAiPlayer = new DomainStrongAiPlayer(options);
+                this.strongAiDifficulty = SettingsManager.IN.AiDifficulty;
+            }
+            var domainMove = this.strongAiPlayer.ChooseMove(view, new UnityDomainRandom());
 
             if (!UnityDomainMapper.TryCreateMove(domainMove, view, this, GameManager.IN.PlayerBoards,
                     out var move, out outShouldEndTurn, out string error))

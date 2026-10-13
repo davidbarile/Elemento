@@ -16,6 +16,9 @@ namespace Elemento.Simulation
             if (selectedCard == null)
                 return;
 
+            RecordReorderPatterns(inView, inMove, selectedCard, inStats, inGameNumber,
+                inGameSeed, inPlayerTurn);
+
             string detail;
             if (IsBombMove(inView, inMove, selectedCard)
                 && HasBombOverShieldOpportunity(inView, out detail))
@@ -32,6 +35,47 @@ namespace Elemento.Simulation
                 AddExample(inStats, "WeakPointOverBomb", inView, inMove, selectedCard, detail,
                     inGameNumber, inGameSeed, inPlayerTurn);
             }
+        }
+
+        private static void RecordReorderPatterns(PlayerViewData inView, MoveData inMove,
+            CardInstanceData inCard, AgentStats inStats, int inGameNumber, int inGameSeed,
+            int inPlayerTurn)
+        {
+            if (inStats.ReorderGameNumber != inGameNumber
+                || inStats.ReorderPlayerTurn != inPlayerTurn)
+            {
+                inStats.ReorderLeftZoneIds.Clear();
+                inStats.ReordersThisTurn = 0;
+                inStats.ReorderGameNumber = inGameNumber;
+                inStats.ReorderPlayerTurn = inPlayerTurn;
+            }
+            if (inMove.Type != EMoveType.PlayCard || inMove.SourceZoneId < 0
+                || inMove.TargetPlayerId != inMove.PlayerId)
+                return;
+
+            ++inStats.ReordersThisTurn;
+            inStats.MaxReordersPerTurn = Math.Max(inStats.MaxReordersPerTurn,
+                inStats.ReordersThisTurn);
+            if (inStats.ReordersThisTurn > 3)
+                ++inStats.ReordersOverCap;
+
+            HashSet<int> leftZoneIds;
+            if (!inStats.ReorderLeftZoneIds.TryGetValue(inMove.CardId, out leftZoneIds))
+            {
+                leftZoneIds = new HashSet<int>();
+                inStats.ReorderLeftZoneIds[inMove.CardId] = leftZoneIds;
+            }
+            if (leftZoneIds.Contains(inMove.TargetZoneId))
+            {
+                ++inStats.ReturnsToPreviousPile;
+                string detail = string.Format(
+                    "card returned to zone {0} after moving {1}->{0}",
+                    inMove.TargetZoneId, inMove.SourceZoneId);
+                AddExample(inStats, "ReturnToPreviousPile", inView, inMove, inCard, detail,
+                    inGameNumber, inGameSeed, inPlayerTurn);
+            }
+
+            leftZoneIds.Add(inMove.SourceZoneId);
         }
 
         // BombOverShield: the selected move resolves a bomb; at decision time an own zone had

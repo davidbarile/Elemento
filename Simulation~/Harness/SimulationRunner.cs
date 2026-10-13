@@ -200,10 +200,12 @@ namespace Elemento.Simulation
 
         private static void PrintPatterns(AgentStats inStats)
         {
-            Console.WriteLine("{0} ({1}): decisions={2}, BombOverShield={3} ({4:F3}), WeakPointOverBomb={5} ({6:F3})",
+            Console.WriteLine("{0} ({1}): decisions={2}, BombOverShield={3} ({4:F3}), WeakPointOverBomb={5} ({6:F3}), ReturnsToPreviousPile={7}, ReordersOverCap={8}, MaxReordersPerTurn={9}",
                 inStats.Label, inStats.Kind, inStats.Decisions, inStats.BombOverShield,
                 PerThousand(inStats.BombOverShield, inStats.Decisions), inStats.WeakPointOverBomb,
-                PerThousand(inStats.WeakPointOverBomb, inStats.Decisions));
+                PerThousand(inStats.WeakPointOverBomb, inStats.Decisions),
+                inStats.ReturnsToPreviousPile, inStats.ReordersOverCap,
+                inStats.MaxReordersPerTurn);
         }
 
         private static void PrintExamples(AgentStats inStats)
@@ -274,6 +276,13 @@ namespace Elemento.Simulation
         public long DecisionTicks;
         public int BombOverShield;
         public int WeakPointOverBomb;
+        public int ReturnsToPreviousPile;
+        public int ReordersOverCap;
+        public int ReordersThisTurn;
+        public int MaxReordersPerTurn;
+        public int ReorderGameNumber;
+        public int ReorderPlayerTurn;
+        public Dictionary<string, HashSet<int>> ReorderLeftZoneIds = new();
         public List<string> Examples = new();
 
         public AgentStats(string inLabel, string inKind)

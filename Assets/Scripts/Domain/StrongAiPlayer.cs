@@ -16,7 +16,7 @@ namespace Elemento.Domain
         private const float multiplierStripBonus = 3f;
         private const float mediumTemperature = 2.5f;
         private const float easyTemperature = 20f;
-        private const float reorderPenalty = .35f;
+        private const float reorderPenalty = .35f; // Reorders must overcome this score margin.
         private const float b2MoveBonus = 20f;
         private const float winningPlanBonus = 10000f;
         private const int maxPlanDepth = 3;
@@ -31,6 +31,7 @@ namespace Elemento.Domain
             public MoveData FirstMove;
             public int MovesRemaining;
             public int ReorderMoves;
+            public Dictionary<string, HashSet<int>> LeftZonesByCard;
             public float Value;
             public float OrderingValue;
             public bool FirstMoveIsB2;
@@ -70,7 +71,89 @@ namespace Elemento.Domain
             this.maxDepth = inOptions.Difficulty == EAiDifficulty.Easy ? 1 : maxPlanDepth;
         }
 
+        private int trackedTurnNumber = int.MinValue;
+        private int trackedCurrentPlayerId = int.MinValue;
+        private int trackedRevision = int.MinValue;
+        private int turnReorders;
+        private readonly Dictionary<string, HashSet<int>> leftZonesByCard = new();
+
         public new MoveData ChooseMove(PlayerViewData inView, IRandom inRandom)
+        {
+            if (inView.TurnNumber != this.trackedTurnNumber
+                || inView.CurrentPlayerId != this.trackedCurrentPlayerId
+                || inView.Revision < this.trackedRevision)
+            {
+                this.turnReorders = 0;
+                this.leftZonesByCard.Clear();
+            }
+            this.trackedTurnNumber = inView.TurnNumber;
+            this.trackedCurrentPlayerId = inView.CurrentPlayerId;
+            this.trackedRevision = inView.Revision;
+
+            var original = inView.LegalMoves;
+            var allowed = new List<MoveData>(original.Count);
+            foreach (var candidate in original)
+            {
+                if (!IsBlockedReorder(candidate))
+                    allowed.Add(candidate);
+            }
+            MoveData move;
+            inView.LegalMoves = allowed;
+            try
+            {
+                move = ChooseMoveCore(inView, inRandom);
+            }
+            finally
+            {
+                inView.LegalMoves = original;
+            }
+            if (IsBlockedReorder(move))
+            {
+                move = null;
+                foreach (var candidate in allowed)
+                {
+                    if (candidate.Type != EMoveType.EndTurn)
+                        continue;
+                    move = candidate;
+                    break;
+                }
+            }
+            if (IsTurnReorder(move))
+            {
+                ++this.turnReorders;
+                if (!this.leftZonesByCard.TryGetValue(move.CardId, out var zones))
+                    this.leftZonesByCard[move.CardId] = zones = new HashSet<int>();
+                zones.Add(move.SourceZoneId);
+            }
+            return move;
+        }
+
+        private static bool IsTurnReorder(MoveData inMove)
+        {
+            return inMove != null && inMove.Type == EMoveType.PlayCard && inMove.SourceZoneId >= 0
+                && inMove.TargetPlayerId == inMove.PlayerId;
+        }
+
+        private bool IsBlockedReorder(MoveData inMove)
+        {
+            return IsBlockedReorder(this.turnReorders, this.leftZonesByCard, inMove);
+        }
+
+        private static bool IsBlockedReorder(int inReorderMoves,
+            Dictionary<string, HashSet<int>> inLeftZonesByCard, MoveData inMove)
+        {
+            if (!IsTurnReorder(inMove))
+                return false;
+            if (inReorderMoves >= maxReorderMoves)
+                return true;
+            if (!inLeftZonesByCard.TryGetValue(inMove.CardId, out var leftZones))
+                return false;
+            if (leftZones.Contains(inMove.TargetZoneId))
+                return true;
+            return leftZones.Count > 0;
+        }
+
+        private MoveData ChooseMoveCore(PlayerViewData inView, IRandom inRandom)
         {
             var b2Move = base.ChooseMove(inView, inRandom);
             if (b2Move == null || !this.useEffectBasedBombScoring)
@@ -109,7 +192,9 @@ namespace Elemento.Domain
             {
                 State = state,
                 MovesRemaining = movesRemaining,
-                Value = EvaluateEndOfTurn(inView, state, 0),
+                ReorderMoves = this.turnReorders,
+                LeftZonesByCard = CloneReorderHistory(this.leftZonesByCard),
+                Value = EvaluateEndOfTurn(inView, state, this.turnReorders),
                 OrderingValue = EvaluatePileOrdering(inView, state)
             };
             var frontier = new List<PlanNode> { root };
@@ -133,6 +218,12 @@ namespace Elemento.Domain
                             continue;
 
                         int reorderMoves = node.ReorderMoves + (candidate.IsReorder ? 1 : 0);
+                        var leftZonesByCard = node.LeftZonesByCard;
+                        if (candidate.IsReorder)
+                        {
+                            leftZonesByCard = CloneReorderHistory(leftZonesByCard);
+                            AddReorderHistory(leftZonesByCard, candidate.Move);
+                        }
                         var child = new PlanNode
                         {
                             State = candidate.State,
@@ -140,6 +231,7 @@ namespace Elemento.Domain
                             MovesRemaining = node.MovesRemaining
                                 - (candidate.Move.Type == EMoveType.PlayCard ? 1 : 0),
                             ReorderMoves = reorderMoves,
+                            LeftZonesByCard = leftZonesByCard,
                             Value = candidate.Value,
                             OrderingValue = candidate.OrderingValue,
                             FirstMoveIsB2 = node.FirstMove == null
@@ -223,8 +315,9 @@ namespace Elemento.Domain
                 if (move.Type == EMoveType.ActivateZone && move.PowerCardType == EPowerCardType.None)
                     continue;
 
-                bool isReorder = move.Type == EMoveType.PlayCard && move.SourceZoneId >= 0;
-                if (isReorder && inNode.ReorderMoves >= maxReorderMoves)
+                bool isReorder = IsTurnReorder(move);
+                if (isReorder && IsBlockedReorder(inNode.ReorderMoves,
+                        inNode.LeftZonesByCard, move))
                     continue;
                 if (isReorder && inSourceView.TurnNumber >= antiStallTurn)
                     continue;
@@ -271,6 +364,26 @@ namespace Elemento.Domain
                     : inRight.OrderingValue.CompareTo(inLeft.OrderingValue);
             });
             return candidates;
+        }
+
+        private static Dictionary<string, HashSet<int>> CloneReorderHistory(
+            Dictionary<string, HashSet<int>> inHistory)
+        {
+            var clone = new Dictionary<string, HashSet<int>>();
+            foreach (var pair in inHistory)
+                clone[pair.Key] = new HashSet<int>(pair.Value);
+            return clone;
+        }
+
+        private static void AddReorderHistory(Dictionary<string, HashSet<int>> inHistory,
+            MoveData inMove)
+        {
+            if (!inHistory.TryGetValue(inMove.CardId, out var leftZones))
+            {
+                leftZones = new HashSet<int>();
+                inHistory[inMove.CardId] = leftZones;
+            }
+            leftZones.Add(inMove.SourceZoneId);
         }
 
         private static float EvaluatePileOrdering(PlayerViewData inSourceView, GameStateData inState)

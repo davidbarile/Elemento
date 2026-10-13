@@ -238,6 +238,126 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_DoesNotMoveCardBackToPreviousPileInSameTurn()
+        {
+            var view = new PlayerViewData
+            {
+                Revision = 1,
+                TurnNumber = 1,
+                CurrentPlayerId = 0,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                Rules = new RulesConfigData
+                {
+                    MovesPerTurn = 0,
+                    TotalPointsRequiredToWin = 1000
+                },
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            var sourceZone = new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Air,
+                Health = 5,
+                MaxHealth = 5
+            };
+            var multiplier = new CardInstanceData
+            {
+                Id = "moving-multiplier",
+                IsFaceUp = true,
+                WildMultiplier = 2
+            };
+            sourceZone.Cards.Add(multiplier);
+            var targetZone = new ZoneStateData
+            {
+                Id = 1,
+                ElementType = EElementType.Earth,
+                Points = 5,
+                FaceUpPoints = 5,
+                Health = 5,
+                MaxHealth = 5
+            };
+            targetZone.Cards.Add(new CardInstanceData
+            {
+                Id = "target-points",
+                IsFaceUp = true,
+                WildPoints = 5
+            });
+            view.Player.Zones.Add(sourceZone);
+            view.Player.Zones.Add(targetZone);
+            view.Opponents.Add(new OpponentViewData { Id = 1, Name = "Opponent" });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "move-out",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = multiplier.Id,
+                SourceZoneId = sourceZone.Id,
+                TargetPlayerId = 0,
+                TargetZoneId = targetZone.Id
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "end-turn-1",
+                PlayerId = 0,
+                Type = EMoveType.EndTurn,
+                SourceZoneId = -1,
+                TargetPlayerId = -1,
+                TargetZoneId = -1
+            });
+            IAiPlayer ai = new StrongAiPlayer();
+
+            var firstMove = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(firstMove.CardId, Is.EqualTo(multiplier.Id));
+            Assert.That(firstMove.SourceZoneId, Is.EqualTo(sourceZone.Id));
+            Assert.That(firstMove.TargetZoneId, Is.EqualTo(targetZone.Id));
+
+            sourceZone.Cards.Clear();
+            sourceZone.Cards.Add(new CardInstanceData
+            {
+                Id = "source-points",
+                IsFaceUp = true,
+                WildPoints = 10
+            });
+            sourceZone.Points = 10;
+            sourceZone.FaceUpPoints = 10;
+            targetZone.Cards.Add(multiplier);
+            targetZone.Points = 10;
+            targetZone.FaceUpPoints = 10;
+            view.Revision = 2;
+            view.LegalMoves.Clear();
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "move-back",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = multiplier.Id,
+                SourceZoneId = targetZone.Id,
+                TargetPlayerId = 0,
+                TargetZoneId = sourceZone.Id
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "end-turn-2",
+                PlayerId = 0,
+                Type = EMoveType.EndTurn,
+                SourceZoneId = -1,
+                TargetPlayerId = -1,
+                TargetZoneId = -1
+            });
+
+            var repeatedMove = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(repeatedMove.Type, Is.EqualTo(EMoveType.EndTurn));
+
+            ++view.TurnNumber;
+            ++view.Revision;
+            var nextTurnMove = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(nextTurnMove.CardId, Is.EqualTo(multiplier.Id));
+        }
+
+        [Test]
         public void StrongAi_LateTurnEndsInsteadOfReorderingExistingPile()
         {
             var view = new PlayerViewData

@@ -10,6 +10,7 @@ Run date: 2026-10-12. Release build, seed `12345`, default Choice deck/rules, al
 | B3: whole-turn planning | 812/1000 = 81.20% (78.66–83.50%) | 544/1000 = 54.40% (51.30–57.46%) | 1 | 27.224 / 59.215 | 11.037 / 49.968 | 4.8355 / 0.0032 | Yes — 277 more Strong wins and 7 fewer timeouts than B2; decision time remained below 5 ms |
 | B3b: protective pile ordering | 819/1000 = 81.90% (79.39–84.16%) | 549/1000 = 54.90% (51.80–57.96%) | 2 | 24.951 / 52.244 | 9.722 / 52.484 | 4.4550 / 0.0029 | Yes — 7 more Strong wins than B3 with lower decision time; B4 addresses the two remaining stalls |
 | B3b+B4: late-game anti-stall | 821/1000 = 82.10% (79.60–84.35%) | 551/1000 = 55.10% (52.00–58.16%) | 0 | 25.654 / 53.815 | 9.760 / 52.689 | 4.3171 / 0.0030 | Yes — removed both B3b timeouts and added 2 Strong wins |
+| B4+anti-oscillation: no return to a pile left this turn, ≤3 reorders/turn (final-move filter) | 818/1000 = 81.80% (79.29–84.07%) | 546/1000 = 54.60% | 0 | 25.856 / 54.151 (ReturnsToPreviousPile=0, MaxReordersPerTurn=3) | 10.792 / 56.363 | 4.6781 / 0.0032 | Yes — fixes shield back-and-forth seen in Unity; win rate unchanged vs 821 |
 
 Strong's opponent was Legacy Hard, which won 511/1000 = 51.10% (95% CI 48.00–54.19%); the remaining 13 games timed out. B1 was kept because neither named AI's interval separates from 50%, the Strong policy derives bomb value from the authoritative resolved public state instead of estimating removed cards, and its measured decision cost remains well below 0.1 ms.
 
