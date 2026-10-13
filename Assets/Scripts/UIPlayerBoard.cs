@@ -384,6 +384,12 @@ public class UIPlayerBoard : MonoBehaviour
             this.TopCards[i] = this.ElementZones[i].CardCell.TopCard;
     }
 
+    public void SetPlayerType(EPlayerType inPlayerType)
+    {
+        this.PlayerType = inPlayerType;
+        ConfigurePlayerType();
+    }
+
     private void ConfigurePlayerType()
     {
         foreach (var zone in this.ElementZones)

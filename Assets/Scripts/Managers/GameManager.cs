@@ -337,6 +337,7 @@ public class GameManager : MonoBehaviour
     public void EndTurn()
     {
         if (GameManager.ShouldBlockInput || UIDraggable.ShouldBlockInput || UITutorialPanel.IsTutorialMode) return;
+        if (!IsHumanPlayingPhase()) return;//ignore stale/double end-turn requests
 
         SelectNextPlayer();
     }
@@ -623,8 +624,16 @@ public class GameManager : MonoBehaviour
         SetTurnPhase(this.TurnPhase);
     }
 
+    private bool IsHumanPlayingPhase()
+    {
+        if (this.IsCurrentSeatControlledByAI) return false;
+
+        return this.TurnPhase == ETurnPhase.PlayerPlaying || (this.IsPassAndPlay && this.TurnPhase == ETurnPhase.OpponentPlaying);
+    }
+
     private void SelectNextPlayer()
     {
+        CancelInvoke(nameof(EndTurn));
         this.previousPlayerIndex = this.currentPlayerIndex;
         this.currentPlayerIndex = DomainTurnRules.GetNextPlayerIndex(this.currentPlayerIndex, this.PlayerBoards.Length);
 
@@ -733,11 +742,23 @@ public class GameManager : MonoBehaviour
 
     private void ApplyViewingSeat(int inViewingSeat)
     {
-        if (this.seatViewBinder == null || !this.seatViewBinder.SetViewingSeat(inViewingSeat))
+        if (this.seatViewBinder == null)
             return;
 
+        //always rebind: Rebind is idempotent and repairs any drift between the binder and the boards
+        this.seatViewBinder.SetViewingSeat(inViewingSeat);
         this.seatViewBinder.Rebind(this.PlayerBoards, this.boardSlots,
             (inFirst, inSecond) => inFirst.SwapPlayerState(inSecond));
+
+        for (int i = 0; i < this.PlayerBoards.Length; i++)
+        {
+            var expectedType = (EPlayerType)(i + 1);
+            if (this.PlayerBoards[i].PlayerType == expectedType)
+                continue;
+
+            Debug.LogError($"ApplyViewingSeat: seat {i} board has PlayerType {this.PlayerBoards[i].PlayerType}, expected {expectedType}. Repairing.");
+            this.PlayerBoards[i].SetPlayerType(expectedType);
+        }
     }
 
     private void BeginHumanDrawPhase()
@@ -767,6 +788,7 @@ public class GameManager : MonoBehaviour
     private void ContinuePassAndPlayTurn()
     {
         this.isHandoffPending = false;
+        ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
         RefreshPassAndPlayHandVisibility();
         BeginHumanDrawPhase();
     }
@@ -1478,6 +1500,9 @@ public class GameManager : MonoBehaviour
     {
         BoardStateManager.IsDoingReplay = true;
 
+        var replaySeat = this.currentPlayerIndex;
+        var replayPlayerType = (EPlayerType)(replaySeat + 1);
+
         var turnIndex = this.CurrentTurnNumber - 2;
 
         var numCurrentTurnPlayerMoves = 0;
@@ -1512,7 +1537,7 @@ public class GameManager : MonoBehaviour
             for (int i = turnIndex; i < statesList.BoardStates.Count; i++)
             {
                 var state = statesList.BoardStates[i];
-                var isOpponent = state.ActivePlayer != EPlayerType.PlayerA;
+                var isOpponent = state.ActivePlayer != replayPlayerType;
 
                 if (isOpponent)
                 {
@@ -1541,7 +1566,7 @@ public class GameManager : MonoBehaviour
 
         ResetMovesRemaining(true);
 
-        this.currentPlayerIndex = 0;
+        this.currentPlayerIndex = replaySeat;
         ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
 
         MeltFrozenZones();
