@@ -10531,6 +10531,7 @@ MonoBehaviour:
   dealDestOffset: {x: 100, y: 0, z: 0}
   gameSpeedSlider: {fileID: 195359499}
   gameSpeedText: {fileID: 1359878118}
+  handoffFont: {fileID: 11400000, guid: c309455a113c04e2585f896c78a2d05c, type: 2}
   playerTurnText: {fileID: 2103235055}
   turnAndMoveCountText: {fileID: 2021205704}
   Deck: {fileID: 146593522}
