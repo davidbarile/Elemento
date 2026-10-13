@@ -11306,6 +11306,57 @@ MonoBehaviour:
   TapToContinue:
   - Tap to Continue
   - Toca para Continuar
+  OnlineUsername:
+  - Choose a username
+  - Elige un nombre de usuario
+  OnlineUsernameHint:
+  - 3-20 letters, numbers or underscores
+  - "3-20 letras, n\xFAmeros o guiones bajos"
+  OnlineUsernamePlaceholder:
+  - Username
+  - Nombre de usuario
+  OnlineCheckUsername:
+  - Check availability
+  - Comprobar disponibilidad
+  OnlineUsernameAvailable:
+  - Username available
+  - Nombre disponible
+  OnlineUsernameUnavailable:
+  - Username unavailable or invalid
+  - "Nombre no disponible o no v\xE1lido"
+  OnlineContinue:
+  - Continue
+  - Continuar
+  OnlineLobby:
+  - Online Match
+  - "Partida en l\xEDnea"
+  OnlineCreateMatch:
+  - Create Match
+  - Crear partida
+  OnlineJoinMatch:
+  - Join Match
+  - Unirse a partida
+  OnlineInviteCode:
+  - Join with a code
+  - "Unirse con un c\xF3digo"
+  OnlineInviteCodePlaceholder:
+  - Enter code
+  - "Introduce el c\xF3digo"
+  OnlineWaiting:
+  - "Invite code: {0} \u2014 waiting for opponent"
+  - "C\xF3digo: {0} \u2014 esperando rival"
+  OnlineBack:
+  - Back
+  - Volver
+  OnlineWorking:
+  - "Connecting\u2026"
+  - "Conectando\u2026"
+  OnlineError:
+  - Connection failed. Please try again.
+  - "Error de conexi\xF3n. Int\xE9ntalo de nuevo."
+  OnlineInvalidInvite:
+  - Enter a six-character invite code
+  - "Introduce un c\xF3digo de seis caracteres"
   YourTurn:
   - Your Turn
   - Tu Turno
@@ -47710,6 +47761,188 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
+--- !u!1001 &7300000000000000001
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 1769517}
+    m_Modifications:
+    - target: {fileID: 7100000000000000001, guid: e304a252833e479a81b380e8213f1082, type: 3}
+      propertyPath: m_Name
+      value: Username Panel
+      objectReference: {fileID: 0}
+    - target: {fileID: 7100000000000000001, guid: e304a252833e479a81b380e8213f1082, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7100000000000000020, guid: e304a252833e479a81b380e8213f1082, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4289835441
+      objectReference: {fileID: 0}
+    - target: {fileID: 7100000000000000024, guid: e304a252833e479a81b380e8213f1082, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4294967295
+      objectReference: {fileID: 0}
+    - target: {fileID: 7100000000000000029, guid: e304a252833e479a81b380e8213f1082, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4294967295
+      objectReference: {fileID: 0}
+    - target: {fileID: 7100000000000000034, guid: e304a252833e479a81b380e8213f1082, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4294967295
+      objectReference: {fileID: 0}
+    - target: {fileID: 7100000000000000044, guid: e304a252833e479a81b380e8213f1082, type: 3}
+      propertyPath: m_text
+      value: "\u200B"
+      objectReference: {fileID: 0}
+    - target: {fileID: 7100000000000000044, guid: e304a252833e479a81b380e8213f1082, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4294967295
+      objectReference: {fileID: 0}
+    - target: {fileID: 7100000000000000060, guid: e304a252833e479a81b380e8213f1082, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4289901234
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: e304a252833e479a81b380e8213f1082, type: 3}
+--- !u!224 &7300000000000000002 stripped
+RectTransform:
+  m_CorrespondingSourceObject: {fileID: 7100000000000000002, guid: e304a252833e479a81b380e8213f1082, type: 3}
+  m_PrefabInstance: {fileID: 7300000000000000001}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &7300000000000000003 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7100000000000000008, guid: e304a252833e479a81b380e8213f1082, type: 3}
+  m_PrefabInstance: {fileID: 7300000000000000001}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5adc19c70a724c03807ee9db16f020b9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UIUsernamePanel
+--- !u!1001 &7300000000000000011
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 1769517}
+    m_Modifications:
+    - target: {fileID: 7200000000000000001, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_Name
+      value: Online Lobby Panel
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000001, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_Pivot.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_Pivot.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMin.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+--- !u!224 &7300000000000000012 stripped
+RectTransform:
+  m_CorrespondingSourceObject: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+  m_PrefabInstance: {fileID: 7300000000000000011}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &7300000000000000013 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7200000000000000008, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+  m_PrefabInstance: {fileID: 7300000000000000011}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cb83b271f11c49388527caac6a47a720, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UIOnlineLobbyPanel
 --- !u!1001 &7509295732000694047
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -48849,72 +49082,6 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 9095895148664334326, guid: 2695effa51e7645b1b3b8d494f5a3c04, type: 3}
   m_PrefabInstance: {fileID: 126042204616027643}
   m_PrefabAsset: {fileID: 0}
---- !u!1001 &7300000000000000001
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 1769517}
-    m_Modifications:
-    - target: {fileID: 7100000000000000001, guid: e304a252833e479a81b380e8213f1082, type: 3}
-      propertyPath: m_Name
-      value: Username Panel
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: e304a252833e479a81b380e8213f1082, type: 3}
---- !u!224 &7300000000000000002 stripped
-RectTransform:
-  m_CorrespondingSourceObject: {fileID: 7100000000000000002, guid: e304a252833e479a81b380e8213f1082, type: 3}
-  m_PrefabInstance: {fileID: 7300000000000000001}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &7300000000000000003 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7100000000000000008, guid: e304a252833e479a81b380e8213f1082, type: 3}
-  m_PrefabInstance: {fileID: 7300000000000000001}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5adc19c70a724c03807ee9db16f020b9, type: 3}
-  m_Name:
-  m_EditorClassIdentifier: Assembly-CSharp::UIUsernamePanel
---- !u!1001 &7300000000000000011
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 1769517}
-    m_Modifications:
-    - target: {fileID: 7200000000000000001, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_Name
-      value: Online Lobby Panel
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
---- !u!224 &7300000000000000012 stripped
-RectTransform:
-  m_CorrespondingSourceObject: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-  m_PrefabInstance: {fileID: 7300000000000000011}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &7300000000000000013 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7200000000000000008, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-  m_PrefabInstance: {fileID: 7300000000000000011}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cb83b271f11c49388527caac6a47a720, type: 3}
-  m_Name:
-  m_EditorClassIdentifier: Assembly-CSharp::UIOnlineLobbyPanel
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
