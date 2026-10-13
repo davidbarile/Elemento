@@ -181,6 +181,7 @@ Canvas:
   m_OverridePixelPerfect: 0
   m_SortingBucketNormalizedSize: 0
   m_VertexColorAlwaysGammaSpace: 0
+  m_UseReflectionProbes: 0
   m_AdditionalShaderChannelsFlag: 0
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
@@ -10599,6 +10600,7 @@ MonoBehaviour:
   DiscardMode: 1
   PlayMode: 0
   AiDifficulty: 2
+  UseLegacyAi: 0
 --- !u!114 &523220431
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -12088,6 +12090,16 @@ MonoBehaviour:
       CardType: 0
       SourceCellIndex: 0
       TargetCellIndex: 0
+      Data:
+        Id: 
+        PlayerId: 0
+        Type: 0
+        CardId: 
+        SourceZoneId: 0
+        TargetPlayerId: 0
+        TargetZoneId: 0
+        PowerCardType: 0
+        ExpectedRevision: 0
     Players: []
   BoardHistory:
     BoardStates: []
@@ -27108,6 +27120,7 @@ Canvas:
   m_OverridePixelPerfect: 0
   m_SortingBucketNormalizedSize: 0
   m_VertexColorAlwaysGammaSpace: 0
+  m_UseReflectionProbes: 0
   m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
@@ -27591,6 +27604,7 @@ Canvas:
   m_OverridePixelPerfect: 1
   m_SortingBucketNormalizedSize: 0
   m_VertexColorAlwaysGammaSpace: 0
+  m_UseReflectionProbes: 0
   m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
@@ -38138,6 +38152,7 @@ Canvas:
   m_OverridePixelPerfect: 1
   m_SortingBucketNormalizedSize: 0
   m_VertexColorAlwaysGammaSpace: 0
+  m_UseReflectionProbes: 0
   m_AdditionalShaderChannelsFlag: 0
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
@@ -45032,6 +45047,7 @@ Canvas:
   m_OverridePixelPerfect: 0
   m_SortingBucketNormalizedSize: 0
   m_VertexColorAlwaysGammaSpace: 0
+  m_UseReflectionProbes: 0
   m_AdditionalShaderChannelsFlag: 25
   m_UpdateRectTransformForStandalone: 0
   m_SortingLayerID: 0
