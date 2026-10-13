@@ -90,6 +90,16 @@ assert_true() {
   [[ $actual == "$expected" ]] || { echo "assertion failed: $path expected $expected, got $actual" >&2; exit 1; }
 }
 
+result_signature() {
+  if [[ $JSON_TOOL == jq ]]; then
+    jq -c '{ProtocolVersion,Accepted,Reason,NewRevision,LogEntry}'
+  else
+    python3 -c 'import json,sys
+value=json.load(sys.stdin)
+print(json.dumps({key:value[key] for key in ("ProtocolVersion","Accepted","Reason","NewRevision","LogEntry")},separators=(",",":"),sort_keys=True))'
+  fi
+}
+
 signup() {
   curl --fail-with-body --silent --show-error \
     -X POST "$SUPABASE_URL/auth/v1/signup" \
@@ -162,11 +172,14 @@ accepted_revision=$(printf '%s' "$accepted" | json_raw NewRevision)
 
 idempotent=$(call_function submit-move "$current_token" "$command")
 printf '%s' "$idempotent" | assert_true Accepted true
-idempotent_revision=$(printf '%s' "$idempotent" | json_raw NewRevision)
-[[ $idempotent_revision == "$accepted_revision" ]] || { echo "idempotent revision changed" >&2; exit 1; }
+accepted_signature=$(printf '%s' "$accepted" | result_signature)
+idempotent_signature=$(printf '%s' "$idempotent" | result_signature)
+[[ $idempotent_signature == "$accepted_signature" ]] || { echo "idempotent result changed" >&2; exit 1; }
 
 latest0=$(call_function get-view "$token0" "$view_body")
 latest1=$(call_function get-view "$token1" "$view_body")
+persisted_revision=$(printf '%s' "$latest0" | json_raw match.revision)
+[[ $persisted_revision == "$accepted_revision" ]] || { echo "idempotent retry advanced revision" >&2; exit 1; }
 next_seat=$(printf '%s' "$latest0" | json_raw match.current_seat)
 if [[ $next_seat == 0 ]]; then
   next_view=$latest0

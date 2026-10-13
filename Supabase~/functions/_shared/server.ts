@@ -166,13 +166,19 @@ export async function loadSeatView(service: SupabaseClient, matchId: string, sea
 
 export async function broadcastRevision(service: SupabaseClient, matchId: string, revision: number): Promise<void> {
   const topic = `match:${matchId}`;
-  const channel = service.channel(topic) as ReturnType<SupabaseClient["channel"]> & {
-    httpSend?: (event: string, payload: unknown) => Promise<{ status?: string }>;
+  const channel = service.channel(topic, { config: { private: true } });
+  const httpChannel = channel as unknown as {
+    httpSend?: (event: string, payload: unknown) => Promise<
+      "ok" | "timed out" | "error" |
+      { success: true } |
+      { success: false; status: number; error: string }
+    >;
   };
   try {
-    if (typeof channel.httpSend === "function") {
-      const result = await channel.httpSend("revision", { revision });
-      if (result?.status != null && result.status !== "ok") throw new Error(`broadcast returned ${result.status}`);
+    if (typeof httpChannel.httpSend === "function") {
+      const result = await httpChannel.httpSend("revision", { revision });
+      if (typeof result === "string" && result !== "ok") throw new Error(`broadcast returned ${result}`);
+      if (typeof result === "object" && !result.success) throw new Error(`broadcast returned HTTP ${result.status}: ${result.error}`);
       return;
     }
 

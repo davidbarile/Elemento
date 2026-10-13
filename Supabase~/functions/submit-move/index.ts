@@ -69,7 +69,10 @@ serve(async (request) => {
   if (player.seat !== command.Seat) throw new HttpError(403, "seat does not belong to user");
 
   const prior = await idempotentMove(service, command);
-  if (prior != null) return json({ ...storedResult(prior), View: await loadSeatView(service, command.MatchId, command.Seat) });
+  if (prior != null) {
+    await broadcastBestEffort(service, command.MatchId, prior.revision);
+    return json({ ...storedResult(prior), View: await loadSeatView(service, command.MatchId, command.Seat) });
+  }
 
   const [matchResult, secretResult] = await Promise.all([
     service.from("matches").select("revision,status").eq("id", command.MatchId).single(),
@@ -102,7 +105,10 @@ serve(async (request) => {
   if (updateError != null) databaseFailure("advance match revision", updateError);
   if (updatedMatch == null) {
     const raced = await idempotentMove(service, command);
-    if (raced != null) return json({ ...storedResult(raced), View: await loadSeatView(service, command.MatchId, command.Seat) });
+    if (raced != null) {
+      await broadcastBestEffort(service, command.MatchId, raced.revision);
+      return json({ ...storedResult(raced), View: await loadSeatView(service, command.MatchId, command.Seat) });
+    }
     const { data: current } = await service.from("matches").select("revision").eq("id", command.MatchId).single();
     const stale = Object.assign(new MoveResultData(), {
       Reason: MatchAuthority.RevisionReason,
@@ -116,7 +122,7 @@ serve(async (request) => {
     revision: result.NewRevision,
     seat: command.Seat,
     client_nonce: command.ClientNonce,
-    command,
+    command: Object.assign(new MoveCommandData(), command, { Move: result.LogEntry?.Move ?? command.Move }),
   });
   if (moveError != null) databaseFailure("store move", moveError);
 
