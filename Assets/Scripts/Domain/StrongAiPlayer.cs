@@ -76,8 +76,25 @@ namespace Elemento.Domain
         private int trackedRevision = int.MinValue;
         private int turnReorders;
         private readonly Dictionary<string, HashSet<int>> leftZonesByCard = new();
+        private readonly Dictionary<string, int> zoneVersions = new();
+        private readonly Dictionary<string, Dictionary<string, int>> cardMoveSnapshots = new();
+        private PlayerViewData currentView;
 
-        public new MoveData ChooseMove(PlayerViewData inView, IRandom inRandom)
+        public bool IsMoveAllowedThisTurn(PlayerViewData inView, MoveData inMove)
+        {
+            PrepareTurnState(inView);
+            return !IsBlockedReorder(inMove);
+        }
+
+        public void RecordExecutedMove(PlayerViewData inView, MoveData inMove)
+        {
+            PrepareTurnState(inView);
+            RecordMoveVersions(inMove);
+            if (IsTurnReorder(inMove))
+                ++this.turnReorders;
+        }
+
+        private void PrepareTurnState(PlayerViewData inView)
         {
             if (inView.TurnNumber != this.trackedTurnNumber
                 || inView.CurrentPlayerId != this.trackedCurrentPlayerId
@@ -85,10 +102,18 @@ namespace Elemento.Domain
             {
                 this.turnReorders = 0;
                 this.leftZonesByCard.Clear();
+                this.zoneVersions.Clear();
+                this.cardMoveSnapshots.Clear();
             }
+            this.currentView = inView;
             this.trackedTurnNumber = inView.TurnNumber;
             this.trackedCurrentPlayerId = inView.CurrentPlayerId;
             this.trackedRevision = inView.Revision;
+        }
+
+        public new MoveData ChooseMove(PlayerViewData inView, IRandom inRandom)
+        {
+            PrepareTurnState(inView);
 
             var original = inView.LegalMoves;
             var allowed = new List<MoveData>(original.Count);
@@ -118,6 +143,7 @@ namespace Elemento.Domain
                     break;
                 }
             }
+            RecordMoveVersions(move);
             if (IsTurnReorder(move))
             {
                 ++this.turnReorders;
@@ -128,6 +154,59 @@ namespace Elemento.Domain
             return move;
         }
 
+        private static string ZoneKey(int inPlayerId, int inZoneId)
+        {
+            return inPlayerId + ":" + inZoneId;
+        }
+
+        private int GetZoneVersion(string inKey)
+        {
+            return this.zoneVersions.TryGetValue(inKey, out var version) ? version : 0;
+        }
+
+        // A card may move again this turn only if its destination pile changed since its last move.
+        private bool IsUnchangedReMove(MoveData inMove)
+        {
+            if (inMove == null || inMove.SourceZoneId < 0 || string.IsNullOrEmpty(inMove.CardId)
+                || inMove.TargetZoneId < 0)
+                return false;
+            if (!this.cardMoveSnapshots.TryGetValue(inMove.CardId, out var snapshot))
+                return false;
+            string targetKey = ZoneKey(inMove.TargetPlayerId, inMove.TargetZoneId);
+            int versionAtLastMove = snapshot.TryGetValue(targetKey, out var version) ? version : 0;
+            return GetZoneVersion(targetKey) == versionAtLastMove;
+        }
+
+        private void RecordMoveVersions(MoveData inMove)
+        {
+            if (inMove == null)
+                return;
+            if (inMove.SourceZoneId >= 0)
+            {
+                string sourceKey = ZoneKey(inMove.PlayerId, inMove.SourceZoneId);
+                this.zoneVersions[sourceKey] = GetZoneVersion(sourceKey) + 1;
+            }
+            if (inMove.TargetZoneId >= 0 && inMove.TargetPlayerId >= 0)
+            {
+                string targetKey = ZoneKey(inMove.TargetPlayerId, inMove.TargetZoneId);
+                this.zoneVersions[targetKey] = GetZoneVersion(targetKey) + 1;
+            }
+            if (!string.IsNullOrEmpty(inMove.CardId))
+                this.cardMoveSnapshots[inMove.CardId] = new Dictionary<string, int>(this.zoneVersions);
+        }
+
+        private bool IsEmptyOwnZone(int inZoneId)
+        {
+            if (this.currentView == null)
+                return false;
+            foreach (var zone in this.currentView.Player.Zones)
+            {
+                if (zone.Id == inZoneId)
+                    return zone.Cards.Count == 0;
+            }
+            return false;
+        }
+
         private static bool IsTurnReorder(MoveData inMove)
         {
             return inMove != null && inMove.Type == EMoveType.PlayCard && inMove.SourceZoneId >= 0
@@ -136,7 +215,13 @@ namespace Elemento.Domain
 
         private bool IsBlockedReorder(MoveData inMove)
         {
-            return IsBlockedReorder(this.turnReorders, this.leftZonesByCard, inMove);
+            if (IsUnchangedReMove(inMove))
+                return true;
+            if (!IsTurnReorder(inMove))
+                return false;
+            if (IsEmptyOwnZone(inMove.TargetZoneId))
+                return true;
+            return this.turnReorders >= maxReorderMoves;
         }
 
         private static bool IsBlockedReorder(int inReorderMoves,

@@ -238,6 +238,90 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_AllowsShieldLiftWhenPileChangedBeneath()
+        {
+            var view = new PlayerViewData
+            {
+                Revision = 1,
+                TurnNumber = 1,
+                CurrentPlayerId = 0,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                Rules = new RulesConfigData { MovesPerTurn = 0, TotalPointsRequiredToWin = 1000 },
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            var zoneA = new ZoneStateData { Id = 0, ElementType = EElementType.Air, Health = 5, MaxHealth = 5,
+                Points = 5, FaceUpPoints = 5 };
+            var zoneB = new ZoneStateData { Id = 1, ElementType = EElementType.Earth, Health = 5, MaxHealth = 5,
+                Points = 5, FaceUpPoints = 5 };
+            var shield = new CardInstanceData { Id = "shield", IsFaceUp = true, WildShield = 2 };
+            zoneA.Cards.Add(new CardInstanceData { Id = "a-points", IsFaceUp = true, WildPoints = 5 });
+            zoneA.Cards.Add(shield);
+            zoneB.Cards.Add(new CardInstanceData { Id = "b-points", IsFaceUp = true, WildPoints = 5 });
+            view.Player.Zones.Add(zoneA);
+            view.Player.Zones.Add(zoneB);
+            view.Opponents.Add(new OpponentViewData { Id = 1, Name = "Opponent" });
+            var ai = new StrongAiPlayer();
+            var lift = new MoveData { Id = "lift", PlayerId = 0, Type = EMoveType.PlayCard,
+                CardId = shield.Id, SourceZoneId = 0, TargetPlayerId = 0, TargetZoneId = 1 };
+            var playHigh = new MoveData { Id = "play-high", PlayerId = 0, Type = EMoveType.PlayCard,
+                CardId = "high", SourceZoneId = -1, TargetPlayerId = 0, TargetZoneId = 0 };
+            var shieldBack = new MoveData { Id = "shield-back", PlayerId = 0, Type = EMoveType.PlayCard,
+                CardId = shield.Id, SourceZoneId = 1, TargetPlayerId = 0, TargetZoneId = 0 };
+
+            Assert.That(ai.IsMoveAllowedThisTurn(view, lift), Is.True);
+            ai.RecordExecutedMove(view, lift);
+            Assert.That(ai.IsMoveAllowedThisTurn(view, shieldBack), Is.False, "back-and-forth with nothing changed");
+
+            view.Revision = 2;
+            ai.RecordExecutedMove(view, playHigh);
+            view.Revision = 3;
+            Assert.That(ai.IsMoveAllowedThisTurn(view, shieldBack), Is.True, "pile beneath changed, shield may return");
+        }
+
+        [Test]
+        public void StrongAi_BlocksReMoveWhenDestinationUnchanged()
+        {
+            var view = new PlayerViewData
+            {
+                Revision = 1,
+                TurnNumber = 1,
+                CurrentPlayerId = 0,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                Rules = new RulesConfigData { MovesPerTurn = 0, TotalPointsRequiredToWin = 1000 },
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            var zoneA = new ZoneStateData { Id = 0, ElementType = EElementType.Air, Health = 5, MaxHealth = 5 };
+            var zoneB = new ZoneStateData { Id = 1, ElementType = EElementType.Earth, Health = 5, MaxHealth = 5,
+                Points = 5, FaceUpPoints = 5 };
+            var card = new CardInstanceData { Id = "moving-card", IsFaceUp = true, WildMultiplier = 2 };
+            zoneA.Cards.Add(card);
+            zoneB.Cards.Add(new CardInstanceData { Id = "b-points", IsFaceUp = true, WildPoints = 5 });
+            view.Player.Zones.Add(zoneA);
+            view.Player.Zones.Add(zoneB);
+            view.Opponents.Add(new OpponentViewData { Id = 1, Name = "Opponent" });
+            view.LegalMoves.Add(new MoveData { Id = "move-out", PlayerId = 0, Type = EMoveType.PlayCard,
+                CardId = card.Id, SourceZoneId = 0, TargetPlayerId = 0, TargetZoneId = 1 });
+            view.LegalMoves.Add(new MoveData { Id = "end-1", PlayerId = 0, Type = EMoveType.EndTurn,
+                SourceZoneId = -1, TargetPlayerId = -1, TargetZoneId = -1 });
+            var ai = new StrongAiPlayer();
+            var first = ai.ChooseMove(view, new DeterministicRandom(17));
+            Assume.That(first.CardId, Is.EqualTo(card.Id));
+
+            zoneA.Cards.Clear();
+            zoneB.Cards.Add(card);
+            view.Revision = 2;
+            view.LegalMoves.Clear();
+            view.LegalMoves.Add(new MoveData { Id = "move-again", PlayerId = 0, Type = EMoveType.PlayCard,
+                CardId = card.Id, SourceZoneId = 1, TargetPlayerId = 1, TargetZoneId = 0 });
+            view.LegalMoves.Add(new MoveData { Id = "end-2", PlayerId = 0, Type = EMoveType.EndTurn,
+                SourceZoneId = -1, TargetPlayerId = -1, TargetZoneId = -1 });
+
+            var second = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(second.Type, Is.EqualTo(EMoveType.EndTurn));
+        }
+
+        [Test]
         public void StrongAi_DoesNotMoveCardBackToPreviousPileInSameTurn()
         {
             var view = new PlayerViewData
