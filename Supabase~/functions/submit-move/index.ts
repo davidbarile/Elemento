@@ -23,6 +23,13 @@ interface StoredMove {
   command: MoveCommandData;
 }
 
+interface CommitMoveResult {
+  duplicate?: boolean;
+  ok?: boolean;
+  revision?: number;
+  stale?: boolean;
+}
+
 function storedResult(row: StoredMove): MoveResultData {
   const command = Object.assign(new MoveCommandData(), row.command);
   const logEntry = Object.assign(new MoveLogEntryData(), {
@@ -94,16 +101,33 @@ serve(async (request) => {
   if (!result.Accepted) return json({ ...result, View: await loadSeatView(service, command.MatchId, command.Seat) });
 
   const finished = state.WinCondition !== EWinCondition.None;
-  const { data: updatedMatch, error: updateError } = await service.from("matches").update({
-    revision: result.NewRevision,
-    turn_number: state.TurnNumber,
-    current_seat: state.CurrentPlayerId,
-    status: finished ? "finished" : "active",
-    winner_seat: finished ? state.WinnerPlayerId : null,
-    updated_at: new Date().toISOString(),
-  }).eq("id", command.MatchId).eq("status", "active").eq("revision", command.ExpectedRevision).select("revision").maybeSingle();
-  if (updateError != null) databaseFailure("advance match revision", updateError);
-  if (updatedMatch == null) {
+  const views = buildSeatViews(state);
+  const storedCommand = Object.assign(new MoveCommandData(), command, { Move: result.LogEntry?.Move ?? command.Move });
+  const { data: commitData, error: commitError } = await service.rpc("commit_move", {
+    p_match: command.MatchId,
+    p_expected_revision: command.ExpectedRevision,
+    p_new_revision: result.NewRevision,
+    p_seat: command.Seat,
+    p_client_nonce: command.ClientNonce,
+    p_command: storedCommand,
+    p_state: state,
+    p_views: views.map((view, seat) => ({ seat, view })),
+    p_status: finished ? "finished" : "active",
+    p_current_seat: state.CurrentPlayerId,
+    p_turn_number: state.TurnNumber,
+    p_winner: finished ? state.WinnerPlayerId : null,
+  });
+  if (commitError != null) databaseFailure("commit move", commitError);
+  const commit = commitData as CommitMoveResult | null;
+
+  if (commit?.duplicate) {
+    const duplicate = await idempotentMove(service, command);
+    if (duplicate == null) databaseFailure("load duplicate move", "commit_move reported a missing duplicate");
+    await broadcastBestEffort(service, command.MatchId, duplicate.revision);
+    return json({ ...storedResult(duplicate), View: await loadSeatView(service, command.MatchId, command.Seat) });
+  }
+
+  if (commit?.stale) {
     const raced = await idempotentMove(service, command);
     if (raced != null) {
       await broadcastBestEffort(service, command.MatchId, raced.revision);
@@ -116,29 +140,7 @@ serve(async (request) => {
     });
     return json({ ...stale, View: await loadSeatView(service, command.MatchId, command.Seat) });
   }
-
-  const { error: moveError } = await service.from("match_moves").insert({
-    match_id: command.MatchId,
-    revision: result.NewRevision,
-    seat: command.Seat,
-    client_nonce: command.ClientNonce,
-    command: Object.assign(new MoveCommandData(), command, { Move: result.LogEntry?.Move ?? command.Move }),
-  });
-  if (moveError != null) databaseFailure("store move", moveError);
-
-  const views = buildSeatViews(state);
-  const [secretUpdate, viewsUpdate] = await Promise.all([
-    service.from("match_secrets").update({ state, updated_at: new Date().toISOString() }).eq("match_id", command.MatchId),
-    service.from("match_seat_views").upsert(views.map((view, seat) => ({
-      match_id: command.MatchId,
-      seat,
-      revision: result.NewRevision,
-      view,
-      updated_at: new Date().toISOString(),
-    }))),
-  ]);
-  if (secretUpdate.error != null) databaseFailure("update match state", secretUpdate.error);
-  if (viewsUpdate.error != null) databaseFailure("update seat views", viewsUpdate.error);
+  if (!commit?.ok) databaseFailure("commit move", commit);
 
   await broadcastBestEffort(service, command.MatchId, result.NewRevision);
   return json({ ...result, View: views[command.Seat] });

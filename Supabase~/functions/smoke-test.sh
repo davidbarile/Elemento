@@ -110,13 +110,15 @@ signup() {
 
 upsert_profile() {
   local token=$1 body=$2
-  curl --fail-with-body --silent --show-error \
-    -X POST "$SUPABASE_URL/rest/v1/profiles?on_conflict=id" \
+  local status
+  status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+    -X POST "$SUPABASE_URL/rest/v1/profiles" \
     -H "apikey: $ANON_KEY" \
     -H "Authorization: Bearer $token" \
     -H "Content-Type: application/json" \
-    -H "Prefer: resolution=merge-duplicates,return=minimal" \
-    -d "$body" >/dev/null
+    -H "Prefer: return=minimal" \
+    -d "$body")
+  [[ $status == 2?? || $status == 409 ]] || { echo "profile insert failed with HTTP $status" >&2; return 1; }
 }
 
 call_function() {
