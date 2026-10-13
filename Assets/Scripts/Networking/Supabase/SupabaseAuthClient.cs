@@ -21,7 +21,10 @@ namespace Elemento.Networking.Supabase
             if (PlayerPrefs.HasKey(SessionKey))
             {
                 try { this.session = SupabaseSessionData.Parse(PlayerPrefs.GetString(SessionKey)); }
-                catch (Exception) { PlayerPrefs.DeleteKey(SessionKey); }
+                catch (Exception exception)
+                {
+                    throw new InvalidOperationException("The saved online identity is invalid. Clear local data before creating a new anonymous account.", exception);
+                }
             }
         }
 

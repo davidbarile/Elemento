@@ -75,7 +75,7 @@ namespace Elemento.Domain.Net
 
         private void HandleRevisionCommitted(string inMatchId, int inRevision)
         {
-            if (inMatchId == this.MatchId && inRevision != this.Revision)
+            if (inMatchId == this.MatchId && inRevision > this.Revision)
             {
                 if (this.asyncTransport != null)
                     _ = RefreshAsync(null, inError => this.RequestFailed?.Invoke(inError));

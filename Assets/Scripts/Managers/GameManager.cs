@@ -749,6 +749,10 @@ public class GameManager : MonoBehaviour
         if (this.onlineClient != null)
             this.onlineClient.ViewChanged -= HandleOnlineViewChanged;
 
+        this.onlineClient = null;
+        if (SettingsManager.IN.PlayMode != EPlayMode.Multiplayer && OnlineMatchContext.IsActive)
+            UIOnlineLobbyPanel.IN.ReleaseMatch();
+
         this.gameSession = SessionFactory.Create(SettingsManager.IN.PlayMode);
         this.onlineClient = (this.gameSession as OnlineSession)?.Client;
         if (this.onlineClient != null)
@@ -761,6 +765,16 @@ public class GameManager : MonoBehaviour
         }
 
         ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
+    }
+
+    private void ReleaseOnlineSession()
+    {
+        if (this.onlineClient != null)
+            this.onlineClient.ViewChanged -= HandleOnlineViewChanged;
+
+        this.onlineClient = null;
+        UIOnlineLobbyPanel.IN.ReleaseMatch();
+        this.gameSession = null;
     }
 
     private void StartOnlineSession()
@@ -1035,6 +1049,9 @@ public class GameManager : MonoBehaviour
         {
             BoardStateManager.IsDoingReplay = false;
             CleanUpGameState();
+
+            if (this.IsOnline)
+                ReleaseOnlineSession();
 
             UISplashScreen.IN.Show();
             UIGameBoard.IN.Hide();

@@ -52,6 +52,22 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public async Task RepeatedRevision_RetriesAfterTransientRefreshFailure()
+        {
+            var transport = new AsyncTransport();
+            using var client = new OnlineMatchClient(transport, "match", 1);
+            await client.RefreshAsync();
+
+            transport.Fail = true;
+            transport.RaiseRevision(2);
+            Assert.That(client.Revision, Is.Zero);
+
+            transport.Fail = false;
+            transport.RaiseRevision(2);
+            Assert.That(client.Revision, Is.EqualTo(2));
+        }
+
+        [Test]
         public async Task LateRefresh_CannotRollBackNewerRevision()
         {
             var transport = new DelayedTransport();

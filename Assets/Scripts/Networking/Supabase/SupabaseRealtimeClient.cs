@@ -22,7 +22,6 @@ namespace Elemento.Networking.Supabase
         private readonly Func<Task<MatchSeatViewData>> fetchView;
         private Coroutine polling;
         private bool disposed;
-        private int revision = -1;
 #if !UNITY_WEBGL
         private readonly CancellationTokenSource cancellation = new();
         private readonly SemaphoreSlim sendLock = new(1, 1);
@@ -79,9 +78,8 @@ namespace Elemento.Networking.Supabase
 
         private void NotifyRevision(int inRevision)
         {
-            if (this.disposed || inRevision <= this.revision)
+            if (this.disposed)
                 return;
-            this.revision = inRevision;
             this.RevisionCommitted?.Invoke(this.matchId, inRevision);
         }
 

@@ -135,7 +135,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         UISplashScreen.IN.Show();
     }
 
-    private void ReleaseMatch()
+    public void ReleaseMatch()
     {
         if (this.client != null)
         {
