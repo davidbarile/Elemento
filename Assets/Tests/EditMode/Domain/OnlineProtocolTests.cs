@@ -163,7 +163,7 @@ namespace Elemento.Domain.Tests
             };
         }
 
-        private static List<IList<CardDefinitionData>> CreateDeckDefinitionsBySeat()
+        internal static List<IList<CardDefinitionData>> CreateDeckDefinitionsBySeat()
         {
             List<IList<CardDefinitionData>> decks = new()
             {
