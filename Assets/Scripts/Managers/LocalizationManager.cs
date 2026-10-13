@@ -247,6 +247,7 @@ public class LocalizationManager : MonoBehaviour
     [Header("Online Play")]
     public string[] OnlineUsername = { "Choose a username", "Elige un nombre de usuario" };
     public string[] OnlineUsernameHint = { "3-20 letters, numbers or underscores", "3-20 letras, números o guiones bajos" };
+    public string[] OnlineUsernamePlaceholder = { "Username", "Nombre de usuario" };
     public string[] OnlineCheckUsername = { "Check availability", "Comprobar disponibilidad" };
     public string[] OnlineUsernameAvailable = { "Username available", "Nombre disponible" };
     public string[] OnlineUsernameUnavailable = { "Username unavailable or invalid", "Nombre no disponible o no válido" };
@@ -254,7 +255,8 @@ public class LocalizationManager : MonoBehaviour
     public string[] OnlineLobby = { "Online Match", "Partida en línea" };
     public string[] OnlineCreateMatch = { "Create Match", "Crear partida" };
     public string[] OnlineJoinMatch = { "Join Match", "Unirse a partida" };
-    public string[] OnlineInviteCode = { "Invite code", "Código de invitación" };
+    public string[] OnlineInviteCode = { "Join with a code", "Unirse con un código" };
+    public string[] OnlineInviteCodePlaceholder = { "Enter code", "Introduce el código" };
     public string[] OnlineWaiting = { "Invite code: {0} — waiting for opponent", "Código: {0} — esperando rival" };
     public string[] OnlineBack = { "Back", "Volver" };
     public string[] OnlineWorking = { "Connecting…", "Conectando…" };

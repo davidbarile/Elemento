@@ -10,6 +10,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     public static UIOnlineLobbyPanel IN;
 
     [SerializeField] private TMP_InputField inviteCodeInput;
+    [SerializeField] private TextMeshProUGUI placeholderText;
     [SerializeField] private TextMeshProUGUI titleText;
     [SerializeField] private TextMeshProUGUI hintText;
     [SerializeField] private TextMeshProUGUI statusText;
@@ -186,6 +187,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         if (loc == null) return;
         this.titleText.text = LocalizationManager.GetOnlineText(loc.OnlineLobby);
         this.hintText.text = LocalizationManager.GetOnlineText(loc.OnlineInviteCode);
+        this.placeholderText.text = LocalizationManager.GetOnlineText(loc.OnlineInviteCodePlaceholder);
         this.createText.text = LocalizationManager.GetOnlineText(loc.OnlineCreateMatch);
         this.joinText.text = LocalizationManager.GetOnlineText(loc.OnlineJoinMatch);
         this.backText.text = LocalizationManager.GetOnlineText(loc.OnlineBack);

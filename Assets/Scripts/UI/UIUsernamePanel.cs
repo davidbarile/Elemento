@@ -9,6 +9,7 @@ public sealed class UIUsernamePanel : UIPanelBase
     public static UIUsernamePanel IN;
 
     [SerializeField] private TMP_InputField usernameInput;
+    [SerializeField] private TextMeshProUGUI placeholderText;
     [SerializeField] private TextMeshProUGUI titleText;
     [SerializeField] private TextMeshProUGUI hintText;
     [SerializeField] private TextMeshProUGUI statusText;
@@ -114,6 +115,7 @@ public sealed class UIUsernamePanel : UIPanelBase
         if (loc == null) return;
         this.titleText.text = LocalizationManager.GetOnlineText(loc.OnlineUsername);
         this.hintText.text = LocalizationManager.GetOnlineText(loc.OnlineUsernameHint);
+        this.placeholderText.text = LocalizationManager.GetOnlineText(loc.OnlineUsernamePlaceholder);
         this.checkText.text = LocalizationManager.GetOnlineText(loc.OnlineCheckUsername);
         this.continueText.text = LocalizationManager.GetOnlineText(loc.OnlineContinue);
         this.backText.text = LocalizationManager.GetOnlineText(loc.OnlineBack);

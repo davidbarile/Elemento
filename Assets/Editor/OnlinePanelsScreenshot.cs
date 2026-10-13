@@ -26,8 +26,8 @@ public static class OnlinePanelsScreenshot
         {
             EditorSceneManager.OpenScene(scenePath, OpenSceneMode.Single);
 
-            var usernamePanels = UnityEngine.Object.FindObjectsByType<UIUsernamePanel>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            var lobbyPanels = UnityEngine.Object.FindObjectsByType<UIOnlineLobbyPanel>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            var usernamePanels = UnityEngine.Object.FindObjectsByType<UIUsernamePanel>(FindObjectsInactive.Include);
+            var lobbyPanels = UnityEngine.Object.FindObjectsByType<UIOnlineLobbyPanel>(FindObjectsInactive.Include);
 
             if (usernamePanels.Length == 0 || lobbyPanels.Length == 0)
             {
@@ -162,7 +162,7 @@ public static class OnlinePanelsScreenshot
 
         inviteCodeField.SetValue(lobbyPanel, inviteCode);
         var statusText = statusTextField.GetValue(lobbyPanel) as TMP_Text;
-        var localization = UnityEngine.Object.FindFirstObjectByType<LocalizationManager>(FindObjectsInactive.Include);
+        var localization = UnityEngine.Object.FindAnyObjectByType<LocalizationManager>(FindObjectsInactive.Include);
         string waitingText = localization != null && localization.OnlineWaiting != null && localization.OnlineWaiting.Length > 0
             && !string.IsNullOrEmpty(localization.OnlineWaiting[0])
             ? localization.OnlineWaiting[0]
