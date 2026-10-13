@@ -11132,7 +11132,7 @@ MonoBehaviour:
   - Modo de Descartar
   PlayMode:
   - Play Mode
-  - Mode de Jugar
+  - Modo de Juego
   AiDifficulty:
   - AI Difficulty
   - Dificultad de IA
@@ -11298,6 +11298,12 @@ MonoBehaviour:
   OpponentX:
   - Opponent {0}
   - Oponente {0}
+  PassToPlayerX:
+  - Pass to Player {0}
+  - Pasa al Jugador {0}
+  TapToContinue:
+  - Tap to Continue
+  - Toca para continuar
   YourTurn:
   - Your Turn
   - Tu Turno
@@ -11365,7 +11371,7 @@ MonoBehaviour:
     - Pasar y Jugar
   - Options:
     - Multiplayer
-    - Multigugador
+    - Multijugador
   DropdownOptions_AiDifficulty:
   - Options:
     - Easy

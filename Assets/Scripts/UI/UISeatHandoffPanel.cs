@@ -14,6 +14,7 @@ public sealed class UISeatHandoffPanel : MonoBehaviour
     private TextMeshProUGUI subtitleText;
     private Button continueButton;
     private Action onContinue;
+    private int playerNumber = 1;
 
     public static UISeatHandoffPanel Create(Transform inParent, TMP_FontAsset inFont = null)
     {
@@ -44,14 +45,16 @@ public sealed class UISeatHandoffPanel : MonoBehaviour
             new Vector2(.05f, .5f), new Vector2(.95f, .75f));
         this.subtitleText = CreateLabel("Subtitle", inFont, subtitleFontSize, subtitleColor,
             new Vector2(.05f, .3f), new Vector2(.95f, .5f));
-        this.subtitleText.text = "Tap to Continue";
+        LocalizationManager.OnLanguageChanged += HandleLanguageChanged;
+        RefreshText();
 
         Hide();
     }
 
     public void Show(int inPlayerNumber, Action inOnContinue)
     {
-        this.titleText.text = $"Pass to Player {inPlayerNumber}";
+        this.playerNumber = inPlayerNumber;
+        RefreshText();
         this.onContinue = inOnContinue;
         this.transform.SetAsLastSibling();
         this.gameObject.SetActive(true);
@@ -104,8 +107,33 @@ public sealed class UISeatHandoffPanel : MonoBehaviour
         return null;
     }
 
+    private void HandleLanguageChanged(int inLanguageIndex)
+    {
+        RefreshText();
+    }
+
+    private void RefreshText()
+    {
+        string passFormat = GetLocalized(LocalizationManager.IN != null ? LocalizationManager.IN.PassToPlayerX : null, "Pass to Player {0}");
+        this.titleText.text = string.Format(passFormat, this.playerNumber);
+        this.subtitleText.text = GetLocalized(LocalizationManager.IN != null ? LocalizationManager.IN.TapToContinue : null, "Tap to Continue");
+    }
+
+    private static string GetLocalized(string[] inStrings, string inFallback)
+    {
+        if (inStrings == null || inStrings.Length == 0)
+            return inFallback;
+
+        int languageIndex = LOC.LI;
+        if (languageIndex < 0 || languageIndex >= inStrings.Length || string.IsNullOrEmpty(inStrings[languageIndex]))
+            return inStrings[0];
+
+        return inStrings[languageIndex];
+    }
+
     private void OnDestroy()
     {
+        LocalizationManager.OnLanguageChanged -= HandleLanguageChanged;
         if (this.continueButton != null)
             this.continueButton.onClick.RemoveListener(HandleContinueButtonPress);
     }
