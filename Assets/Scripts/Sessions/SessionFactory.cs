@@ -5,7 +5,9 @@ public static class SessionFactory
         if (inPlayMode == SettingsManager.EPlayMode.PassAndPlay)
             return new PassAndPlaySession();
 
-        // Multiplayer intentionally falls back to local AI until remote sessions exist.
+        if (inPlayMode == SettingsManager.EPlayMode.Multiplayer && OnlineMatchContext.IsActive)
+            return new OnlineSession(OnlineMatchContext.LocalSeat, OnlineMatchContext.Client);
+
         return new LocalAiSession();
     }
 }

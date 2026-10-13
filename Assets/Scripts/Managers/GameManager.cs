@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using DG.Tweening;
+using Elemento.Domain.Net;
 using DomainGameRules = Elemento.Domain.GameRules;
 using DomainRulesConfigData = Elemento.Domain.RulesConfigData;
 using DomainTurnRules = Elemento.Domain.TurnRules;
@@ -21,7 +22,7 @@ public class GameManager : MonoBehaviour
     public static bool IsDealingHand;
     public static bool IsDoingActivateSequence;
     public static bool IsDoingReplay;
-    public static bool ShouldBlockInput => IsDealingHand || IsDoingActivateSequence || IsDoingReplay || (IN != null && IN.isHandoffPending);
+    public static bool ShouldBlockInput => IsDealingHand || IsDoingActivateSequence || IsDoingReplay || (IN != null && (IN.isHandoffPending || IN.IsOnline));
 
     private readonly string ANIM_STATE = "state";
 
@@ -106,15 +107,16 @@ public class GameManager : MonoBehaviour
     private int currentPlayerIndex = 0;
     private int previousPlayerIndex = -1;
     public UIPlayerBoard CurrentPlayerBoard => this.PlayerBoards[this.currentPlayerIndex];
-    public UIPlayerBoard PlayerInputBoard => this.IsPassAndPlay ? this.CurrentPlayerBoard : this.PlayerBoard;
+    public UIPlayerBoard PlayerInputBoard => this.IsOnline ? this.PlayerBoards[((OnlineSession)this.gameSession).LocalSeat] : this.IsPassAndPlay ? this.CurrentPlayerBoard : this.PlayerBoard;
     public EPlayerType CurrentPlayer => (EPlayerType)this.currentPlayerIndex + 1;
     public bool IsPlayersTurn => this.gameSession == null ? this.currentPlayerIndex == 0 : (this.gameSession.IsHumanSeat(this.currentPlayerIndex) && !this.isHandoffPending);
     public bool IsPassAndPlay => this.gameSession != null && this.gameSession.GameMode == Elemento.Domain.EGameMode.PassAndPlay;
-    public bool IsCurrentSeatControlledByAI => !this.IsPassAndPlay && ((this.gameSession != null && this.gameSession.ShouldRunAI(this.currentPlayerIndex)) || this.CurrentPlayerBoard.IsAutoPlay);
+    public bool IsOnline => this.gameSession is OnlineSession;
+    public bool IsCurrentSeatControlledByAI => !this.IsOnline && !this.IsPassAndPlay && ((this.gameSession != null && this.gameSession.ShouldRunAI(this.currentPlayerIndex)) || this.CurrentPlayerBoard.IsAutoPlay);
 
     public bool CanControlPlayer(EPlayerType inPlayerType)
     {
-        return this.IsPlayersTurn && (!this.IsPassAndPlay || this.CurrentPlayer == inPlayerType);
+        return !this.IsOnline && this.IsPlayersTurn && (!this.IsPassAndPlay || this.CurrentPlayer == inPlayerType);
     }
 
     public float GameSpeed => this.gameSpeed;
@@ -127,6 +129,7 @@ public class GameManager : MonoBehaviour
     private IGameSession gameSession;
     private SeatViewBinder seatViewBinder;
     private UIPlayerBoard[] boardSlots;
+    private OnlineMatchClient onlineClient;
 
     private BoardState lastCreatedBoardState;
 
@@ -177,6 +180,20 @@ public class GameManager : MonoBehaviour
     public void RestartGame()
     {
         ConfigureSession();
+        if (SettingsManager.IN.PlayMode == EPlayMode.Multiplayer && !OnlineMatchContext.IsActive)
+        {
+            StopAllCoroutines();
+            CancelInvoke();
+            UIOnlineLobbyPanel.IN.Show();
+            return;
+        }
+
+        if (this.IsOnline)
+        {
+            StartOnlineSession();
+            return;
+        }
+
         UISeatHandoffPanel.IN.Hide();
         this.isHandoffPending = false;
 
@@ -729,7 +746,13 @@ public class GameManager : MonoBehaviour
 
     private void ConfigureSession()
     {
+        if (this.onlineClient != null)
+            this.onlineClient.ViewChanged -= HandleOnlineViewChanged;
+
         this.gameSession = SessionFactory.Create(SettingsManager.IN.PlayMode);
+        this.onlineClient = (this.gameSession as OnlineSession)?.Client;
+        if (this.onlineClient != null)
+            this.onlineClient.ViewChanged += HandleOnlineViewChanged;
 
         if (this.boardSlots == null || this.boardSlots.Length != this.PlayerBoards.Length)
         {
@@ -738,6 +761,53 @@ public class GameManager : MonoBehaviour
         }
 
         ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
+    }
+
+    private void StartOnlineSession()
+    {
+        StopAllCoroutines();
+        CancelInvoke();
+        CleanUpGameState();
+        UISeatHandoffPanel.IN.Hide();
+        this.isHandoffPending = false;
+        this.beginTurnButton.SetActive(false);
+        this.endTurnButton.SetActive(false);
+        this.discardToEndTurnZone.SetActive(false);
+        this.speedUpOpponentTurnButton.SetActive(false);
+        SetReplayButtonVisibility(false);
+        this.TurnPhase = ETurnPhase.None;
+
+        if (this.onlineClient.CurrentView != null)
+            HandleOnlineViewChanged(this.onlineClient.CurrentView);
+        else
+            _ = this.onlineClient.RefreshAsync(null, inError => Debug.LogWarning(inError.Message));
+    }
+
+    private void HandleOnlineViewChanged(MatchSeatViewData inSeatView)
+    {
+        if (!this.IsOnline || inSeatView?.View == null || inSeatView.MatchId != this.onlineClient.MatchId
+            || inSeatView.Seat != this.onlineClient.LocalSeat)
+            return;
+
+        if (inSeatView.View.CurrentPlayerId < 0 || inSeatView.View.CurrentPlayerId >= this.PlayerBoards.Length)
+            return;
+
+        this.currentPlayerIndex = inSeatView.View.CurrentPlayerId;
+        this.CurrentTurnNumber = inSeatView.View.TurnNumber;
+        this.MovesRemaining = inSeatView.View.MovesRemaining;
+        ApplyViewingSeat(this.onlineClient.LocalSeat);
+        RefreshPassAndPlayHandVisibility();
+        RefreshTurnAndMoveCountDisplay();
+
+        // TODO U1: Project authoritative cards/zones into Unity boards before enabling online input.
+        // TODO U1: Map Unity's 1-based player/zone IDs and card IDs to the seat view, then SubmitMoveAsync.
+        // shortcut: online sessions display seat/turn metadata only; keep input blocked until projection exists.
+    }
+
+    private void OnDestroy()
+    {
+        if (this.onlineClient != null)
+            this.onlineClient.ViewChanged -= HandleOnlineViewChanged;
     }
 
     private void ApplyViewingSeat(int inViewingSeat)
@@ -795,7 +865,7 @@ public class GameManager : MonoBehaviour
 
     private void RefreshPassAndPlayHandVisibility()
     {
-        if (!this.IsPassAndPlay) return;
+        if (!this.IsPassAndPlay && !this.IsOnline) return;
 
         for (int i = 0; i < this.PlayerBoards.Length; i++)
         {

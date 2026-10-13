@@ -7,6 +7,17 @@ using System.Text;
 
 namespace Elemento.Domain.Net
 {
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class NetJsonNameAttribute : Attribute
+    {
+        public string Name { get; }
+
+        public NetJsonNameAttribute(string inName)
+        {
+            this.Name = inName;
+        }
+    }
+
     public static class NetJson
     {
         public static string Serialize<T>(T inValue)
@@ -92,7 +103,7 @@ namespace Elemento.Domain.Net
             {
                 if (i > 0)
                     inBuilder.Append(',');
-                WriteString(inBuilder, fields[i].Name);
+                WriteString(inBuilder, GetWireName(fields[i]));
                 inBuilder.Append(':');
                 WriteValue(inBuilder, fields[i].GetValue(inValue));
             }
@@ -178,10 +189,15 @@ namespace Elemento.Domain.Net
             object target = Activator.CreateInstance(inTargetType);
             foreach (var field in inTargetType.GetFields(BindingFlags.Instance | BindingFlags.Public))
             {
-                if (values.TryGetValue(field.Name, out object value))
+                if (values.TryGetValue(GetWireName(field), out object value))
                     field.SetValue(target, ConvertValue(value, field.FieldType));
             }
             return target;
+        }
+
+        private static string GetWireName(FieldInfo inField)
+        {
+            return inField.GetCustomAttribute<NetJsonNameAttribute>()?.Name ?? inField.Name;
         }
 
         private sealed class JsonParser

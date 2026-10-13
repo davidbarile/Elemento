@@ -244,6 +244,31 @@ public class LocalizationManager : MonoBehaviour
     public string[] OpponentX;//$"Opponent {this.currentPlayerIndex}";
     public string[] PassToPlayerX;//$"Pass to Player {N}"
     public string[] TapToContinue;//"Tap to Continue"
+    [Header("Online Play")]
+    public string[] OnlineUsername = { "Choose a username", "Elige un nombre de usuario" };
+    public string[] OnlineUsernameHint = { "3-20 letters, numbers or underscores", "3-20 letras, números o guiones bajos" };
+    public string[] OnlineCheckUsername = { "Check availability", "Comprobar disponibilidad" };
+    public string[] OnlineUsernameAvailable = { "Username available", "Nombre disponible" };
+    public string[] OnlineUsernameUnavailable = { "Username unavailable or invalid", "Nombre no disponible o no válido" };
+    public string[] OnlineContinue = { "Continue", "Continuar" };
+    public string[] OnlineLobby = { "Online Match", "Partida en línea" };
+    public string[] OnlineCreateMatch = { "Create Match", "Crear partida" };
+    public string[] OnlineJoinMatch = { "Join Match", "Unirse a partida" };
+    public string[] OnlineInviteCode = { "Invite code", "Código de invitación" };
+    public string[] OnlineWaiting = { "Invite code: {0} — waiting for opponent", "Código: {0} — esperando rival" };
+    public string[] OnlineBack = { "Back", "Volver" };
+    public string[] OnlineWorking = { "Connecting…", "Conectando…" };
+    public string[] OnlineError = { "Connection failed. Please try again.", "Error de conexión. Inténtalo de nuevo." };
+    public string[] OnlineInvalidInvite = { "Enter a six-character invite code", "Introduce un código de seis caracteres" };
+
+    public static string GetOnlineText(string[] inStrings)
+    {
+        if (inStrings == null || inStrings.Length == 0)
+            return string.Empty;
+        int index = LOC.LI;
+        return index >= 0 && index < inStrings.Length && !string.IsNullOrEmpty(inStrings[index])
+            ? inStrings[index] : inStrings[0];
+    }
     public string[] YourTurn;//"Your Turn";
     public string[] YourTurnAuto;//"Your Turn <i>(auto)</i>"
     public string[] InfoAboutYourGame;//"Here is some info about your game:"
