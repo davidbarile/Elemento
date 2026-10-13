@@ -14,6 +14,11 @@ public sealed class LocalAiSession : IGameSession
         return !IsHumanSeat(inPlayerIndex);
     }
 
+    public int GetViewingSeat(int inActivePlayerIndex)
+    {
+        return 0;
+    }
+
     public bool IsHandVisible(int inHandPlayerIndex, int inViewerPlayerIndex, bool inIsHandoffPending)
     {
         return TurnRules.IsHandVisible(this.GameMode, inHandPlayerIndex, inViewerPlayerIndex, inIsHandoffPending);

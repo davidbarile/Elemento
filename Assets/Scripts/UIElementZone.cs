@@ -213,6 +213,64 @@ public class UIElementZone : MonoBehaviour
         return state;
     }
 
+    public void SwapPlayerState(UIElementZone inOther)
+    {
+        if (inOther == null)
+            throw new ArgumentNullException(nameof(inOther));
+
+        Swap(ref this.PlayerType, ref inOther.PlayerType);
+        Swap(ref this.Points, ref inOther.Points);
+        Swap(ref this.FaceUpPoints, ref inOther.FaceUpPoints);
+        Swap(ref this.Health, ref inOther.Health);
+        Swap(ref this.FrozenHealth, ref inOther.FrozenHealth);
+        Swap(ref this.CardCell.Cards, ref inOther.CardCell.Cards);
+
+        bool isActivated = this.IsActivated;
+        this.IsActivated = inOther.IsActivated;
+        inOther.IsActivated = isActivated;
+
+        bool isDestroyed = this.IsDestroyed;
+        this.IsDestroyed = inOther.IsDestroyed;
+        inOther.IsDestroyed = isDestroyed;
+
+        int maxHealth = this.MaxHealth;
+        this.MaxHealth = inOther.MaxHealth;
+        inOther.MaxHealth = maxHealth;
+
+        RefreshPlayerStateView();
+        inOther.RefreshPlayerStateView();
+    }
+
+    private void RefreshPlayerStateView()
+    {
+        this.CardCell.PlayerType = this.PlayerType;
+        foreach (var card in this.CardCell.Cards)
+            this.CardCell.SetParentCell(card, false);
+
+        this.CardCell.RefreshVisibleCardCount();
+        this.pointsCountDisplay.SetActive(this.FaceUpPoints > 0 && !this.IsDestroyed);
+        this.pointsCount.SetText(this.FaceUpPoints, SettingsManager.IN.ElementZonePointsRequiredToActivate);
+
+        foreach (var item in this.activeDisplays)
+            item.SetActive(this.IsActivated);
+
+        this.frozenOverlay.SetActive(this.IsFrozen);
+        this.zoneFrozenHealth.SetText(this.FrozenHealth, SettingsManager.IN.FrozenZoneHealth);
+
+        bool isElementZoneBombingEnabled = SettingsManager.IN.TutorialSafeElementZoneHealth > 0;
+        this.zoneHealthDisplay.SetActive(isElementZoneBombingEnabled && !this.IsDestroyed);
+        this.zoneDestroyedOverlay.SetActive(isElementZoneBombingEnabled && this.IsDestroyed);
+        this.zoneHealth.SetText(this.Health, SettingsManager.IN.TutorialSafeElementZoneHealth);
+        RefreshSiblingIndices();
+    }
+
+    private static void Swap<T>(ref T inFirst, ref T inSecond)
+    {
+        T value = inFirst;
+        inFirst = inSecond;
+        inSecond = value;
+    }
+
     public void RefreshSiblingIndices()
     {
         this.CardPlaceAnimator.transform.SetAsLastSibling();

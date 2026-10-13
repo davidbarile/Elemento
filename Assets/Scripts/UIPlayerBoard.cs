@@ -353,6 +353,56 @@ public class UIPlayerBoard : MonoBehaviour
         return state;
     }
 
+    public void SwapPlayerState(UIPlayerBoard inOther)
+    {
+        if (inOther == null)
+            throw new ArgumentNullException(nameof(inOther));
+        if (this.ElementZones.Length != inOther.ElementZones.Length)
+            throw new InvalidOperationException("Cannot swap player boards with different element-zone counts.");
+
+        Swap(ref this.Name, ref inOther.Name);
+        Swap(ref this.PlayerType, ref inOther.PlayerType);
+        Swap(ref this.CurrentMoveNumber, ref inOther.CurrentMoveNumber);
+        Swap(ref this.TotalMovesTaken, ref inOther.TotalMovesTaken);
+
+        this.Hand.SwapPlayerState(inOther.Hand);
+        for (int i = 0; i < this.ElementZones.Length; i++)
+            this.ElementZones[i].SwapPlayerState(inOther.ElementZones[i]);
+
+        ConfigurePlayerType();
+        inOther.ConfigurePlayerType();
+        RefreshPlayerStateData();
+        inOther.RefreshPlayerStateData();
+        CalculateTotalPoints(false);
+        inOther.CalculateTotalPoints(false);
+    }
+
+    private void RefreshPlayerStateData()
+    {
+        GenerateUsefulData();
+        for (int i = 0; i < this.ElementZones.Length; i++)
+            this.TopCards[i] = this.ElementZones[i].CardCell.TopCard;
+    }
+
+    private void ConfigurePlayerType()
+    {
+        foreach (var zone in this.ElementZones)
+        {
+            zone.PlayerType = this.PlayerType;
+            zone.CardCell.PlayerType = this.PlayerType;
+        }
+
+        foreach (var cell in this.Hand.CardCells)
+            cell.PlayerType = this.PlayerType;
+    }
+
+    private static void Swap<T>(ref T inFirst, ref T inSecond)
+    {
+        T value = inFirst;
+        inFirst = inSecond;
+        inSecond = value;
+    }
+
     public void Reset()
     {
         StopMovesCoroutine();

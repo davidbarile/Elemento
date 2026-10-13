@@ -126,6 +126,8 @@ public class GameManager : MonoBehaviour
     private int cachedRandomSeed = -1;
     private IGameSession gameSession;
     private UISeatHandoffPanel handoffPanel;
+    private SeatViewBinder seatViewBinder;
+    private UIPlayerBoard[] boardSlots;
 
     private BoardState lastCreatedBoardState;
 
@@ -199,6 +201,7 @@ public class GameManager : MonoBehaviour
 
         this.currentPlayerIndex = 0;
         this.previousPlayerIndex = -1;
+        ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
         this.CurrentTurnNumber = 0;
 
         ResetMovesRemaining();
@@ -329,7 +332,7 @@ public class GameManager : MonoBehaviour
         if (this.IsCurrentSeatControlledByAI)
             StartCoroutine(OpponentsTurnCo(true));
         else
-            StartCoroutine(DealCardsCo(SettingsManager.IN.NumCardsToDeal, this.CurrentPlayerBoard.Hand.transform));
+            StartCoroutine(DealCardsCo(SettingsManager.IN.NumCardsToDeal, this.CurrentPlayerBoard.Hand));
     }
 
     //called by End Turn Button
@@ -362,7 +365,7 @@ public class GameManager : MonoBehaviour
 
             yield return new WaitForSeconds(.25f);
 
-            StartCoroutine(DealCardsCo(SettingsManager.IN.NumCardsToDeal, this.CurrentPlayerBoard.Hand.transform));
+            StartCoroutine(DealCardsCo(SettingsManager.IN.NumCardsToDeal, this.CurrentPlayerBoard.Hand));
 
             while (GameManager.IsDealingHand)
             {
@@ -394,7 +397,7 @@ public class GameManager : MonoBehaviour
         SelectNextPlayer();
     }
 
-    private IEnumerator DealCardsCo(int inCount, Transform inTransform)
+    private IEnumerator DealCardsCo(int inCount, UIHand inHand)
     {
         GameManager.IsDealingHand = true;
 
@@ -402,14 +405,14 @@ public class GameManager : MonoBehaviour
 
         yield return new WaitForSeconds(.5f);
 
-        inCount = Mathf.Min(inCount, SettingsManager.IN.MaxCardsInHand - this.CurrentPlayerBoard.Hand.NumCardsInHand);
+        inCount = Mathf.Min(inCount, SettingsManager.IN.MaxCardsInHand - inHand.NumCardsInHand);
 
         if (inCount <= 0)
             inCount = 0;
 
         for (int i = 0; i < inCount; i++)
         {
-            int numCardsInHand = this.CurrentPlayerBoard.Hand.NumCardsInHand;
+            int numCardsInHand = inHand.NumCardsInHand;
 
             //if (numCardsInHand >= SettingsManager.IN.MaxCardsInHand)
             //{
@@ -426,7 +429,7 @@ public class GameManager : MonoBehaviour
 
             if (this.Deck.TopCard != null)
             {
-                var playerHandPos = GetCardAnimDestination(numCardsInHand);
+                var playerHandPos = GetCardAnimDestination(inHand, numCardsInHand);
 
                 this.Deck.TopCard.Draggable.AnimateTo(playerHandPos, this.dealTweenDuration);
 
@@ -448,17 +451,18 @@ public class GameManager : MonoBehaviour
         IncrementTurnPhase();
     }
 
-    private Vector3 GetCardAnimDestination(int inNumCardsInHand)
+    private Vector3 GetCardAnimDestination(UIHand inHand, int inNumCardsInHand)
     {
-        var boardScale = this.CurrentPlayerBoard.transform.parent.localScale.x;
+        var playerBoard = inHand.GetComponentInParent<UIPlayerBoard>();
+        var boardScale = playerBoard.transform.parent.localScale.x;
 
-        var handRT = this.CurrentPlayerBoard.Hand.transform.GetComponent<RectTransform>();
+        var handRT = inHand.transform.GetComponent<RectTransform>();
         var halfHandWidth = handRT.rect.width * .5f * boardScale + 30;
         var rawDealDest = this.dealDestOffset.x * inNumCardsInHand;
         var isOutsideOfHand = rawDealDest > halfHandWidth;
 
         var offset = isOutsideOfHand ? Vector3.zero : this.dealDestOffset * inNumCardsInHand * this.mainCanvas.localScale.x * boardScale;
-        var playerHandPos = this.CurrentPlayerBoard.Hand.transform.position + offset;
+        var playerHandPos = inHand.transform.position + offset;
 
         return playerHandPos;
     }
@@ -496,7 +500,7 @@ public class GameManager : MonoBehaviour
         if (powerCard != null)
         {
             //TODO: add trail renderer
-            var playerHandPos = GetCardAnimDestination(numCardsInHand);
+            var playerHandPos = GetCardAnimDestination(this.CurrentPlayerBoard.Hand, numCardsInHand);
             powerCard.Draggable.AnimateTo(playerHandPos, this.dealTweenDuration);
 
             AudioManager.IN.PlayCardSwooshSound(0, 1);
@@ -538,7 +542,7 @@ public class GameManager : MonoBehaviour
 
             if (this.Deck.TopCard != null)
             {
-                var playerHandPos = GetCardAnimDestination(numCardsInHand);
+                var playerHandPos = GetCardAnimDestination(this.CurrentPlayerBoard.Hand, numCardsInHand);
 
                 this.Deck.TopCard.Draggable.AnimateTo(playerHandPos, this.dealTweenDuration);
 
@@ -578,7 +582,7 @@ public class GameManager : MonoBehaviour
 
             if (this.Deck.TopCard != null)
             {
-                var playerHandPos = GetCardAnimDestination(numCardsInHand);
+                var playerHandPos = GetCardAnimDestination(this.CurrentPlayerBoard.Hand, numCardsInHand);
                 this.Deck.TopCard.Draggable.AnimateTo(playerHandPos, this.dealTweenDuration);
 
                 var pitch = 1 + (i * .1f);
@@ -719,6 +723,23 @@ public class GameManager : MonoBehaviour
     private void ConfigureSession()
     {
         this.gameSession = SessionFactory.Create(SettingsManager.IN.PlayMode);
+
+        if (this.boardSlots == null || this.boardSlots.Length != this.PlayerBoards.Length)
+        {
+            this.boardSlots = (UIPlayerBoard[])this.PlayerBoards.Clone();
+            this.seatViewBinder = new SeatViewBinder(this.PlayerBoards.Length);
+        }
+
+        ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
+    }
+
+    private void ApplyViewingSeat(int inViewingSeat)
+    {
+        if (this.seatViewBinder == null || !this.seatViewBinder.SetViewingSeat(inViewingSeat))
+            return;
+
+        this.seatViewBinder.Rebind(this.PlayerBoards, this.boardSlots,
+            (inFirst, inSecond) => inFirst.SwapPlayerState(inSecond));
     }
 
     private void BeginHumanDrawPhase()
@@ -739,10 +760,10 @@ public class GameManager : MonoBehaviour
             return false;
 
         this.isHandoffPending = true;
-        RefreshPassAndPlayHandVisibility();
-
         string message = $"Pass to Player {this.currentPlayerIndex + 1} - tap to continue";
         this.handoffPanel.Show(message, ContinuePassAndPlayTurn);
+        ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
+        RefreshPassAndPlayHandVisibility();
         return true;
     }
 
@@ -1031,6 +1052,7 @@ public class GameManager : MonoBehaviour
 
         this.CurrentTurnNumber = inBoardState.TurnNumber;
         this.currentPlayerIndex = (int)inBoardState.ActivePlayer - 1;
+        ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
 
         this.CurrentPlayerBoard.CurrentMoveNumber = inBoardState.MoveNumber;
         this.CurrentPlayerBoard.TotalMovesTaken = inBoardState.TotalMovesTaken;
@@ -1523,6 +1545,7 @@ public class GameManager : MonoBehaviour
         ResetMovesRemaining(true);
 
         this.currentPlayerIndex = 0;
+        ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
 
         MeltFrozenZones();
 

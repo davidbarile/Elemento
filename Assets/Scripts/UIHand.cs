@@ -1,9 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using DG.Tweening;
 using Sirenix.OdinInspector;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 using static CardData;
 using static GameManager;
@@ -20,6 +22,7 @@ public class UIHand : MonoBehaviour
 
     [Space]
     [SerializeField] private TextMeshProUGUI promptText;
+    [FormerlySerializedAs("horizontalGroupRectTrans")]
     public RectTransform HandGrid;
 
     public int NumCardsInHand
@@ -60,6 +63,41 @@ public class UIHand : MonoBehaviour
     public void RefreshCardCells()
     {
         this.CardCells = this.transform.GetComponentsInChildren<UICardCell>(true).ToList();
+    }
+
+    public void SwapPlayerState(UIHand inOther)
+    {
+        if (inOther == null)
+            throw new ArgumentNullException(nameof(inOther));
+        if (this.CardCells.Count != inOther.CardCells.Count)
+            throw new InvalidOperationException("Cannot swap hands with different card-cell counts.");
+
+        for (int i = 0; i < this.CardCells.Count; i++)
+        {
+            var thisCell = this.CardCells[i];
+            var otherCell = inOther.CardCells[i];
+            var thisCards = thisCell.Cards;
+            bool isThisCellActive = thisCell.gameObject.activeSelf;
+
+            thisCell.Cards = otherCell.Cards;
+            otherCell.Cards = thisCards;
+            thisCell.gameObject.SetActive(otherCell.gameObject.activeSelf);
+            otherCell.gameObject.SetActive(isThisCellActive);
+
+            RefreshCardParents(thisCell);
+            RefreshCardParents(otherCell);
+        }
+
+        LayoutRebuilder.ForceRebuildLayoutImmediate(this.HandGrid);
+        LayoutRebuilder.ForceRebuildLayoutImmediate(inOther.HandGrid);
+    }
+
+    private static void RefreshCardParents(UICardCell inCell)
+    {
+        foreach (var card in inCell.Cards)
+            inCell.SetParentCell(card, false);
+
+        inCell.RefreshVisibleCardCount();
     }
 
     public void ResetCardCellSiblingIndices()

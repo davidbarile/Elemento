@@ -14,6 +14,11 @@ public sealed class PassAndPlaySession : IGameSession
         return false;
     }
 
+    public int GetViewingSeat(int inActivePlayerIndex)
+    {
+        return inActivePlayerIndex;
+    }
+
     public bool IsHandVisible(int inHandPlayerIndex, int inViewerPlayerIndex, bool inIsHandoffPending)
     {
         return TurnRules.IsHandVisible(this.GameMode, inHandPlayerIndex, inViewerPlayerIndex, inIsHandoffPending);
