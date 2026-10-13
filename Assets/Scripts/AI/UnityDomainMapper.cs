@@ -213,13 +213,17 @@ public static class UnityDomainMapper
         candidate.PlayerId = inView.Player.Id;
         candidate.Type = inMove.IsDiscard ? DomainMoveType.DiscardCard
             : inMove.ActivatePowerZone != null ? DomainMoveType.ActivateZone : DomainMoveType.PlayCard;
-        candidate.SourceZoneId = GetOnlineZoneId(inMove.SourceCell);
-        candidate.TargetPlayerId = inMove.IsDiscard ? -1 : GetOnlinePlayerId(inMove.TargetCell, candidate.PlayerId);
+        bool isActivation = inMove.ActivatePowerZone != null;
+        candidate.CardId = isActivation ? null : candidate.CardId;
+        candidate.SourceZoneId = isActivation
+            ? GetOnlineZoneId(inMove.ActivatePowerZone.CardCell) : GetOnlineZoneId(inMove.SourceCell);
+        candidate.TargetPlayerId = inMove.IsDiscard ? -1
+            : isActivation ? candidate.PlayerId : GetOnlinePlayerId(inMove.TargetCell, candidate.PlayerId);
         candidate.TargetZoneId = inMove.IsDiscard ? -1
-            : inMove.ActivatePowerZone != null ? GetOnlineZoneId(inMove.ActivatePowerZone.CardCell)
+            : isActivation ? GetOnlineZoneId(inMove.ActivatePowerZone.CardCell)
             : GetOnlineZoneId(inMove.TargetCell);
-        candidate.PowerCardType = inMove.ActivatePowerZone == null
-            ? DomainPowerCardType.None : MapPowerCardType(inMove.CardType);
+        candidate.PowerCardType = isActivation && inView.Rules?.AllowSelectPowerCardType == true
+            ? MapPowerCardType(inMove.CardType) : DomainPowerCardType.None;
 
         foreach (var legalMove in inView.LegalMoves)
         {

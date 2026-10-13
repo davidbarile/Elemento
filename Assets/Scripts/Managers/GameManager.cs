@@ -667,7 +667,8 @@ public class GameManager : MonoBehaviour
     {
         if (this.IsCurrentSeatControlledByAI) return false;
 
-        return this.TurnPhase == ETurnPhase.PlayerPlaying || (this.IsPassAndPlay && this.TurnPhase == ETurnPhase.OpponentPlaying);
+        return this.TurnPhase == ETurnPhase.PlayerPlaying
+            || ((this.IsPassAndPlay || this.IsOnline) && this.TurnPhase == ETurnPhase.OpponentPlaying);
     }
 
     private void SelectNextPlayer()
@@ -1655,8 +1656,7 @@ public class GameManager : MonoBehaviour
 
     public void TryHighlightDiscardPile()
     {
-        bool isHumanPlayingPhase = this.TurnPhase == ETurnPhase.PlayerPlaying || (this.IsPassAndPlay && this.TurnPhase == ETurnPhase.OpponentPlaying);
-        if (!isHumanPlayingPhase || this.IsCurrentSeatControlledByAI) return;
+        if (!IsHumanPlayingPhase() || this.IsCurrentSeatControlledByAI) return;
 
         bool isLastCard = this.CurrentPlayerBoard.Hand.NumCardsInHand <= 1;
 

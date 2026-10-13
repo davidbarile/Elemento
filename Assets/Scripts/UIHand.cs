@@ -337,8 +337,9 @@ public class UIHand : MonoBehaviour
     {
         if (this.promptText == null) return;
 
-        bool isDrawPhase = GameManager.IN.TurnPhase == ETurnPhase.PlayerDraw || (GameManager.IN.IsPassAndPlay && GameManager.IN.TurnPhase == ETurnPhase.OpponentDraw);
-        bool isPlayingPhase = GameManager.IN.TurnPhase == ETurnPhase.PlayerPlaying || (GameManager.IN.IsPassAndPlay && GameManager.IN.TurnPhase == ETurnPhase.OpponentPlaying);
+        bool usesOpponentPhases = GameManager.IN.IsPassAndPlay || GameManager.IN.IsOnline;
+        bool isDrawPhase = GameManager.IN.TurnPhase == ETurnPhase.PlayerDraw || (usesOpponentPhases && GameManager.IN.TurnPhase == ETurnPhase.OpponentDraw);
+        bool isPlayingPhase = GameManager.IN.TurnPhase == ETurnPhase.PlayerPlaying || (usesOpponentPhases && GameManager.IN.TurnPhase == ETurnPhase.OpponentPlaying);
         bool isCurrentHand = this == GameManager.IN.PlayerInputBoard.Hand;
 
         bool shouldShow = this.NumCardsInHand == 0 && isCurrentHand && GameManager.IN.IsPlayersTurn && (isDrawPhase || isPlayingPhase)

@@ -328,7 +328,10 @@ public class UIPlayerBoard : MonoBehaviour
 
     public void CalculateOnlineTotalPoints()
     {
-        this.TotalPoints = this.ElementZones.Sum(inZone => inZone.Points);
+        this.TotalPoints = 0;
+        foreach (var zone in this.ElementZones)
+            this.TotalPoints += zone.Points;
+
         RefreshTotalPointsDisplay(false);
     }
 

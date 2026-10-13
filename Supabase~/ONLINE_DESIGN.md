@@ -40,8 +40,10 @@ notification / poll on `turn_deadline`, resume by fetching the seat view at curr
 
 ## Client (Unity)
 `OnlineSession : IGameSession`, viewing seat = local seat via `SeatViewBinder` (local player always
-at bottom). Local input becomes `MoveCommandData`; UI mutates only on accepted results/new views.
-Transport behind an interface (`IMatchTransport`); this step ships an in-memory/loopback one only.
+at bottom). Local input is matched to an authoritative legal `MoveData` and submitted through
+`OnlineMatchClient`; each returned or pushed `MatchSeatViewData` fully rebuilds the visible board.
+Rejected optimistic UI changes are discarded by re-rendering the last server view. Supabase uses
+`IAsyncMatchTransport`; the in-memory transport remains available for simulation tests.
 
 ## Decisions David must make
 1. Supabase org + project (new org vs existing; project name; region, e.g. us-west-1).
