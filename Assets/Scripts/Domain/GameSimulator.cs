@@ -9,12 +9,21 @@ namespace Elemento.Domain
 
         public GameStateData CreateGame(int inSeed, RulesConfigData inRules = null)
         {
+            return CreateGame(inSeed, inRules, DeckDefinitionData.CreateChoiceDeck());
+        }
+
+        public GameStateData CreateGame(int inSeed, RulesConfigData inRules, IList<CardInstanceData> inDeck)
+        {
+            if (inDeck == null)
+                throw new ArgumentNullException(nameof(inDeck));
+
             var rules = inRules == null ? new RulesConfigData() : inRules.Clone();
             ValidateRules(rules);
 
             var state = new GameStateData
             {
                 MatchId = "match-" + inSeed,
+                Seed = inSeed,
                 CurrentPlayerId = 0,
                 WinnerPlayerId = -1,
                 Rules = rules,
@@ -23,7 +32,16 @@ namespace Elemento.Domain
 
             state.Players.Add(CreatePlayer(0, "Player One", rules));
             state.Players.Add(CreatePlayer(1, "Player Two", rules));
-            state.ReserveDeck.AddRange(DeckDefinitionData.CreateChoiceDeck());
+            foreach (var sourceCard in inDeck)
+            {
+                if (sourceCard == null)
+                    throw new ArgumentException("The deck cannot contain null cards.", nameof(inDeck));
+
+                var card = sourceCard.Clone();
+                card.Id = null;
+                card.IsFaceUp = false;
+                state.ReserveDeck.Add(card);
+            }
             Shuffle(state, state.ReserveDeck);
             AddBatchOfCardsToGameDeck(state);
             state.PowerDeck.AddRange(DeckDefinitionData.CreatePowerDeck());

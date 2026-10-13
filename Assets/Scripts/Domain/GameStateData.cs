@@ -274,6 +274,7 @@ namespace Elemento.Domain
         public int SchemaVersion = 1;
         public int RulesVersion = 1;
         public string MatchId;
+        public int Seed;
         public int Revision;
         public int TurnNumber;
         public int CurrentPlayerId;
@@ -298,6 +299,7 @@ namespace Elemento.Domain
                 SchemaVersion = this.SchemaVersion,
                 RulesVersion = this.RulesVersion,
                 MatchId = this.MatchId,
+                Seed = this.Seed,
                 Revision = this.Revision,
                 TurnNumber = this.TurnNumber,
                 CurrentPlayerId = this.CurrentPlayerId,
