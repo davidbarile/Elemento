@@ -45336,6 +45336,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Pass And Play Handoff Panel
       objectReference: {fileID: 0}
+    - target: {fileID: 537227039890144135, guid: 852043db700e142c1a8e65aea5b6c89f, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 6159314518200873295, guid: 852043db700e142c1a8e65aea5b6c89f, type: 3}
       propertyPath: m_Pivot.x
       value: 0.5
@@ -47776,34 +47780,6 @@ PrefabInstance:
     - target: {fileID: 7100000000000000001, guid: e304a252833e479a81b380e8213f1082, type: 3}
       propertyPath: m_IsActive
       value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7100000000000000020, guid: e304a252833e479a81b380e8213f1082, type: 3}
-      propertyPath: m_fontColor32.rgba
-      value: 4289835441
-      objectReference: {fileID: 0}
-    - target: {fileID: 7100000000000000024, guid: e304a252833e479a81b380e8213f1082, type: 3}
-      propertyPath: m_fontColor32.rgba
-      value: 4294967295
-      objectReference: {fileID: 0}
-    - target: {fileID: 7100000000000000029, guid: e304a252833e479a81b380e8213f1082, type: 3}
-      propertyPath: m_fontColor32.rgba
-      value: 4294967295
-      objectReference: {fileID: 0}
-    - target: {fileID: 7100000000000000034, guid: e304a252833e479a81b380e8213f1082, type: 3}
-      propertyPath: m_fontColor32.rgba
-      value: 4294967295
-      objectReference: {fileID: 0}
-    - target: {fileID: 7100000000000000044, guid: e304a252833e479a81b380e8213f1082, type: 3}
-      propertyPath: m_text
-      value: "\u200B"
-      objectReference: {fileID: 0}
-    - target: {fileID: 7100000000000000044, guid: e304a252833e479a81b380e8213f1082, type: 3}
-      propertyPath: m_fontColor32.rgba
-      value: 4294967295
-      objectReference: {fileID: 0}
-    - target: {fileID: 7100000000000000060, guid: e304a252833e479a81b380e8213f1082, type: 3}
-      propertyPath: m_fontColor32.rgba
-      value: 4289901234
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
