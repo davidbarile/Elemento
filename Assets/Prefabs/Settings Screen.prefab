@@ -396,7 +396,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &1622509204679450930
 RectTransform:
   m_ObjectHideFlags: 0
@@ -960,7 +960,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &388844468367014850
 RectTransform:
   m_ObjectHideFlags: 0
@@ -8656,13 +8656,13 @@ RectTransform:
   - {fileID: 6053447289370236997}
   - {fileID: 1622509204679450930}
   - {fileID: 5102732169530091433}
-  m_Father: {fileID: 4413048707962731157}
+  m_Father: {fileID: 8852115834652493138}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 0}
-  m_AnchorMax: {x: 1, y: 0}
-  m_AnchoredPosition: {x: 0, y: 50}
-  m_SizeDelta: {x: -100, y: 216.7654}
-  m_Pivot: {x: 0.5, y: 0}
+  m_AnchorMin: {x: 0.5, y: 0}
+  m_AnchorMax: {x: 1, y: 1}
+  m_AnchoredPosition: {x: 0, y: 0}
+  m_SizeDelta: {x: 0, y: 0}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &4676929007573636764
 CanvasRenderer:
   m_ObjectHideFlags: 0
@@ -8684,12 +8684,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Padding:
-    m_Left: 115
-    m_Right: 65
-    m_Top: 48
+    m_Left: 170
+    m_Right: 80
+    m_Top: 500
     m_Bottom: 50
   m_ChildAlignment: 0
-  m_Spacing: 27
+  m_Spacing: 80
   m_ChildForceExpandWidth: 1
   m_ChildForceExpandHeight: 0
   m_ChildControlWidth: 1
@@ -8704,7 +8704,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 5898076739855726169}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 306cc8c2b49d7114eaa3623786fc2126, type: 3}
   m_Name: 
@@ -8982,7 +8982,6 @@ RectTransform:
   - {fileID: 3577884639677701083}
   - {fileID: 5755247793254029358}
   - {fileID: 388844468367014850}
-  - {fileID: 5497273175329804739}
   m_Father: {fileID: 8852115834652493138}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0}
@@ -9056,6 +9055,7 @@ RectTransform:
   m_Children:
   - {fileID: 5962637127509629292}
   - {fileID: 4413048707962731157}
+  - {fileID: 5497273175329804739}
   m_Father: {fileID: 595507615313439572}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
