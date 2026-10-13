@@ -2,9 +2,9 @@
   <Project Path="Assembly-CSharp.csproj" />
   <Project Path="CW.Common.csproj" />
   <Project Path="Elemento.Domain.csproj" />
+  <Project Path="Elemento.Domain.Tests.csproj" />
   <Project Path="Assembly-CSharp-firstpass.csproj" />
   <Project Path="Assembly-CSharp-Editor.csproj" />
-  <Project Path="Elemento.Domain.Tests.csproj" />
   <Project Path="LeanPool.csproj" />
   <Project Path="LeanCommon.csproj" />
   <Project Path="Coffee.UIParticle.Demo.csproj" />
