@@ -443,7 +443,9 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     {
         this.IsAnimateDragging = true;
 
+        SetOriginalParentCell();
         BeginDraggingItem();
+        UIDragOverlay.IN.SetDraggingItem(this.transform);
 
         UIDraggable.ShouldBlockInput = true;
 

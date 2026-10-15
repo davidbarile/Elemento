@@ -31,6 +31,7 @@ public class UIDragOverlay : MonoBehaviour
     public void SetDraggingItem(Transform inDragItem)
     {
         inDragItem.SetParent(this.transform);
+        inDragItem.SetAsLastSibling();
         SetVisible(true);
     }
 }

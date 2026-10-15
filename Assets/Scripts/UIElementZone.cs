@@ -338,10 +338,6 @@ public class UIElementZone : MonoBehaviour
 
             AudioManager.IN.PlayCardSwooshSound(0, pitch);
 
-            sourceTopCard.Draggable.SetOriginalParentCell();
-
-            UIDragOverlay.IN.SetDraggingItem(sourceTopCard.transform);//redundant, but fixes tutorial bug
-
             sourceTopCard.Draggable.AnimateTo(destPosition, tweenDuration, delayAtTweenEnd);
             sourceTopCard.transform.DOScale(Vector3.one * .001f, tweenDuration).SetDelay(tweenDuration + .05f);
 
