@@ -62,6 +62,9 @@ Rejected optimistic UI changes are discarded by re-rendering the last server vie
   Face-down card identities are masked to `{Id, IsFaceUp=false}` in opponent views and snapshots.
 - Never sent to clients: seed, deck/reserve order, opponent hand contents (count only).
 
+## Known issues fixed
+- O1: authoritative online view rebuilds now cancel the active drag before destroying cards, block new drags for the full rebuild, and clear drag/render locks in `finally`. Previously a dragged card could be destroyed before `StopDraggingItem` ran, leaving the static input lock and drag overlay active indefinitely; Home now clears stale locks as an escape path.
+
 ## TODOs after U2
 - Validate the online board projection, drag/drop, panel prefabs, and reconnect behavior in the Unity Editor; U2 was completed with static review only because Unity was unavailable.
 - Add explicit online game-over presentation from `WinnerPlayerId`/`WinType` instead of relying on local board-side win checks.

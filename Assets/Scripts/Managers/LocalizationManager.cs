@@ -242,6 +242,7 @@ public class LocalizationManager : MonoBehaviour
     public string[] GameSpeed;
     public string[] InitCards;////$"Init Cards: {inValue}";
     public string[] OpponentX;//$"Opponent {this.currentPlayerIndex}";
+    public string[] OpponentsTurn;//"Opponent's Turn"
     public string[] PassToPlayerX;//$"Pass to Player {N}"
     public string[] TapToContinue;//"Tap to Continue"
     [Header("Online Play")]

@@ -17,6 +17,8 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     public static bool IsDragPointerDown;
     public static bool ShouldSnapToCenter;
 
+    private static UIDraggable activeDraggedItem;
+
     public static EDragMode DRAG_MODE = EDragMode.Drag;
 
     public bool IsDragging { get; private set; }
@@ -272,7 +274,8 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     {
         foreach (var item in this.highlightedObjects)
         {
-            item.Hide();
+            if (item != null)
+                item.Hide();
         }
 
         this.highlightedObjects.Clear();
@@ -282,7 +285,7 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     {
         //Debug.Log($"BeginDraggingItem");
 
-        if (UIDraggable.ShouldBlockInput || !this.IsDraggable || this.IsDragging) return;
+        if (GameManager.IsApplyingRemoteUpdate || UIDraggable.ShouldBlockInput || !this.IsDraggable || this.IsDragging) return;
 
         var cell = this.transform.GetComponentInParent<UICardCell>();
         if (cell == null || (cell.PlayerType != GameManager.IN.CurrentPlayer && !this.IsAnimateDragging)) return;
@@ -303,6 +306,7 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
 
         UIDraggable.ShouldBlockInput = true;
         this.IsDragging = true;
+        UIDraggable.activeDraggedItem = this;
 
         cell.TopCard.ResetDimmedDecorations();
 
@@ -319,12 +323,7 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
 
     protected virtual void StopDraggingItem(PointerEventData eventData)
     {
-        UIDraggable.ShouldBlockInput = false;
-        this.IsDragging = false;
-
-        HideItemHighlights();
-
-        UIDragOverlay.IN.SetVisible(false);
+        UIDraggable.ResetInputState();
 
         var cell = UICardCell.GetCellAtPosition(this.transform.position);
 
@@ -351,14 +350,69 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     {
         //Debug.Log($"CancelDraggingItem");
 
-        if (this.IsDragging)
+        try
         {
-            this.originalParentCell.ReturnCardToCell();
-            UIDraggable.ShouldBlockInput = false;
-            UIDraggable.IsDragPointerDown = false;
-            this.IsDragging = false;
-            HideItemHighlights();
+            if (this.IsDragging && this.originalParentCell != null)
+                this.originalParentCell.ReturnCardToCell();
         }
+        finally
+        {
+            if (UIDraggable.activeDraggedItem == this)
+                UIDraggable.ResetInputState();
+            else
+            {
+                this.IsDragging = false;
+                HideItemHighlights();
+                UIDraggable.IsDragPointerDown = false;
+            }
+        }
+    }
+
+    public static void CancelActiveDrag(bool inShouldReturnToCell = true)
+    {
+        var draggedItem = UIDraggable.activeDraggedItem;
+        try
+        {
+            if (draggedItem == null)
+                return;
+
+            draggedItem.StopAllCoroutines();
+            draggedItem.transform.DOKill();
+            draggedItem.IsAnimateDragging = false;
+
+            if (inShouldReturnToCell)
+                draggedItem.CancelDraggingItem();
+        }
+        finally
+        {
+            UIDraggable.ResetInputState();
+        }
+    }
+
+    public static void ResetInputState()
+    {
+        var draggedItem = UIDraggable.activeDraggedItem;
+        UIDraggable.activeDraggedItem = null;
+        UIDraggable.ShouldBlockInput = false;
+        UIDraggable.IsDragPointerDown = false;
+
+        if (draggedItem != null)
+        {
+            draggedItem.IsDragging = false;
+            draggedItem.pointerClickFlag = false;
+            draggedItem.isClickDraggingFlag = false;
+            draggedItem.wasDraggedOutsideOfBuffer = false;
+            draggedItem.HideItemHighlights();
+        }
+
+        if (UIDragOverlay.IN != null)
+            UIDragOverlay.IN.SetVisible(false);
+    }
+
+    private void OnDestroy()
+    {
+        if (UIDraggable.activeDraggedItem == this)
+            UIDraggable.ResetInputState();
     }
 
     public static List<RaycastResult> GameObjectUnderPointer()

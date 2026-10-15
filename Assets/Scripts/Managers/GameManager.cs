@@ -27,7 +27,8 @@ public class GameManager : MonoBehaviour
     public static bool IsDealingHand;
     public static bool IsDoingActivateSequence;
     public static bool IsDoingReplay;
-    public static bool ShouldBlockInput => IsDealingHand || IsDoingActivateSequence || IsDoingReplay
+    public static bool IsApplyingRemoteUpdate;
+    public static bool ShouldBlockInput => IsDealingHand || IsDoingActivateSequence || IsDoingReplay || IsApplyingRemoteUpdate
         || (IN != null && (IN.isHandoffPending || IN.IsOnlineInputBlocked));
 
     private readonly string ANIM_STATE = "state";
@@ -286,43 +287,48 @@ public class GameManager : MonoBehaviour
     public void CleanUpGameState()
     {
         this.isDoingCleanup = true;
-
-        GameManager.IsDoingActivateSequence = false;
-
-        if (!BoardStateManager.IsDoingReplay)
-            StopAllCoroutines();
-
-        foreach (var board in this.PlayerBoards)
+        try
         {
-            board.Reset();
+            GameManager.IsDealingHand = false;
+            GameManager.IsDoingActivateSequence = false;
+
+            if (!BoardStateManager.IsDoingReplay)
+                StopAllCoroutines();
+
+            foreach (var board in this.PlayerBoards)
+            {
+                board.Reset();
+            }
+
+            CardsManager.IN.DestroyAllCards();
+
+            foreach (var board in this.PlayerBoards)
+            {
+                foreach (var zone in board.ElementZones)
+                {
+                    zone.CardCell.Cards.Clear();
+                    zone.SetActiveState(false, false);
+                    zone.SetFrozenHealth(0, false);
+                }
+
+                foreach (var zone in board.ElementZones)
+                {
+                    zone.CalculatePoints();
+                }
+
+                foreach (var cell in board.Hand.CardCells)
+                {
+                    cell.Cards.Clear();
+                    cell.gameObject.SetActive(false);
+                }
+            }
+
+            this.Deck.RefreshCellsList();
         }
-
-        CardsManager.IN.DestroyAllCards();
-
-        foreach (var board in this.PlayerBoards)
+        finally
         {
-            foreach (var zone in board.ElementZones)
-            {
-                zone.CardCell.Cards.Clear();
-                zone.SetActiveState(false, false);
-                zone.SetFrozenHealth(0, false);
-            }
-
-            foreach (var zone in board.ElementZones)
-            {
-                zone.CalculatePoints();
-            }
-
-            foreach (var cell in board.Hand.CardCells)
-            {
-                cell.Cards.Clear();
-                cell.gameObject.SetActive(false);
-            }
+            this.isDoingCleanup = false;
         }
-
-        this.Deck.RefreshCellsList();
-
-        this.isDoingCleanup = false;
     }
 
     public void SetHealthOnAllElementZones()
@@ -833,15 +839,30 @@ public class GameManager : MonoBehaviour
         if (inSeatView.View.CurrentPlayerId < 0 || inSeatView.View.CurrentPlayerId >= this.PlayerBoards.Length)
             return;
 
-        this.currentPlayerIndex = inSeatView.View.CurrentPlayerId;
-        this.CurrentTurnNumber = inSeatView.View.TurnNumber;
-        this.MovesRemaining = inSeatView.View.MovesRemaining;
-        this.TurnPhase = (ETurnPhase)inSeatView.View.TurnPhase;
-        ApplyViewingSeat(this.onlineClient.LocalSeat);
-        RenderOnlineView(inSeatView.View);
-        RefreshPassAndPlayHandVisibility();
-        RefreshTurnAndMoveCountDisplay();
-        RefreshOnlineControls();
+        GameManager.IsApplyingRemoteUpdate = true;
+        try
+        {
+            UIDraggable.CancelActiveDrag(false);
+            this.currentPlayerIndex = inSeatView.View.CurrentPlayerId;
+            this.CurrentTurnNumber = inSeatView.View.TurnNumber;
+            this.MovesRemaining = inSeatView.View.MovesRemaining;
+            this.TurnPhase = (ETurnPhase)inSeatView.View.TurnPhase;
+            ApplyViewingSeat(this.onlineClient.LocalSeat);
+            RenderOnlineView(inSeatView.View);
+            RefreshPassAndPlayHandVisibility();
+            RefreshTurnAndMoveCountDisplay();
+            RefreshOnlineControls();
+        }
+        finally
+        {
+            GameManager.IsDealingHand = false;
+            GameManager.IsDoingActivateSequence = false;
+            GameManager.IsDoingReplay = false;
+            BoardStateManager.IsDoingReplay = false;
+            BoardStateManager.IsSettingState = false;
+            UIDraggable.ResetInputState();
+            GameManager.IsApplyingRemoteUpdate = false;
+        }
     }
 
     private void RenderOnlineView(Elemento.Domain.PlayerViewData inView)
@@ -1626,6 +1647,9 @@ public class GameManager : MonoBehaviour
     {
         var playerName = string.Format(LOC.IN.OpponentX[LOC.LI], this.currentPlayerIndex);// $"Opponent {this.currentPlayerIndex}";
 
+        if (this.IsOnline && !this.IsPlayersTurn)
+            playerName = LOC.IN.OpponentsTurn[LOC.LI];
+
         if (this.IsPlayersTurn)
             playerName = SettingsManager.IN.ShouldAutoDealHand ? LOC.IN.YourTurn[LOC.LI] : LOC.IN.YourTurnAuto[LOC.LI];// "Your Turn" : "Your Turn <i>(auto)</i>";
 
@@ -1761,13 +1785,24 @@ public class GameManager : MonoBehaviour
 
     public void HandleHomeButtonPress()
     {
-        if (UITutorialPanel.IsTutorialMode || UIDraggable.ShouldBlockInput) return;
+        if (UITutorialPanel.IsTutorialMode) return;
+
+        UIDraggable.CancelActiveDrag();
+        GameManager.IsApplyingRemoteUpdate = false;
+        BoardStateManager.IsSettingState = false;
 
         string titleText = LOC.IN.LeaveGame[LOC.LI];// "Leave Game?";
         string messageText = LOC.IN.LeaveGameMessage[LOC.LI];//$"Are you sure you want to leave the game?\n\nAll progress will  be lost.";
         UIConfirmPanel.IN.Show(titleText, messageText, () =>
         {
+            GameManager.IsDealingHand = false;
+            GameManager.IsDoingActivateSequence = false;
+            GameManager.IsDoingReplay = false;
             BoardStateManager.IsDoingReplay = false;
+            BoardStateManager.IsSettingState = false;
+            this.isHandoffPending = false;
+            this.isOnlineMovePending = false;
+            UIDraggable.ResetInputState();
             CleanUpGameState();
 
             if (this.IsOnline)

@@ -19,6 +19,8 @@ public class CurrentRulesRegressionTests
         UITutorialPanel.IsTutorialMode = false;
         BoardStateManager.IsDoingReplay = false;
         BoardStateManager.IsSettingState = true;
+        GameManager.IsApplyingRemoteUpdate = false;
+        UIDraggable.ResetInputState();
 
         PlayerData.Data = new PlayerData { LanguageIndex = 0 };
 
@@ -51,6 +53,11 @@ public class CurrentRulesRegressionTests
         UITutorialPanel.IsTutorialMode = false;
         BoardStateManager.IsDoingReplay = false;
         BoardStateManager.IsSettingState = false;
+        GameManager.IsDealingHand = false;
+        GameManager.IsDoingActivateSequence = false;
+        GameManager.IsDoingReplay = false;
+        GameManager.IsApplyingRemoteUpdate = false;
+        UIDraggable.ResetInputState();
 
         for (var i = this.createdObjects.Count - 1; i >= 0; i--)
         {
@@ -59,6 +66,26 @@ public class CurrentRulesRegressionTests
         }
 
         this.createdObjects.Clear();
+    }
+
+    [Test]
+    public void ResetInputState_ClearsDragLocksWithoutClearingRemoteUpdateLock()
+    {
+        GameManager.IsDealingHand = false;
+        GameManager.IsDoingActivateSequence = false;
+        GameManager.IsDoingReplay = false;
+        GameManager.IsApplyingRemoteUpdate = true;
+        UIDraggable.ShouldBlockInput = true;
+        UIDraggable.IsDragPointerDown = true;
+
+        UIDraggable.ResetInputState();
+
+        Assert.That(UIDraggable.ShouldBlockInput, Is.False);
+        Assert.That(UIDraggable.IsDragPointerDown, Is.False);
+        Assert.That(GameManager.ShouldBlockInput, Is.True);
+
+        GameManager.IsApplyingRemoteUpdate = false;
+        Assert.That(GameManager.ShouldBlockInput, Is.False);
     }
 
     [Test]

@@ -11246,6 +11246,9 @@ MonoBehaviour:
   OpponentX:
   - Opponent {0}
   - Oponente {0}
+  OpponentsTurn:
+  - Opponent's Turn
+  - Turno rival
   PassToPlayerX:
   - Pass to Player {0}
   - Pasa al Jugador {0}
