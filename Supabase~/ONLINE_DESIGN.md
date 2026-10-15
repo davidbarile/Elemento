@@ -41,8 +41,13 @@ An accepted turn is committed by one `commit_turn` RPC transaction: the match ro
 advanced from `ExpectedRevision`, one `match_moves` row is inserted per move at consecutive
 revisions, the turn nonce is stored only on the final row, and the secret state plus both fair seat
 views are updated together. A repeated `(match, seat, nonce)` returns the stored revision and move
-count. Stale revisions write nothing. After commit, the function broadcasts only `{revision}` on the
-private `match:<id>` topic.
+count with the latest available seat view. Stale revisions write nothing. After commit, the function
+broadcasts only `{revision}` on the private `match:<id>` topic.
+
+Strict trailing `EndTurn` currently supports only turns whose preceding actions leave `EndTurn`
+legal. Winning actions and rules that end the turn implicitly (`DiscardEndsTurn` or exhausted finite
+moves) need a future protocol decision before they can use batched submission; the server does not
+silently treat `EndTurn` as an unvalidated delimiter.
 
 `get-view` accepts optional `sinceRevision` and then includes ordered `moves` rows with revisions
 greater than that value. Move actions are public, but `CardId` is removed from an opponent's
