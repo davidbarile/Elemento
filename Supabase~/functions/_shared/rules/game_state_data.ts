@@ -151,6 +151,7 @@ export class GameStateData {
   Seed = 0;
   Revision = 0;
   TurnNumber = 0;
+  StartingPlayerId = 0;
   CurrentPlayerId = 0;
   TurnPhase: ETurnPhase = ETurnPhase.None;
   MovesRemaining = 0;
@@ -174,6 +175,7 @@ export class GameStateData {
       Seed: this.Seed,
       Revision: this.Revision,
       TurnNumber: this.TurnNumber,
+      StartingPlayerId: this.StartingPlayerId,
       CurrentPlayerId: this.CurrentPlayerId,
       TurnPhase: this.TurnPhase,
       MovesRemaining: this.MovesRemaining,
@@ -203,6 +205,7 @@ export class OpponentViewData {
 export class PlayerViewData {
   Revision = 0;
   TurnNumber = 0;
+  StartingPlayerId = 0;
   CurrentPlayerId = 0;
   TurnPhase: ETurnPhase = ETurnPhase.PlayerDraw;
   MovesRemaining = 0;

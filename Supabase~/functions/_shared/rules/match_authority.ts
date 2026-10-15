@@ -55,9 +55,9 @@ export class MatchAuthority {
     return this.ValidateAndApply(inState, inCommand);
   }
 
-  Replay(inSeed: number, inRules: RulesConfigData | null, decks: CardDefinitionData[][], log: MoveLogEntryData[]): GameStateData {
+  Replay(inSeed: number, inRules: RulesConfigData | null, decks: CardDefinitionData[][], log: MoveLogEntryData[], startingSeat = 0): GameStateData {
     if (log == null) throw new TypeError("inMoveLog");
-    const state = this.matchFactory.Create(inSeed, inRules, decks);
+    const state = this.matchFactory.Create(inSeed, inRules, decks, null, startingSeat);
     const replayAuthority = new MatchAuthority();
     let previousEntry: MoveLogEntryData | null = null;
     for (const entry of log) {
@@ -86,8 +86,8 @@ export class MatchAuthority {
     return state;
   }
 
-  replay(inSeed: number, inRules: RulesConfigData | null, decks: CardDefinitionData[][], log: MoveLogEntryData[]): GameStateData {
-    return this.Replay(inSeed, inRules, decks, log);
+  replay(inSeed: number, inRules: RulesConfigData | null, decks: CardDefinitionData[][], log: MoveLogEntryData[], startingSeat = 0): GameStateData {
+    return this.Replay(inSeed, inRules, decks, log, startingSeat);
   }
 
   private Reject(revision: number, reason: string): MoveResultData {

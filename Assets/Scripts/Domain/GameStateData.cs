@@ -279,6 +279,7 @@ namespace Elemento.Domain
         public int Seed;
         public int Revision;
         public int TurnNumber;
+        public int StartingPlayerId;
         public int CurrentPlayerId;
         public ETurnPhase TurnPhase = ETurnPhase.None;
         public int MovesRemaining;
@@ -304,6 +305,7 @@ namespace Elemento.Domain
                 Seed = this.Seed,
                 Revision = this.Revision,
                 TurnNumber = this.TurnNumber,
+                StartingPlayerId = this.StartingPlayerId,
                 CurrentPlayerId = this.CurrentPlayerId,
                 TurnPhase = this.TurnPhase,
                 MovesRemaining = this.MovesRemaining,

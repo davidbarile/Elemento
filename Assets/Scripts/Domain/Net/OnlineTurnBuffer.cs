@@ -173,6 +173,7 @@ namespace Elemento.Domain.Net
                 MatchId = inSeatView.MatchId,
                 Revision = view.Revision,
                 TurnNumber = view.TurnNumber,
+                StartingPlayerId = view.StartingPlayerId,
                 CurrentPlayerId = view.CurrentPlayerId,
                 TurnPhase = view.TurnPhase,
                 MovesRemaining = view.MovesRemaining,

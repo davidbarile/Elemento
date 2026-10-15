@@ -52,11 +52,13 @@ serve(async (request) => {
   const creatorDeck = deckForSeat(creator.deck, 0);
   const joiningDeck = deckForSeat(undefined, 1);
   const seed = randomInt32();
+  const startingSeat = randomInt32() & 1;
   const state = createState(
     seed,
     rulesFrom(match.rules),
     [creatorDeck, joiningDeck],
     match.id,
+    startingSeat,
     [String(creatorProfile.username), joiningUsername],
   );
   const views = buildSeatViews(state);

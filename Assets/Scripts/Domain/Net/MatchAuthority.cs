@@ -82,12 +82,14 @@ namespace Elemento.Domain.Net
         }
 
         public GameStateData Replay(int inSeed, RulesConfigData inRules,
-            IList<IList<CardDefinitionData>> inDeckDefinitionsBySeat, IList<MoveLogEntryData> inMoveLog)
+            IList<IList<CardDefinitionData>> inDeckDefinitionsBySeat, IList<MoveLogEntryData> inMoveLog,
+            int inStartingSeat = 0)
         {
             if (inMoveLog == null)
                 throw new ArgumentNullException(nameof(inMoveLog));
 
-            var state = this.matchFactory.Create(inSeed, inRules, inDeckDefinitionsBySeat);
+            var state = this.matchFactory.Create(inSeed, inRules, inDeckDefinitionsBySeat, null,
+                inStartingSeat);
             var replayAuthority = new MatchAuthority();
             MoveLogEntryData previousEntry = null;
             foreach (var entry in inMoveLog)

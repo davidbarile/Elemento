@@ -37,13 +37,39 @@ namespace Elemento.Domain.Tests
             Assert.That(NetJson.Serialize(second), Is.EqualTo(NetJson.Serialize(first)));
         }
 
+        [TestCase(0, ETurnPhase.PlayerPlaying)]
+        [TestCase(1, ETurnPhase.OpponentPlaying)]
+        public void MatchFactory_StartingSeatReceivesOpeningHandAndStartsRound(int inStartingSeat,
+            ETurnPhase inExpectedPhase)
+        {
+            var rules = CreateFastRules();
+            var state = new MatchFactory().Create(420, rules, CreateDeckDefinitionsBySeat(), null,
+                inStartingSeat);
+            var simulator = new GameSimulator();
+
+            Assert.That(state.StartingPlayerId, Is.EqualTo(inStartingSeat));
+            Assert.That(state.CurrentPlayerId, Is.EqualTo(inStartingSeat));
+            Assert.That(state.TurnNumber, Is.EqualTo(1));
+            Assert.That(state.TurnPhase, Is.EqualTo(inExpectedPhase));
+            Assert.That(state.Players[inStartingSeat].Hand.Count, Is.EqualTo(rules.NumCardsToDeal));
+            Assert.That(state.Players[1 - inStartingSeat].Hand, Is.Empty);
+            Assert.That(FairView.BuildSeatView(state, 0).View.StartingPlayerId, Is.EqualTo(inStartingSeat));
+
+            simulator.EndTurn(state);
+            Assert.That(state.TurnNumber, Is.EqualTo(1));
+            simulator.EndTurn(state);
+            Assert.That(state.TurnNumber, Is.EqualTo(2));
+            Assert.That(state.CurrentPlayerId, Is.EqualTo(inStartingSeat));
+        }
+
         [Test]
         public void MatchAuthority_ReplaysAiMoveLogToIdenticalFinalState()
         {
             const int seed = 7331;
+            const int startingSeat = 1;
             var decks = CreateDeckDefinitionsBySeat();
             var rules = CreateFastRules();
-            var state = new MatchFactory().Create(seed, rules, decks);
+            var state = new MatchFactory().Create(seed, rules, decks, null, startingSeat);
             var authority = new MatchAuthority();
             IAiPlayer[] players =
             {
@@ -64,7 +90,7 @@ namespace Elemento.Domain.Tests
 
             Assert.That(state.WinCondition, Is.Not.EqualTo(EWinCondition.None), "AI self-play exceeded the move cap.");
             var replayed = new MatchAuthority().Replay(seed, rules, decks,
-                new List<MoveLogEntryData>(authority.MoveLog));
+                new List<MoveLogEntryData>(authority.MoveLog), startingSeat);
 
             Assert.That(NetJson.Serialize(FairView.BuildSnapshot(replayed)),
                 Is.EqualTo(NetJson.Serialize(FairView.BuildSnapshot(state))));

@@ -597,6 +597,7 @@ namespace Elemento.Domain
                 MatchId = "strong-ai-plan",
                 Revision = inView.Revision,
                 TurnNumber = inView.TurnNumber,
+                StartingPlayerId = inView.StartingPlayerId,
                 CurrentPlayerId = inView.Player.Id,
                 TurnPhase = ETurnPhase.PlayerPlaying,
                 MovesRemaining = maxPlanDepth,
@@ -630,6 +631,7 @@ namespace Elemento.Domain
             {
                 Revision = inState.Revision,
                 TurnNumber = inState.TurnNumber,
+                StartingPlayerId = inState.StartingPlayerId,
                 CurrentPlayerId = inSource.Player.Id,
                 TurnPhase = ETurnPhase.PlayerPlaying,
                 MovesRemaining = inMovesRemaining,

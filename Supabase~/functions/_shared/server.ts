@@ -118,10 +118,11 @@ export function createState(
   rules: RulesConfigData,
   decks: CardDefinitionData[][],
   matchId: string,
+  startingSeat = 0,
   names?: string[],
 ): GameStateData {
   try {
-    const state = new MatchFactory().Create(seed, rules, decks, matchId);
+    const state = new MatchFactory().Create(seed, rules, decks, matchId, startingSeat);
     if (names != null) for (let seat = 0; seat < names.length; ++seat) state.Players[seat].Name = names[seat];
     return state;
   } catch (error) {

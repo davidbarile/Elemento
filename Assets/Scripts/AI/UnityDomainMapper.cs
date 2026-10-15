@@ -70,6 +70,7 @@ public static class UnityDomainMapper
             MatchId = "unity-live-game",
             Revision = 0,
             TurnNumber = inTurnNumber,
+            StartingPlayerId = 0,
             CurrentPlayerId = playerId,
             TurnPhase = (DomainTurnPhase)inTurnPhase,
             MovesRemaining = inMovesRemaining,
@@ -90,6 +91,7 @@ public static class UnityDomainMapper
         {
             Revision = state.Revision,
             TurnNumber = state.TurnNumber,
+            StartingPlayerId = state.StartingPlayerId,
             CurrentPlayerId = playerId,
             TurnPhase = state.TurnPhase,
             MovesRemaining = state.MovesRemaining,

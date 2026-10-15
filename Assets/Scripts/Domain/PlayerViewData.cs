@@ -17,6 +17,7 @@ namespace Elemento.Domain
     {
         public int Revision;
         public int TurnNumber;
+        public int StartingPlayerId;
         public int CurrentPlayerId;
         public ETurnPhase TurnPhase;
         public int MovesRemaining;

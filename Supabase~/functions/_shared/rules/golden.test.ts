@@ -88,6 +88,15 @@ export async function runGoldenTests(): Promise<void> {
     const state = new MatchFactory().Create(fixture.seed, rules, decks, fixture.matchId);
     assertNetJsonEqual(state, fixture.initialState, `${name} initialState`);
 
+    const seatOneState = new MatchFactory().Create(fixture.seed, rules, decks, null, 1);
+    if (seatOneState.StartingPlayerId !== 1 || seatOneState.CurrentPlayerId !== 1
+      || seatOneState.TurnNumber !== 1 || seatOneState.Players[1].Hand.length !== rules.NumCardsToDeal
+      || seatOneState.Players[0].Hand.length !== 0) {
+      throw new Error(`${name} starting seat 1 setup mismatch`);
+    }
+    assertNetJsonEqual(new MatchAuthority().Replay(fixture.seed, rules, decks, [], 1), seatOneState,
+      `${name} starting seat 1 replay`);
+
     const authority = new MatchAuthority();
     for (let i = 0; i < fixture.moveLog.length; ++i) {
       const entry = fixture.moveLog[i];

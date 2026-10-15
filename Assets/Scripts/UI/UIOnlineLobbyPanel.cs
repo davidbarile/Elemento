@@ -128,11 +128,16 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
 
     private void HandleInitialView(MatchSeatViewData inView)
     {
-        if (inView == null || this.client == null) return;
+        if (inView?.View == null || this.client == null) return;
         this.client.ViewChanged -= HandleInitialView;
         OnlineMatchContext.Set(this.client);
         Hide();
         GameManager.IN.RestartGame();
+        string[] message = inView.View.StartingPlayerId == inView.Seat
+            ? LocalizationManager.IN.OnlineYouGoFirst
+            : LocalizationManager.IN.OnlineOpponentGoesFirst;
+        UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(message), 2f,
+            UIAlertPanel.EAlertMode.Notification);
     }
 
     public void HandleBackButtonPress()

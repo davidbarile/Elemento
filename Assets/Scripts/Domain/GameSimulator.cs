@@ -5,17 +5,21 @@ namespace Elemento.Domain
 {
     public sealed class GameSimulator
     {
+        private const int NumPlayers = 2;
         private const int UnlimitedMoves = 99;
 
-        public GameStateData CreateGame(int inSeed, RulesConfigData inRules = null)
+        public GameStateData CreateGame(int inSeed, RulesConfigData inRules = null, int inStartingPlayerId = 0)
         {
-            return CreateGame(inSeed, inRules, DeckDefinitionData.CreateChoiceDeck());
+            return CreateGame(inSeed, inRules, DeckDefinitionData.CreateChoiceDeck(), inStartingPlayerId);
         }
 
-        public GameStateData CreateGame(int inSeed, RulesConfigData inRules, IList<CardInstanceData> inDeck)
+        public GameStateData CreateGame(int inSeed, RulesConfigData inRules, IList<CardInstanceData> inDeck,
+            int inStartingPlayerId = 0)
         {
             if (inDeck == null)
                 throw new ArgumentNullException(nameof(inDeck));
+            if (inStartingPlayerId < 0 || inStartingPlayerId >= NumPlayers)
+                throw new ArgumentOutOfRangeException(nameof(inStartingPlayerId));
 
             var rules = inRules == null ? new RulesConfigData() : inRules.Clone();
             ValidateRules(rules);
@@ -24,7 +28,8 @@ namespace Elemento.Domain
             {
                 MatchId = "match-" + inSeed,
                 Seed = inSeed,
-                CurrentPlayerId = 0,
+                StartingPlayerId = inStartingPlayerId,
+                CurrentPlayerId = inStartingPlayerId,
                 WinnerPlayerId = -1,
                 Rules = rules,
                 Random = new DeterministicRandom(inSeed).GetState()
@@ -46,7 +51,7 @@ namespace Elemento.Domain
             AddBatchOfCardsToGameDeck(state);
             state.PowerDeck.AddRange(DeckDefinitionData.CreatePowerDeck());
             Shuffle(state, state.PowerDeck);
-            BeginTurn(state, 0);
+            BeginTurn(state, inStartingPlayerId);
 
             return state;
         }
@@ -218,6 +223,7 @@ namespace Elemento.Domain
             {
                 Revision = inState.Revision,
                 TurnNumber = inState.TurnNumber,
+                StartingPlayerId = inState.StartingPlayerId,
                 CurrentPlayerId = inState.CurrentPlayerId,
                 TurnPhase = inState.TurnPhase,
                 MovesRemaining = inState.MovesRemaining,
@@ -326,7 +332,7 @@ namespace Elemento.Domain
         private static void BeginTurn(GameStateData inState, int inPlayerId)
         {
             inState.CurrentPlayerId = inPlayerId;
-            if (inPlayerId == 0)
+            if (inPlayerId == inState.StartingPlayerId)
                 ++inState.TurnNumber;
             inState.TurnPhase = inPlayerId == 0 ? ETurnPhase.PlayerDraw : ETurnPhase.OpponentDraw;
             inState.MovesRemaining = inState.Rules.MovesPerTurn > 0 ? inState.Rules.MovesPerTurn : UnlimitedMoves;

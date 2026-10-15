@@ -25,17 +25,20 @@ import {
 import { TurnRules } from "./turn_rules.ts";
 
 const UNLIMITED_MOVES = 99;
+const NUM_PLAYERS = 2;
 
 export class GameSimulator {
-  CreateGame(inSeed: number, inRules: RulesConfigData | null = null, inDeck: CardInstanceData[] | null = DeckDefinitionData.CreateChoiceDeck()): GameStateData {
+  CreateGame(inSeed: number, inRules: RulesConfigData | null = null, inDeck: CardInstanceData[] | null = DeckDefinitionData.CreateChoiceDeck(), inStartingPlayerId = 0): GameStateData {
     const deck = inDeck;
     if (deck == null) throw new TypeError("inDeck");
+    if (!Number.isInteger(inStartingPlayerId) || inStartingPlayerId < 0 || inStartingPlayerId >= NUM_PLAYERS) throw new RangeError("inStartingPlayerId");
     const rules = inRules == null ? new RulesConfigData() : cloneRules(inRules);
     this.ValidateRules(rules);
     const state = Object.assign(new GameStateData(), {
       MatchId: `match-${inSeed}`,
       Seed: inSeed | 0,
-      CurrentPlayerId: 0,
+      StartingPlayerId: inStartingPlayerId,
+      CurrentPlayerId: inStartingPlayerId,
       WinnerPlayerId: -1,
       Rules: rules,
       Random: new DeterministicRandom(inSeed).GetState(),
@@ -52,7 +55,7 @@ export class GameSimulator {
     this.AddBatchOfCardsToGameDeck(state);
     state.PowerDeck.push(...DeckDefinitionData.CreatePowerDeck());
     this.Shuffle(state, state.PowerDeck);
-    this.BeginTurn(state, 0);
+    this.BeginTurn(state, inStartingPlayerId);
     return state;
   }
 
@@ -146,6 +149,7 @@ export class GameSimulator {
     const view = Object.assign(new PlayerViewData(), {
       Revision: inState.Revision,
       TurnNumber: inState.TurnNumber,
+      StartingPlayerId: inState.StartingPlayerId,
       CurrentPlayerId: inState.CurrentPlayerId,
       TurnPhase: inState.TurnPhase,
       MovesRemaining: inState.MovesRemaining,
@@ -193,7 +197,7 @@ export class GameSimulator {
 
   private BeginTurn(state: GameStateData, playerId: number): void {
     state.CurrentPlayerId = playerId;
-    if (playerId === 0) state.TurnNumber = (state.TurnNumber + 1) | 0;
+    if (playerId === state.StartingPlayerId) state.TurnNumber = (state.TurnNumber + 1) | 0;
     state.TurnPhase = playerId === 0 ? ETurnPhase.PlayerDraw : ETurnPhase.OpponentDraw;
     state.MovesRemaining = state.Rules.MovesPerTurn > 0 ? state.Rules.MovesPerTurn : UNLIMITED_MOVES;
     const player = this.GetPlayer(state, playerId);

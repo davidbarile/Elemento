@@ -11280,6 +11280,12 @@ MonoBehaviour:
   OnlineMatchSettings:
   - The creator's gameplay settings apply to both players.
   - Los ajustes de juego del creador se aplican a ambos jugadores.
+  OnlineYouGoFirst:
+  - You go first!
+  - ¡Empiezas tú!
+  OnlineOpponentGoesFirst:
+  - Opponent goes first
+  - Empieza el rival
   Undo:
   - Undo
   - Deshacer
