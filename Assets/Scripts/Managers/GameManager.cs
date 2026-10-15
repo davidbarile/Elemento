@@ -1889,7 +1889,7 @@ public class GameManager : MonoBehaviour
                     isDraggable, false, cardId);
                 cell.Cards.Clear();
                 cell.AddCardToCell(handCard);
-                handCard.CardFlip.SetAnimState(isFaceUp ? ECardFlipState.Front : ECardFlipState.Back);
+                handCard.CardFlip.SetAnimState(isFaceUp ? UICardFlip.ECardFlipState.Front : UICardFlip.ECardFlipState.Back);
                 cell.gameObject.SetActive(true);
             }
 
@@ -1919,7 +1919,7 @@ public class GameManager : MonoBehaviour
                             !isFaceUp, isDraggable, false, cardId);
 
                         zone.CardCell.AddCardToCell(zoneCard);
-                        zoneCard.CardFlip.SetAnimState(isFaceUp ? ECardFlipState.Front : ECardFlipState.Back);
+                        zoneCard.CardFlip.SetAnimState(isFaceUp ? UICardFlip.ECardFlipState.Front : UICardFlip.ECardFlipState.Back);
                         zoneCard.SetDimmedDecorations(zone.CardCell.ElementType);
                     }
 
