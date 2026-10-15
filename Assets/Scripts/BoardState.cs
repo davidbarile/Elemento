@@ -18,6 +18,7 @@ public class BoardState
     public int TurnNumber;
     public int MoveNumber;
     public int TotalMovesTaken;
+    public int MovesRemaining;
     [Space]
     public EPlayerType ActivePlayer;
     [Space]
@@ -80,6 +81,8 @@ public class BoardZone
 
     [Space]
     public List<CardData> Cards = new();
+    public List<string> CardIds = new();
+    public List<bool> CardFaceUpStates = new();
 
     public CardData TopCard
     {
@@ -97,4 +100,6 @@ public class BoardZone
 public class BoardHand
 {
     public List<CardData> Cards = new();
+    public List<string> CardIds = new();
+    public List<bool> CardFaceUpStates = new();
 }

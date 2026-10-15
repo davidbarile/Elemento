@@ -266,7 +266,10 @@ public class UIHand : MonoBehaviour
                     }
 
                     if (inSourceCell.CellType == ECellType.Deck)
+                    {
                         sourceTopCard.CardFlip.SetAnimState(ECardFlipState.FlipToFront);
+                        GameManager.IN.SetUndoCheckpoint(Elemento.Domain.ETurnUndoCheckpoint.RevealHiddenCard);
+                    }
 
                     if (inTargetCell.CellType == ECellType.Hand && inSourceCell.CellType != ECellType.Deck)
                     {

@@ -167,6 +167,7 @@ public class SaveManager : MonoBehaviour
         {
             SettingsManager.IN.ShouldShowSplashScreen = this.playerData.ShouldShowSplashScreen;
             SettingsManager.IN.ShouldAutoDealHand = this.playerData.ShouldAutoDealHand;
+            SettingsManager.IN.AllowUndo = this.playerData.AllowUndo;
 
             SettingsManager.IN.MusicVolume = this.playerData.MusicVolume;
             SettingsManager.IN.EffectsVolume = this.playerData.EffectsVolume;
@@ -190,6 +191,7 @@ public class SaveManager : MonoBehaviour
         this.playerData.ShouldShowSplashScreen = SettingsManager.IN.ShouldShowSplashScreen;
         this.playerData.ShouldAutoDealHand = SettingsManager.IN.ShouldAutoDealHand;
         this.playerData.AllowSelectPowerCardType = SettingsManager.IN.AllowSelectPowerCardType;
+        this.playerData.AllowUndo = SettingsManager.IN.AllowUndo;
 
         this.playerData.MusicVolume = SettingsManager.IN.MusicVolume;
         this.playerData.EffectsVolume = SettingsManager.IN.EffectsVolume;

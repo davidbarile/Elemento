@@ -135,6 +135,7 @@ public class LocalizationManager : MonoBehaviour
     public string[] PlayAgain;
     public string[] PlayGame;
     public string[] Replay;
+    public string[] Undo = { "Undo", "Deshacer" };
     [TextArea] public string[] Rename;
     public string[] Save;
     public string[] SavedDecks;
@@ -269,6 +270,12 @@ public class LocalizationManager : MonoBehaviour
     public string[] OnlineSkipReplay = { "Skip", "Omitir" };
     public string[] OnlineDiscardUnsent = { "Discard your unsent moves?", "¿Descartar tus movimientos no enviados?" };
     public string[] OnlineMoveIllegal = { "That move is not legal in the current online turn.", "Ese movimiento no es válido en el turno en línea actual." };
+    public string[] AllowUndo = { "Allow Undo", "Permitir deshacer" };
+    public string[] UndoPastDraw = { "Can't undo past a draw.", "No puedes deshacer más allá de un robo." };
+    public string[] UndoPastReveal = { "Can't undo past revealing a hidden card.", "No puedes deshacer más allá de revelar una carta oculta." };
+    public string[] UndoPastActivateDeck = { "Can't undo past Activate Deck.", "No puedes deshacer más allá de Activar Mazo." };
+    public string[] UndoPastPowerChoice = { "Can't undo past choosing a power card.", "No puedes deshacer más allá de elegir una carta de poder." };
+    public string[] UndoTurnLocked = { "This turn can no longer be undone.", "Este turno ya no se puede deshacer." };
 
     public static string GetOnlineText(string[] inStrings)
     {

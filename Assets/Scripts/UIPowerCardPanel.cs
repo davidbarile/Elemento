@@ -109,6 +109,8 @@ public class UIPowerCardPanel : UIPanelBase
 
         Hide();
 
+        GameManager.IN.SetUndoCheckpoint(Elemento.Domain.ETurnUndoCheckpoint.ChoosePowerCard);
+
         this.onConfirm?.Invoke();
         this.onConfirm = null;
     }

@@ -14,6 +14,7 @@ public class PlayerData
     public bool ShouldShowSplashScreen;
     public bool ShouldAutoDealHand;
     public bool AllowSelectPowerCardType;
+    public bool AllowUndo;
 
     [Space]
     public int LanguageIndex;

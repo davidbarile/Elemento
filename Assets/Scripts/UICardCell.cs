@@ -704,7 +704,10 @@ public class UICardCell : MonoBehaviour
             UITutorialPanel.OnCardPlaced?.Invoke(inSourceCell);
 
             if (inSourceCell.CellType == ECellType.Deck)
+            {
                 sourceTopCard.CardFlip.SetAnimState(ECardFlipState.FlipToFront);
+                GameManager.IN.SetUndoCheckpoint(Elemento.Domain.ETurnUndoCheckpoint.RevealHiddenCard);
+            }
 
             if (!inIsCalledByHand)
                 inSourceCell.OnCardRemoved?.Invoke(inSourceCell);

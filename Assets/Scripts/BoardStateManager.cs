@@ -54,4 +54,15 @@ public class BoardStateManager : MonoBehaviour
         else
             Debug.Log($"<color=red>Error!  AddBoardState()   GameManager.IN.CurrentTurnNumber is 0</color>");
     }
+
+    public void RemoveLastBoardState()
+    {
+        if (this.BoardHistory.BoardStates.Count > 0)
+            this.BoardHistory.BoardStates.RemoveAt(this.BoardHistory.BoardStates.Count - 1);
+
+        int turnIndex = GameManager.IN.CurrentTurnNumber - 1;
+        if (turnIndex >= 0 && turnIndex < this.BoardTurns.Count
+            && this.BoardTurns[turnIndex].BoardStates.Count > 0)
+            this.BoardTurns[turnIndex].BoardStates.RemoveAt(this.BoardTurns[turnIndex].BoardStates.Count - 1);
+    }
 }

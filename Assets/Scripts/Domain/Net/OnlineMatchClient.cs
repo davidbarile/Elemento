@@ -142,6 +142,11 @@ namespace Elemento.Domain.Net
             return this.TurnBuffer.TryAppend(inMove, out outReason);
         }
 
+        public bool TryUndoBufferedMove(out MoveData outMove, out string outReason)
+        {
+            return this.TurnBuffer.TryPop(out outMove, out outReason);
+        }
+
         public async Task SubmitTurnAsync(MoveData inEndTurnMove,
             Action<SubmitTurnResultData> inCompleted = null, Action<Exception> inFailed = null)
         {

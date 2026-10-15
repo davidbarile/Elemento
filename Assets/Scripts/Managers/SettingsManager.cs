@@ -40,12 +40,14 @@ public class SettingsManager : MonoBehaviour
     private EDiscardMode discardMode;
     private EPlayMode playMode;
     private EAiDifficulty aiDifficulty;
+    private bool allowUndo;
 
     //settings
     public bool ShouldShowSplashScreen;
     public bool ShouldAutoDealHand;
 
     public bool AllowSelectPowerCardType = true;
+    public bool AllowUndo;
 
     [Range(0, 1)] public float MusicVolume = .5f;
     [Range(0, 1)] public float EffectsVolume = .7f;
@@ -81,6 +83,7 @@ public class SettingsManager : MonoBehaviour
         this.discardMode = this.DiscardMode;
         this.playMode = this.PlayMode;
         this.aiDifficulty = this.AiDifficulty;
+        this.allowUndo = this.AllowUndo;
     }
 
     public void ResetToDefaults()
@@ -101,5 +104,6 @@ public class SettingsManager : MonoBehaviour
         this.DiscardMode = this.discardMode;
         this.PlayMode = this.playMode;
         this.AiDifficulty = this.aiDifficulty;
+        this.AllowUndo = this.allowUndo;
     }
 }

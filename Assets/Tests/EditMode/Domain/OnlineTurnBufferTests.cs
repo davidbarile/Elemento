@@ -51,6 +51,37 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public void Buffer_PopRemovesMostRecentMoveAndAllowsItAgain()
+        {
+            var state = new MatchFactory().Create(62,
+                new RulesConfigData { NumCardsToDeal = 3, MovesPerTurn = 3 },
+                OnlineProtocolTests.CreateDeckDefinitionsBySeat(), "match");
+            var simulator = new GameSimulator();
+            var view = FairView.BuildSeatView(state, 0);
+            var first = simulator.GetLegalMoves(state, 0).First(inMove => inMove.Type == EMoveType.PlayCard).Clone();
+            simulator.ApplyMove(state, first);
+            var second = simulator.GetLegalMoves(state, 0)
+                .First(inMove => inMove.Type == EMoveType.PlayCard && inMove.CardId != first.CardId).Clone();
+            var buffer = new OnlineTurnBuffer();
+
+            buffer.Begin(view);
+            Assert.That(buffer.TryAppend(first, out string firstReason), Is.True, firstReason);
+            Assert.That(buffer.TryAppend(second, out string secondReason), Is.True, secondReason);
+
+            Assert.That(buffer.TryPop(out MoveData popped, out string popReason), Is.True, popReason);
+            Assert.That(popped.CardId, Is.EqualTo(second.CardId));
+            Assert.That(buffer.Moves.Select(inMove => inMove.CardId), Is.EqualTo(new[] { first.CardId }));
+            Assert.That(buffer.TryAppend(second, out string appendAgainReason), Is.True, appendAgainReason);
+            Assert.That(buffer.TryPop(out _, out string secondPopReason), Is.True, secondPopReason);
+
+            var endTurn = simulator.GetLegalMoves(state, 0).First(inMove => inMove.Type == EMoveType.EndTurn);
+            Assert.That(buffer.TryAppend(endTurn, out string endReason), Is.True, endReason);
+            var request = buffer.CreateRequest("match", 0);
+            Assert.That(request.Moves.Select(inMove => inMove.CardId),
+                Is.EqualTo(new[] { first.CardId, endTurn.CardId }));
+        }
+
+        [Test]
         public void Buffer_AcceptsTerminalMarkerAfterMoveBudgetAutoEndsTurn()
         {
             var state = new MatchFactory().Create(57,

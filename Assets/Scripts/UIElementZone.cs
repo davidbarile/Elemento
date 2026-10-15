@@ -312,6 +312,7 @@ public class UIElementZone : MonoBehaviour
 
     private IEnumerator UseActivationPowerCo()
     {
+        GameManager.IN.SetUndoCheckpoint(Elemento.Domain.ETurnUndoCheckpoint.ActivateDeck);
         GameManager.IsDoingActivateSequence = true;
 
         foreach (var item in this.activeDisplays)

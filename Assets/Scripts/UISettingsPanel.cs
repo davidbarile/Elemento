@@ -29,9 +29,12 @@ public class UISettingsPanel : UIPanelBase
     public bool IsResettingData;
 
     private bool isInitialized;
+    private Toggle allowUndoToggle;
 
     private void Start()
     {
+        CreateAllowUndoToggle();
+
         if (!Application.isEditor)
             this.filePath = $"{Application.persistentDataPath}/PlayerData.json";
 
@@ -77,6 +80,7 @@ public class UISettingsPanel : UIPanelBase
         this.showSplashScreenToggle.isOn = SettingsManager.IN.ShouldShowSplashScreen;
         this.autoDealHandToggle.isOn = SettingsManager.IN.ShouldAutoDealHand;
         this.allowSelectPowerCardTypeToggle.isOn = SettingsManager.IN.AllowSelectPowerCardType;
+        this.allowUndoToggle.isOn = SettingsManager.IN.AllowUndo;
 
         this.selectLanguageDropdown.value = PlayerData.Data.LanguageIndex;
         this.selectLanguageDropdown.RefreshShownValue();
@@ -199,6 +203,27 @@ public class UISettingsPanel : UIPanelBase
     {
         SettingsManager.IN.AllowSelectPowerCardType = inIsOn;
         this.IsDirty = true;
+    }
+
+    public void HandleAllowUndoToggleChanged(bool inIsOn)
+    {
+        SettingsManager.IN.AllowUndo = inIsOn;
+        this.IsDirty = true;
+    }
+
+    private void CreateAllowUndoToggle()
+    {
+        var sourceParent = this.allowSelectPowerCardTypeToggle.transform.parent;
+        var undoParent = Instantiate(sourceParent.gameObject, sourceParent.parent);
+        undoParent.name = "Allow Undo Parent";
+        undoParent.transform.SetSiblingIndex(sourceParent.GetSiblingIndex() + 1);
+        this.allowUndoToggle = undoParent.GetComponentInChildren<Toggle>();
+        this.allowUndoToggle.name = "Allow Undo Toggle";
+        this.allowUndoToggle.onValueChanged = new Toggle.ToggleEvent();
+        this.allowUndoToggle.onValueChanged.AddListener(HandleAllowUndoToggleChanged);
+
+        var localizationItem = undoParent.GetComponentInChildren<LocalizationItem>();
+        localizationItem.localizedTexts = LOC.IN.AllowUndo;
     }
 
     public void HandleRestoreDefaultsButtonPress()

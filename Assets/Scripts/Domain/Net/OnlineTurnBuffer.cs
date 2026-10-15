@@ -9,6 +9,7 @@ namespace Elemento.Domain.Net
         private readonly List<MoveData> initialLegalMoves = new();
         private readonly HashSet<string> consumedCardIds = new(StringComparer.Ordinal);
         private readonly GameSimulator simulator = new();
+        private GameStateData initialMirror;
         private GameStateData mirror;
         private int turnSeat = -1;
 
@@ -31,7 +32,8 @@ namespace Elemento.Domain.Net
             this.ClientNonce = string.IsNullOrEmpty(inClientNonce) ? Guid.NewGuid().ToString("N") : inClientNonce;
             foreach (var move in inSeatView.View.LegalMoves)
                 this.initialLegalMoves.Add(move.Clone());
-            this.mirror = CreateMirror(inSeatView);
+            this.initialMirror = CreateMirror(inSeatView);
+            this.mirror = this.initialMirror.Clone();
         }
 
         public bool TryAppend(MoveData inMove, out string outReason)
@@ -107,15 +109,60 @@ namespace Elemento.Domain.Net
             return request;
         }
 
+        public bool TryPop(out MoveData outMove, out string outReason)
+        {
+            outMove = null;
+            outReason = string.Empty;
+            if (this.IsComplete)
+                return Fail("The turn is already complete.", out outReason);
+            if (this.moves.Count == 0)
+                return Fail("The turn buffer has no moves to undo.", out outReason);
+
+            int index = this.moves.Count - 1;
+            outMove = this.moves[index].Clone();
+            this.moves.RemoveAt(index);
+            RebuildTracking();
+            return true;
+        }
+
         public void Clear()
         {
             this.moves.Clear();
             this.initialLegalMoves.Clear();
             this.consumedCardIds.Clear();
+            this.initialMirror = null;
             this.mirror = null;
             this.ExpectedRevision = -1;
             this.ClientNonce = null;
             this.turnSeat = -1;
+        }
+
+        private void RebuildTracking()
+        {
+            this.consumedCardIds.Clear();
+            this.mirror = this.initialMirror?.Clone();
+            foreach (var move in this.moves)
+            {
+                if (UsesCard(move) && !string.IsNullOrEmpty(move.CardId))
+                    this.consumedCardIds.Add(move.CardId);
+                if (this.mirror == null)
+                    continue;
+
+                try
+                {
+                    var acceptedMove = FindMatching(this.simulator.GetLegalMoves(this.mirror, move.PlayerId), move);
+                    if (acceptedMove == null)
+                    {
+                        this.mirror = null;
+                        continue;
+                    }
+                    this.simulator.ApplyMove(this.mirror, acceptedMove);
+                }
+                catch (InvalidOperationException)
+                {
+                    this.mirror = null;
+                }
+            }
         }
 
         private static GameStateData CreateMirror(MatchSeatViewData inSeatView)

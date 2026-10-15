@@ -10545,6 +10545,8 @@ MonoBehaviour:
   endTurnButton: {fileID: 1409418657}
   speedUpOpponentTurnButton: {fileID: 132326936}
   replayButton: {fileID: 1058181101}
+  undoButtonParent: {fileID: 993711507}
+  undoButton: {fileID: 663805696}
   DiscardZone: {fileID: 44518565}
   DiscardZoneTransform: {fileID: 1839119508}
   discardToEndTurnZone: {fileID: 1982393834}
@@ -10590,6 +10592,7 @@ MonoBehaviour:
   ShouldShowSplashScreen: 1
   ShouldAutoDealHand: 1
   AllowSelectPowerCardType: 1
+  AllowUndo: 0
   MusicVolume: 0.25
   EffectsVolume: 0.6
   NumCardsToDeal: 5
@@ -11379,6 +11382,27 @@ MonoBehaviour:
   OnlineMoveIllegal:
   - That move is not legal in the current online turn.
   - "Ese movimiento no es v\xE1lido en el turno en l\xEDnea actual."
+  Undo:
+  - Undo
+  - Deshacer
+  AllowUndo:
+  - Allow Undo
+  - Permitir deshacer
+  UndoPastDraw:
+  - Can't undo past a draw.
+  - No puedes deshacer más allá de un robo.
+  UndoPastReveal:
+  - Can't undo past revealing a hidden card.
+  - No puedes deshacer más allá de revelar una carta oculta.
+  UndoPastActivateDeck:
+  - Can't undo past Activate Deck.
+  - No puedes deshacer más allá de Activar Mazo.
+  UndoPastPowerChoice:
+  - Can't undo past choosing a power card.
+  - No puedes deshacer más allá de elegir una carta de poder.
+  UndoTurnLocked:
+  - This turn can no longer be undone.
+  - Este turno ya no se puede deshacer.
   YourTurn:
   - Your Turn
   - Tu Turno
@@ -15598,7 +15622,7 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 523220428}
         m_TargetAssemblyTypeName: GameManager, Assembly-CSharp
-        m_MethodName: HandleReplayButtonPress
+        m_MethodName: HandleUndoButtonPress
         m_Mode: 1
         m_Arguments:
           m_ObjectArgument: {fileID: 0}

@@ -29,7 +29,7 @@ public class GameManager : MonoBehaviour
     public static bool IsDoingReplay;
     public static bool IsApplyingRemoteUpdate;
     public static bool ShouldBlockInput => IsDealingHand || IsDoingActivateSequence || IsDoingReplay || IsApplyingRemoteUpdate
-        || (IN != null && (IN.isHandoffPending || IN.IsOnlineInputBlocked));
+        || (IN != null && (IN.isHandoffPending || IN.isUndoAnimating || IN.IsOnlineInputBlocked));
 
     private readonly string ANIM_STATE = "state";
 
@@ -91,6 +91,8 @@ public class GameManager : MonoBehaviour
     [SerializeField] private GameObject endTurnButton;
     [SerializeField] private GameObject speedUpOpponentTurnButton;
     [SerializeField] private GameObject replayButton;
+    [SerializeField] private GameObject undoButtonParent;
+    [SerializeField] private Button undoButton;
     public GameObject DiscardZone;
     public Transform DiscardZoneTransform;
     [SerializeField] private GameObject discardToEndTurnZone;
@@ -153,6 +155,8 @@ public class GameManager : MonoBehaviour
     private int onlineAppliedRevision = -1;
     private Coroutine onlineReplayCoroutine;
     private OnlineViewUpdateData pendingOnlineUpdate;
+    private readonly Elemento.Domain.TurnUndoHistory<BoardState> undoHistory = new();
+    private bool isUndoAnimating;
 
     private BoardState lastCreatedBoardState;
 
@@ -192,6 +196,7 @@ public class GameManager : MonoBehaviour
         QualitySettings.vSyncCount = 0;
 
         LOC.IN.SelectLanguage(LOC.LI);
+        RefreshUndoControls();
 
 #if UNITY_WEBGL
         Screen.fullScreen = true;
@@ -231,6 +236,7 @@ public class GameManager : MonoBehaviour
         UnityEngine.Random.InitState(this.randomSeed);
 
         this.lastCreatedBoardState = null;
+        this.undoHistory.Reset();
         BoardStateManager.IN.ClearBoardStates();
         BoardStateManager.IN.CurrentReplayBoardState = null;
         Move.ShouldRecordMoves = true;
@@ -386,6 +392,8 @@ public class GameManager : MonoBehaviour
         if (!isOnlineRetry && (GameManager.ShouldBlockInput || UIDraggable.ShouldBlockInput)) return;
         if (UITutorialPanel.IsTutorialMode) return;
         if (!IsHumanPlayingPhase()) return;//ignore stale/double end-turn requests
+
+        LockUndoTurn();
 
         if (this.IsOnline)
         {
@@ -750,6 +758,8 @@ public class GameManager : MonoBehaviour
         {
             case ETurnPhase.PlayerDraw:
 
+                BeginUndoTurn(Elemento.Domain.ETurnUndoCheckpoint.Draw);
+
                 SetGamePaused(false);
                 ResetMovesRemaining();
                 IncrementTurn();
@@ -778,6 +788,11 @@ public class GameManager : MonoBehaviour
                 break;
 
             case ETurnPhase.OpponentDraw:
+
+                if (this.IsPassAndPlay)
+                    BeginUndoTurn(Elemento.Domain.ETurnUndoCheckpoint.Draw);
+                else
+                    LockUndoTurn();
 
                 ResetMovesRemaining();
                 this.PlayerBoard.Hand.RefreshPlayerHandText();
@@ -810,6 +825,8 @@ public class GameManager : MonoBehaviour
                 }
                 break;
         }
+
+        RefreshUndoControls();
     }
 
     private void ConfigureSession()
@@ -969,6 +986,13 @@ public class GameManager : MonoBehaviour
             this.TurnPhase = (ETurnPhase)inSeatView.View.TurnPhase;
             ApplyViewingSeat(this.onlineClient.LocalSeat);
             RenderOnlineView(inSeatView.View);
+            if (this.IsPlayersTurn && IsHumanPlayingPhase())
+            {
+                BeginUndoTurn(Elemento.Domain.ETurnUndoCheckpoint.Draw);
+                this.lastCreatedBoardState = CreateBoardState(false);
+            }
+            else
+                LockUndoTurn();
             RefreshPassAndPlayHandVisibility();
             RefreshTurnAndMoveCountDisplay();
             RefreshOnlineControls();
@@ -1365,6 +1389,7 @@ public class GameManager : MonoBehaviour
         SetOnlineReplayButton(this.isOnlineReplayActive);
         if (this.isOnlineMovePending)
             this.playerTurnText.text = LocalizationManager.GetOnlineText(LOC.IN.OnlineSendingTurn);
+        RefreshUndoControls();
     }
 
     private void SubmitOnlineTurn(DomainMoveData inMove)
@@ -1691,6 +1716,7 @@ public class GameManager : MonoBehaviour
     #region Save/Load Board State
     public void SaveBoardState(UICardCell inSourceCell, UICardCell inTargetCell, bool inIsDiscard = false, UIElementZone inActivatedZone = null, bool inIsDealHand = false, ECardType inCardType = ECardType.None, string inCardId = null)
     {
+        Move recordedMove;
         if (this.IsOnline)
         {
             if (!Move.ShouldRecordMoves || this.isOnlineReplayActive || inIsDealHand)
@@ -1702,36 +1728,61 @@ public class GameManager : MonoBehaviour
                 return;
             }
 
-            var unityMove = Move.CreateMove(inSourceCell, inTargetCell, inIsDiscard, inActivatedZone,
+            recordedMove = Move.CreateMove(inSourceCell, inTargetCell, inIsDiscard, inActivatedZone,
                 inIsDealHand, inCardType, (int)this.CurrentPlayer, inCardId);
-            if (UnityDomainMapper.TryCreateOnlineMove(unityMove, view, out DomainMoveData move)
+            if (UnityDomainMapper.TryCreateOnlineMove(recordedMove, view, out DomainMoveData move)
                 && this.onlineClient.TryBufferMove(move, out _))
-            {
                 RefreshOnlineControls();
-            }
             else
+            {
                 RejectOnlineMove(LocalizationManager.GetOnlineText(LOC.IN.OnlineMoveIllegal));
-            return;
+                return;
+            }
+        }
+        else
+        {
+            if (!Move.ShouldRecordMoves || BoardStateManager.IsDoingReplay || UITutorialPanel.IsTutorialMode) return;
+
+            recordedMove = Move.CreateMove(inSourceCell, inTargetCell, inIsDiscard, inActivatedZone,
+                inIsDealHand, inCardType, (int)this.CurrentPlayer, inCardId);
         }
 
-        if (!Move.ShouldRecordMoves || BoardStateManager.IsDoingReplay || UITutorialPanel.IsTutorialMode) return;
+        var boardState = CreateBoardState(inIsDealHand);
+        if (this.lastCreatedBoardState != null)
+            this.lastCreatedBoardState.Move = recordedMove;
 
+        if (inIsDealHand)
+        {
+            this.undoHistory.SetCheckpoint(Elemento.Domain.ETurnUndoCheckpoint.Draw);
+        }
+        else if (inActivatedZone != null)
+        {
+            this.undoHistory.SetCheckpoint(Elemento.Domain.ETurnUndoCheckpoint.ActivateDeck);
+        }
+        else if (this.lastCreatedBoardState != null && IsUndoRecordable())
+        {
+            this.undoHistory.Record(this.lastCreatedBoardState);
+        }
+
+        this.lastCreatedBoardState = boardState;
+
+        if (!this.IsOnline)
+            BoardStateManager.IN.AddBoardState(boardState);
+
+        RefreshUndoControls();
+    }
+
+    private BoardState CreateBoardState(bool inIsDealHand)
+    {
         var boardState = new BoardState
         {
             TurnNumber = this.CurrentTurnNumber,
             MoveNumber = this.CurrentPlayerBoard.CurrentMoveNumber,
             TotalMovesTaken = this.CurrentPlayerBoard.TotalMovesTaken,
+            MovesRemaining = this.MovesRemaining,
             ActivePlayer = this.CurrentPlayer,
             IsDealHand = inIsDealHand
-            //Move = Move.CreateMove(inSourceCell, inTargetCell, inIsDiscard, inIsUseActivatedZone)
         };
-
-        if (this.lastCreatedBoardState != null)
-        {
-            this.lastCreatedBoardState.Move = Move.CreateMove(inSourceCell, inTargetCell, inIsDiscard, inActivatedZone, inIsDealHand, inCardType, (int)this.CurrentPlayer, inCardId);
-        }
-
-        this.lastCreatedBoardState = boardState;
 
         for (int i = 0; i < this.PlayerBoards.Length; i++)
         {
@@ -1746,9 +1797,11 @@ public class GameManager : MonoBehaviour
             {
                 var topCard = board.Hand.CardCells[j].TopCard;
                 if (topCard != null)
+                {
                     playerData.Hand.Cards.Add(topCard.Data);
-                //else
-                //    playerData.Hand.Cards.Add(null);
+                    playerData.Hand.CardIds.Add(topCard.Id);
+                    playerData.Hand.CardFaceUpStates.Add(topCard.CardFlip.IsFaceUp);
+                }
             }
 
             //copy cards in ElementZones
@@ -1769,19 +1822,22 @@ public class GameManager : MonoBehaviour
 
                 for (int l = 0; l < zone.CardCell.Cards.Count; l++)
                 {
-                    var card = zone.CardCell.Cards[l].Data;
-                    //var clone = CardData.Clone(cardData);
-                    dataZone.Cards.Add(card);
+                    var card = zone.CardCell.Cards[l];
+                    dataZone.Cards.Add(card.Data);
+                    dataZone.CardIds.Add(card.Id);
+                    dataZone.CardFaceUpStates.Add(card.CardFlip.IsFaceUp);
                 }
             }
 
             boardState.Players.Add(playerData);
         }
 
-        BoardStateManager.IN.AddBoardState(boardState);
+        return boardState;
     }
+
     public void SetGameToBoardState(BoardState inBoardState, bool inShouldPlay = false)
     {
+        BoardHand preservedDeck = this.isUndoAnimating && !this.IsOnline ? CaptureDeckState() : null;
         BoardStateManager.IsSettingState = true;
         BoardStateManager.IN.CurrentReplayBoardState = inBoardState;
 
@@ -1795,14 +1851,23 @@ public class GameManager : MonoBehaviour
 
         this.CurrentPlayerBoard.CurrentMoveNumber = inBoardState.MoveNumber;
         this.CurrentPlayerBoard.TotalMovesTaken = inBoardState.TotalMovesTaken;
+        this.MovesRemaining = inBoardState.MovesRemaining;
+        SetMovesRemaining(this.MovesRemaining);
 
         RefreshTurnAndMoveCountDisplay();
 
         this.DiscardZone.SetActive(SettingsManager.IN.DiscardMode == EDiscardMode.AllowDiscard);
 
-        CardsManager.IN.RebuildActiveDeck();
-        CardsManager.IN.GenerateShuffledGameDeck();
-        CardsManager.IN.AddBatchOfCardsToGameDeck();
+        if (this.IsOnline)
+            CardsManager.IN.SetOnlineDeckCount(this.onlineClient.CurrentView.View.DeckCount);
+        else if (preservedDeck != null)
+            RestoreDeckState(preservedDeck);
+        else
+        {
+            CardsManager.IN.RebuildActiveDeck();
+            CardsManager.IN.GenerateShuffledGameDeck();
+            CardsManager.IN.AddBatchOfCardsToGameDeck();
+        }
 
         for (int i = 0; i < inBoardState.Players.Count; i++)
         {
@@ -1816,10 +1881,15 @@ public class GameManager : MonoBehaviour
             {
                 var cardData = player.Hand.Cards[j];
                 var cell = playerBoard.Hand.CardCells[j];
+                string cardId = j < player.Hand.CardIds.Count ? player.Hand.CardIds[j] : null;
+                bool isFaceUp = j >= player.Hand.CardFaceUpStates.Count || player.Hand.CardFaceUpStates[j];
+                bool isDraggable = !this.IsOnline || i == ((OnlineSession)this.gameSession).LocalSeat;
 
-                var handCard = CardsManager.SpawnCard(cardData, cell.CardHolder, false);
+                var handCard = CardsManager.SpawnCard(cardData, cell.CardHolder, !isFaceUp,
+                    isDraggable, false, cardId);
                 cell.Cards.Clear();
                 cell.AddCardToCell(handCard);
+                handCard.CardFlip.SetAnimState(isFaceUp ? ECardFlipState.Front : ECardFlipState.Back);
                 cell.gameObject.SetActive(true);
             }
 
@@ -1841,10 +1911,15 @@ public class GameManager : MonoBehaviour
                     for (int k = 0; k < zoneData.Cards.Count; k++)
                     {
                         var cardData = zoneData.Cards[k];
+                        string cardId = k < zoneData.CardIds.Count ? zoneData.CardIds[k] : null;
+                        bool isFaceUp = k >= zoneData.CardFaceUpStates.Count || zoneData.CardFaceUpStates[k];
+                        bool isDraggable = !this.IsOnline || i == ((OnlineSession)this.gameSession).LocalSeat;
 
-                        var zoneCard = CardsManager.SpawnCard(cardData, zone.CardCell.CardHolder, false);
+                        var zoneCard = CardsManager.SpawnCard(cardData, zone.CardCell.CardHolder,
+                            !isFaceUp, isDraggable, false, cardId);
 
                         zone.CardCell.AddCardToCell(zoneCard);
+                        zoneCard.CardFlip.SetAnimState(isFaceUp ? ECardFlipState.Front : ECardFlipState.Back);
                         zoneCard.SetDimmedDecorations(zone.CardCell.ElementType);
                     }
 
@@ -1873,6 +1948,189 @@ public class GameManager : MonoBehaviour
             StartCoroutine(DoGameStateMoveCo(inBoardState));
         else
             BoardStateManager.IN.CurrentReplayBoardState = null;
+    }
+
+    private BoardHand CaptureDeckState()
+    {
+        var deckState = new BoardHand();
+        foreach (var card in this.Deck.Cards)
+        {
+            deckState.Cards.Add(card.Data);
+            deckState.CardIds.Add(card.Id);
+            deckState.CardFaceUpStates.Add(card.CardFlip.IsFaceUp);
+        }
+        return deckState;
+    }
+
+    private void RestoreDeckState(BoardHand inDeckState)
+    {
+        for (int i = 0; i < inDeckState.Cards.Count; i++)
+        {
+            string cardId = i < inDeckState.CardIds.Count ? inDeckState.CardIds[i] : null;
+            bool isFaceUp = i >= inDeckState.CardFaceUpStates.Count || inDeckState.CardFaceUpStates[i];
+            CardsManager.SpawnCard(inDeckState.Cards[i], this.Deck.CardHolder, !isFaceUp,
+                false, false, cardId);
+        }
+        this.Deck.RefreshCellsList();
+    }
+
+    public void HandleUndoButtonPress()
+    {
+        if (!SettingsManager.IN.AllowUndo || GameManager.ShouldBlockInput || UIDraggable.ShouldBlockInput
+            || !this.IsPlayersTurn || this.IsCurrentSeatControlledByAI || !IsHumanPlayingPhase())
+            return;
+
+        if (!this.undoHistory.TryPop(out BoardState boardState,
+            out Elemento.Domain.ETurnUndoCheckpoint blockedBy))
+        {
+            ShowUndoBlockedHint(blockedBy);
+            RefreshUndoControls();
+            return;
+        }
+
+        if (this.IsOnline && !this.onlineClient.TryUndoBufferedMove(out _, out string reason))
+        {
+            this.undoHistory.Record(boardState);
+            RejectOnlineMove(reason);
+            RefreshUndoControls();
+            return;
+        }
+
+        StartCoroutine(UndoMoveCo(boardState));
+    }
+
+    public void SetUndoCheckpoint(Elemento.Domain.ETurnUndoCheckpoint inCheckpoint)
+    {
+        if (this.isDoingCleanup || this.isUndoAnimating || GameManager.IsApplyingRemoteUpdate
+            || GameManager.IsDoingReplay || BoardStateManager.IsDoingReplay)
+            return;
+
+        bool didBlockMoves = SettingsManager.IN.AllowUndo && this.undoHistory.CanUndo;
+        this.undoHistory.SetCheckpoint(inCheckpoint);
+        if (inCheckpoint == Elemento.Domain.ETurnUndoCheckpoint.RevealHiddenCard
+            && this.isGameInitialized && this.IsPlayersTurn && IsHumanPlayingPhase())
+        {
+            this.lastCreatedBoardState = CreateBoardState(false);
+            if (!this.IsOnline)
+                BoardStateManager.IN.AddBoardState(this.lastCreatedBoardState);
+        }
+        if (didBlockMoves)
+            ShowUndoBlockedHint(inCheckpoint);
+        RefreshUndoControls();
+    }
+
+    private IEnumerator UndoMoveCo(BoardState inBoardState)
+    {
+        Move move = inBoardState.Move;
+        if (move == null)
+        {
+            RefreshUndoControls();
+            yield break;
+        }
+
+        Vector3 startPosition = GetUndoStartPosition(move);
+        this.isUndoAnimating = true;
+        Move.ShouldRecordMoves = false;
+        BoardStateManager.IsDoingReplay = true;
+        RefreshUndoControls();
+
+        SetGameToBoardState(inBoardState);
+        this.lastCreatedBoardState = inBoardState;
+        inBoardState.Move = null;
+        if (!this.IsOnline)
+            BoardStateManager.IN.RemoveLastBoardState();
+
+        Card restoredCard = move.SourceCell != null ? move.SourceCell.TopCard : null;
+        if (restoredCard != null)
+        {
+            Transform sourceTarget = move.SourceCell.AnimTarget != null
+                ? move.SourceCell.AnimTarget : move.SourceCell.CardHolder;
+            Vector3 destination = sourceTarget.position;
+            restoredCard.transform.position = startPosition;
+            restoredCard.transform.localScale = Vector3.one;
+            restoredCard.transform.rotation = Quaternion.identity;
+            yield return restoredCard.transform.DOMove(destination, this.OpponentMoveTweenDuration)
+                .SetEase(Ease.InOutSine).WaitForCompletion(true);
+        }
+        else
+            yield return null;
+
+        Move.ShouldRecordMoves = true;
+        BoardStateManager.IsDoingReplay = false;
+        this.isUndoAnimating = false;
+        TryHighlightDiscardPile();
+        if (!this.undoHistory.CanUndo)
+            ShowUndoBlockedHint(this.undoHistory.Checkpoint);
+        RefreshUndoControls();
+    }
+
+    private Vector3 GetUndoStartPosition(Move inMove)
+    {
+        if (inMove.IsDiscard || inMove.TargetCell == null)
+            return this.DiscardZoneTransform.position;
+        if (inMove.TargetCell.TopCard != null)
+            return inMove.TargetCell.TopCard.Center.position;
+
+        Transform target = inMove.TargetCell.AnimTarget != null
+            ? inMove.TargetCell.AnimTarget : inMove.TargetCell.CardHolder;
+        return target.position;
+    }
+
+    private bool IsUndoRecordable()
+    {
+        return !this.undoHistory.IsLocked && this.IsPlayersTurn
+            && !this.IsCurrentSeatControlledByAI && IsHumanPlayingPhase();
+    }
+
+    private void BeginUndoTurn(Elemento.Domain.ETurnUndoCheckpoint inCheckpoint)
+    {
+        this.undoHistory.BeginTurn(inCheckpoint);
+        this.lastCreatedBoardState = null;
+        RefreshUndoControls();
+    }
+
+    private void LockUndoTurn()
+    {
+        this.undoHistory.LockTurn();
+        RefreshUndoControls();
+    }
+
+    private void RefreshUndoControls()
+    {
+        if (this.undoButtonParent == null)
+            return;
+
+        bool isAllowed = SettingsManager.IN != null && SettingsManager.IN.AllowUndo;
+        this.undoButtonParent.SetActive(isAllowed);
+        if (this.undoButton != null)
+            this.undoButton.interactable = isAllowed && this.undoHistory.CanUndo
+                && !GameManager.ShouldBlockInput && !UIDraggable.ShouldBlockInput
+                && this.IsPlayersTurn && !this.IsCurrentSeatControlledByAI && IsHumanPlayingPhase();
+    }
+
+    private static void ShowUndoBlockedHint(Elemento.Domain.ETurnUndoCheckpoint inCheckpoint)
+    {
+        string[] message = null;
+        switch (inCheckpoint)
+        {
+            case Elemento.Domain.ETurnUndoCheckpoint.Draw:
+                message = LOC.IN.UndoPastDraw;
+                break;
+            case Elemento.Domain.ETurnUndoCheckpoint.RevealHiddenCard:
+                message = LOC.IN.UndoPastReveal;
+                break;
+            case Elemento.Domain.ETurnUndoCheckpoint.ActivateDeck:
+                message = LOC.IN.UndoPastActivateDeck;
+                break;
+            case Elemento.Domain.ETurnUndoCheckpoint.ChoosePowerCard:
+                message = LOC.IN.UndoPastPowerChoice;
+                break;
+            case Elemento.Domain.ETurnUndoCheckpoint.EndTurn:
+                message = LOC.IN.UndoTurnLocked;
+                break;
+        }
+        if (message != null)
+            UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(message));
     }
 
     private IEnumerator DoGameStateMoveCo(BoardState inBoardState)
@@ -2078,6 +2336,7 @@ public class GameManager : MonoBehaviour
         ResetMovesRemaining(true);
 
         SetTurnPhase(this.TurnPhase);
+        RefreshUndoControls();
     }
 
     public void HandleGameSpeedSliderChange(Single inValue)
@@ -2348,6 +2607,8 @@ public class GameManager : MonoBehaviour
 
     private void Update()
     {
+        RefreshUndoControls();
+
         if (Input.GetKeyDown(KeyCode.F))
             ToggleFulScreen();
     }

@@ -10543,6 +10543,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   ShouldShowSplashScreen: 1
   ShouldAutoDealHand: 1
+  AllowUndo: 0
   MusicVolume: 0.25
   EffectsVolume: 0.6
   NumCardsToDeal: 5
@@ -11273,6 +11274,27 @@ MonoBehaviour:
   OnlineMoveIllegal:
   - That move is not legal in the current online turn.
   - "Ese movimiento no es v\xE1lido en el turno en l\xEDnea actual."
+  Undo:
+  - Undo
+  - Deshacer
+  AllowUndo:
+  - Allow Undo
+  - Permitir deshacer
+  UndoPastDraw:
+  - Can't undo past a draw.
+  - No puedes deshacer más allá de un robo.
+  UndoPastReveal:
+  - Can't undo past revealing a hidden card.
+  - No puedes deshacer más allá de revelar una carta oculta.
+  UndoPastActivateDeck:
+  - Can't undo past Activate Deck.
+  - No puedes deshacer más allá de Activar Mazo.
+  UndoPastPowerChoice:
+  - Can't undo past choosing a power card.
+  - No puedes deshacer más allá de elegir una carta de poder.
+  UndoTurnLocked:
+  - This turn can no longer be undone.
+  - Este turno ya no se puede deshacer.
   YourTurn:
   - Your Turn
   - Tu Turno
