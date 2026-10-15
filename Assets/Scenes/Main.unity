@@ -48462,7 +48462,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
       propertyPath: m_lineSpacing
-      value: -20
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
       propertyPath: m_Pivot.x
