@@ -18,6 +18,7 @@ public class UISettingsPanel : UIPanelBase
     [SerializeField] private Toggle showSplashScreenToggle;
     [SerializeField] private Toggle autoDealHandToggle;
     [SerializeField] private Toggle allowSelectPowerCardTypeToggle;
+    [SerializeField] private Toggle allowUndoToggle;
     [SerializeField] private TMP_Dropdown selectLanguageDropdown;
     [SerializeField] private TMP_Dropdown discardModeDropdown;
     [SerializeField] private TMP_Dropdown playModeDropdown;
@@ -30,13 +31,12 @@ public class UISettingsPanel : UIPanelBase
     public bool IsResettingData;
 
     private bool isInitialized;
-    private Toggle allowUndoToggle;
 
     private void Start()
     {
-        CreateAllowUndoToggle();
-        this.playModeLockedNote.localizedTexts = LOC.IN.ReturnHomeToChangeMode;
-        this.playModeLockedNote.GetComponent<TextMeshProUGUI>().text = LOC.IN.ReturnHomeToChangeMode[LOC.LI];
+        if (!Initialize())
+            return;
+
         RefreshPlayModeAvailability(GameManager.IN != null && GameManager.IN.IsGameInProgress);
 
         if (!Application.isEditor)
@@ -47,6 +47,9 @@ public class UISettingsPanel : UIPanelBase
 
     public override void Show()
     {
+        if (!Initialize())
+            return;
+
         base.Show();
 
         GameManager.IN.SetGamePaused(true);
@@ -59,6 +62,77 @@ public class UISettingsPanel : UIPanelBase
             SelectCategory(0);
 
         this.isInitialized = true;
+    }
+
+    private bool Initialize()
+    {
+        var missingReferences = new List<string>();
+
+        if (this.SkinSelectPanel == null)
+            missingReferences.Add(nameof(this.SkinSelectPanel));
+
+        if (this.sliders == null || this.sliders.Length < 10)
+        {
+            missingReferences.Add($"{nameof(this.sliders)} (10 required)");
+        }
+        else
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                if (this.sliders[i] == null)
+                    missingReferences.Add($"{nameof(this.sliders)}[{i}]");
+            }
+        }
+
+        if (this.showSplashScreenToggle == null)
+            missingReferences.Add(nameof(this.showSplashScreenToggle));
+        if (this.autoDealHandToggle == null)
+            missingReferences.Add(nameof(this.autoDealHandToggle));
+        if (this.allowSelectPowerCardTypeToggle == null)
+            missingReferences.Add(nameof(this.allowSelectPowerCardTypeToggle));
+        if (this.allowUndoToggle == null)
+            missingReferences.Add(nameof(this.allowUndoToggle));
+        if (this.selectLanguageDropdown == null)
+            missingReferences.Add(nameof(this.selectLanguageDropdown));
+        if (this.discardModeDropdown == null)
+            missingReferences.Add(nameof(this.discardModeDropdown));
+        if (this.playModeDropdown == null)
+            missingReferences.Add(nameof(this.playModeDropdown));
+        if (this.playModeLockedNote == null)
+            missingReferences.Add(nameof(this.playModeLockedNote));
+        if (this.aiDifficultyDropdown == null)
+            missingReferences.Add(nameof(this.aiDifficultyDropdown));
+        if (this.dataPathText == null)
+            missingReferences.Add(nameof(this.dataPathText));
+
+        if (this.categoryPanels == null || this.categoryPanels.Length == 0)
+        {
+            missingReferences.Add(nameof(this.categoryPanels));
+        }
+        else
+        {
+            for (int i = 0; i < this.categoryPanels.Length; i++)
+            {
+                if (this.categoryPanels[i] == null)
+                    missingReferences.Add($"{nameof(this.categoryPanels)}[{i}]");
+            }
+        }
+
+        var playModeLockedText = this.playModeLockedNote == null
+            ? null
+            : this.playModeLockedNote.GetComponent<TextMeshProUGUI>();
+        if (this.playModeLockedNote != null && playModeLockedText == null)
+            missingReferences.Add($"{nameof(this.playModeLockedNote)} TextMeshProUGUI");
+
+        if (missingReferences.Count > 0)
+        {
+            Debug.LogError($"{nameof(UISettingsPanel)} is missing required references: {string.Join(", ", missingReferences)}.", this);
+            return false;
+        }
+
+        this.playModeLockedNote.localizedTexts = LOC.IN.ReturnHomeToChangeMode;
+        playModeLockedText.text = LOC.IN.ReturnHomeToChangeMode[LOC.LI];
+        return true;
     }
 
     private void SetSliderValuesToSettings()
@@ -226,21 +300,6 @@ public class UISettingsPanel : UIPanelBase
     {
         SettingsManager.IN.SetAllowUndoPreference(inIsOn);
         this.IsDirty = true;
-    }
-
-    private void CreateAllowUndoToggle()
-    {
-        var sourceParent = this.allowSelectPowerCardTypeToggle.transform.parent;
-        var undoParent = Instantiate(sourceParent.gameObject, sourceParent.parent);
-        undoParent.name = "Allow Undo Parent";
-        undoParent.transform.SetSiblingIndex(sourceParent.GetSiblingIndex() + 1);
-        this.allowUndoToggle = undoParent.GetComponentInChildren<Toggle>();
-        this.allowUndoToggle.name = "Allow Undo Toggle";
-        this.allowUndoToggle.onValueChanged = new Toggle.ToggleEvent();
-        this.allowUndoToggle.onValueChanged.AddListener(HandleAllowUndoToggleChanged);
-
-        var localizationItem = undoParent.GetComponentInChildren<LocalizationItem>();
-        localizationItem.localizedTexts = LOC.IN.AllowUndo;
     }
 
     public void HandleRestoreDefaultsButtonPress()
