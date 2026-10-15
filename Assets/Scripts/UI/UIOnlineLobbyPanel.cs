@@ -224,8 +224,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
 
     private string GetWaitingText()
     {
-        string waiting = string.Format(LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineWaiting),
-            this.inviteCode);
-        return waiting + "\n" + LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineMatchSettings);
+        return LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineInviteCodeLabel)
+            + ": <color=#FFDD00>" + this.inviteCode + "</color>\n<size=80%>"
+            + LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineWaiting) + "</size>";
     }
 }

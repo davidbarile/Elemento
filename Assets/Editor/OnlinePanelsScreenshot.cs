@@ -163,16 +163,19 @@ public static class OnlinePanelsScreenshot
         inviteCodeField.SetValue(lobbyPanel, inviteCode);
         var statusText = statusTextField.GetValue(lobbyPanel) as TMP_Text;
         var localization = UnityEngine.Object.FindAnyObjectByType<LocalizationManager>(FindObjectsInactive.Include);
-        string waitingText = localization != null && localization.OnlineWaiting != null && localization.OnlineWaiting.Length > 0
-            && !string.IsNullOrEmpty(localization.OnlineWaiting[0])
-            ? localization.OnlineWaiting[0]
-            : "Invite code: {0} — waiting for opponent";
+        string inviteCodeLabel = localization != null
+            ? LocalizationManager.GetOnlineText(localization.OnlineInviteCodeLabel)
+            : "Invite Code";
+        string waitingText = localization != null
+            ? LocalizationManager.GetOnlineText(localization.OnlineWaiting)
+            : "Waiting for Opponent";
 
         if (statusText == null)
         {
             throw new InvalidOperationException("[OnlinePanelsScreenshot] Lobby status text was not found.");
         }
 
-        statusText.text = string.Format(waitingText, inviteCode);
+        statusText.text = inviteCodeLabel + ": <color=#FFDD00>" + inviteCode
+            + "</color>\n<size=80%>" + waitingText + "</size>";
     }
 }

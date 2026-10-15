@@ -11349,9 +11349,12 @@ MonoBehaviour:
   OnlineInviteCodePlaceholder:
   - Enter Code
   - "Introduce el C\xF3digo"
+  OnlineInviteCodeLabel:
+  - Invite Code
+  - "C\xF3digo de invitaci\xF3n"
   OnlineWaiting:
-  - "Invite Code: {0} \u2014 Waiting for Opponent"
-  - "C\xF3digo: {0} \u2014 Esperando Rival"
+  - Waiting for Opponent
+  - Esperando al rival
   OnlineBack:
   - Back
   - Volver
@@ -48396,6 +48399,70 @@ PrefabInstance:
     - target: {fileID: 7200000000000000001, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
       propertyPath: m_IsActive
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMin.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_Pivot.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_Pivot.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 246.9
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: -100
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 82.7
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_fontAsset
+      value:
+      objectReference: {fileID: 11400000, guid: c309455a113c04e2585f896c78a2d05c, type: 2}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_sharedMaterial
+      value:
+      objectReference: {fileID: -1214882625775132628, guid: c309455a113c04e2585f896c78a2d05c, type: 2}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_fontSize
+      value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_fontSizeBase
+      value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_enableAutoSizing
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_lineSpacing
+      value: -20
       objectReference: {fileID: 0}
     - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
       propertyPath: m_Pivot.x

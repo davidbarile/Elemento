@@ -99,6 +99,21 @@ compatibility fallback.
 Supabase uses `IAsyncMatchTransport`; the in-memory single-move transport remains only for domain
 simulation and legacy protocol tests.
 
+## Match lifecycle and setup (implemented)
+- Leaving an active match is an authenticated, server-authoritative forfeit. `leave-match` verifies
+  seat ownership, advances the revision with a compare-and-set update, marks the match `abandoned`,
+  assigns the other seat as winner, and broadcasts the new revision. Repeated requests are
+  idempotent once the match is abandoned. Unity confirms before leaving, warns specifically when
+  buffered moves will be discarded, and returns home only after the leave succeeds (or the server
+  already reports the match abandoned). The opponent receives a localized leave notification.
+- The creator's gameplay settings are stored in `matches.rules`, validated when the match is
+  created, and used by the authoritative server state. Both Unity clients apply those shared rules
+  for the match and restore their local settings when the online session is released. Per-player
+  handicap settings are not supported.
+- When the second player joins, the server randomly chooses starting seat 0 or 1 and records it as
+  `StartingPlayerId`/`CurrentPlayerId`. Only that seat receives the opening hand and first active
+  turn. Each client maps its local seat to the result and shows a localized first-player message.
+
 ## Decisions David must make
 1. Supabase org + project (new org vs existing; project name; region, e.g. us-west-1).
 2. Plan: Free tier to start (projects pause after ~1 week inactivity; limits on Edge Function

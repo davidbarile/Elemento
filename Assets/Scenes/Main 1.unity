@@ -11256,6 +11256,12 @@ MonoBehaviour:
   TapToContinue:
   - Tap to Continue
   - Toca para continuar
+  OnlineInviteCodeLabel:
+  - Invite Code
+  - "C\xF3digo de invitaci\xF3n"
+  OnlineWaiting:
+  - Waiting for Opponent
+  - Esperando al rival
   OnlineSendingTurn:
   - Sending turn...
   - Enviando turno...
