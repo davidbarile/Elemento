@@ -2052,8 +2052,11 @@ public class GameManager : MonoBehaviour
             restoredCard.transform.position = startPosition;
             restoredCard.transform.localScale = Vector3.one;
             restoredCard.transform.rotation = Quaternion.identity;
+            UIDragOverlay.IN.SetDraggingItem(restoredCard.transform);
             yield return restoredCard.transform.DOMove(destination, this.OpponentMoveTweenDuration)
                 .SetEase(Ease.InOutSine).WaitForCompletion(true);
+            move.SourceCell.SetParentCell(restoredCard);
+            UIDragOverlay.IN.SetVisible(false);
         }
         else
             yield return null;
