@@ -23,7 +23,16 @@ public class UISlider : MonoBehaviour
     [Space]
     [SerializeField] private Replacement[] replacements;
 
-    public Slider Slider => this.slider;
+    public Slider Slider
+    {
+        get
+        {
+            if (this.slider == null)
+                this.slider = this.GetComponent<Slider>();
+
+            return this.slider;
+        }
+    }
     private Slider slider;
 
     [Serializable]
@@ -97,8 +106,8 @@ public class UISlider : MonoBehaviour
 
     public void Refresh()
     {
-        bool hasChanged = this.slider.value != this.Value;
-        this.slider.value = this.Value;
+        bool hasChanged = this.Slider.value != this.Value;
+        this.Slider.value = this.Value;
 
         if (!hasChanged)
             HandleSliderValueChange(this.Value);
@@ -118,7 +127,7 @@ public class UISlider : MonoBehaviour
 
         foreach (var replacement in this.replacements)
         {
-            if (this.slider.value == replacement.SliderValue)
+            if (this.Slider.value == replacement.SliderValue)
             {
                 this.Value = replacement.ConvertToValue;
 
@@ -133,7 +142,7 @@ public class UISlider : MonoBehaviour
             }             
         }
 
-        if (this.slider.wholeNumbers)
+        if (this.Slider.wholeNumbers)
         {
             this.Value = Mathf.RoundToInt(this.Value);
 
