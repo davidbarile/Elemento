@@ -29,10 +29,18 @@ public class UITotalPointsDisplay : MonoBehaviour
         this.tooltipText.text = $"<size=80>{inValue}/{SettingsManager.IN.TotalPointsRequiredToWin}</size>\nto win";
     }
 
+    public void SetTotalPointsInstantly(int inValue, bool inShouldHideIfZero = true)
+    {
+        if (inShouldHideIfZero)
+            this.gameObject.SetActive(inValue > 0);
+
+        this.totalPoints.SetTextInstantly(inValue, SettingsManager.IN.TotalPointsRequiredToWin);
+        this.tooltipText.text = $"<size=80>{inValue}/{SettingsManager.IN.TotalPointsRequiredToWin}</size>\nto win";
+    }
+
     public void SetTotalPoints(int inValue)
     {
-        this.totalPoints.SetText(inValue, SettingsManager.IN.TotalPointsRequiredToWin);
-        this.tooltipText.text = $"<size=80>{inValue}/{SettingsManager.IN.TotalPointsRequiredToWin}</size>\nto win";
+        SetTotalPointsInstantly(inValue, false);
     }
 
     public void SetElementVisible(EElementType inElementType, int inPoints)

@@ -323,7 +323,13 @@ public class UIPlayerBoard : MonoBehaviour
     public void CalculateTotalPoints(bool inShouldCheckWinLoseState = true)
     {
         this.TotalPoints = DomainGameRules.CalculatePlayerPoints(CreateStateData());
-        RefreshTotalPointsDisplay(inShouldCheckWinLoseState);
+        RefreshTotalPointsDisplay(inShouldCheckWinLoseState, false);
+    }
+
+    public void CalculateTotalPointsInstantly(bool inShouldCheckWinLoseState = true)
+    {
+        this.TotalPoints = DomainGameRules.CalculatePlayerPoints(CreateStateData());
+        RefreshTotalPointsDisplay(inShouldCheckWinLoseState, true);
     }
 
     public void CalculateOnlineTotalPoints()
@@ -332,10 +338,19 @@ public class UIPlayerBoard : MonoBehaviour
         foreach (var zone in this.ElementZones)
             this.TotalPoints += zone.Points;
 
-        RefreshTotalPointsDisplay(false);
+        RefreshTotalPointsDisplay(false, false);
     }
 
-    private void RefreshTotalPointsDisplay(bool inShouldCheckWinLoseState)
+    public void CalculateOnlineTotalPointsInstantly()
+    {
+        this.TotalPoints = 0;
+        foreach (var zone in this.ElementZones)
+            this.TotalPoints += zone.Points;
+
+        RefreshTotalPointsDisplay(false, true);
+    }
+
+    private void RefreshTotalPointsDisplay(bool inShouldCheckWinLoseState, bool inShouldSetInstantly)
     {
         this.TotalFaceUpPoints = 0;
 
@@ -347,7 +362,10 @@ public class UIPlayerBoard : MonoBehaviour
             this.totalPointsDisplay.SetElementVisible(zone.CardCell.ElementType, points);
         }
 
-        this.totalPointsDisplay.TickToTotalPoints(this.TotalPoints);
+        if (inShouldSetInstantly)
+            this.totalPointsDisplay.SetTotalPointsInstantly(this.TotalPoints);
+        else
+            this.totalPointsDisplay.TickToTotalPoints(this.TotalPoints);
 
         if (inShouldCheckWinLoseState)
             GameManager.IN.CheckWinLoseState(this);
@@ -387,8 +405,8 @@ public class UIPlayerBoard : MonoBehaviour
         inOther.ConfigurePlayerType();
         RefreshPlayerStateData();
         inOther.RefreshPlayerStateData();
-        CalculateTotalPoints(false);
-        inOther.CalculateTotalPoints(false);
+        CalculateTotalPointsInstantly(false);
+        inOther.CalculateTotalPointsInstantly(false);
     }
 
     private void RefreshPlayerStateData()

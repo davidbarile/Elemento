@@ -1558,7 +1558,7 @@ public class GameManager : MonoBehaviour
             RenderOnlineZones(board, inOpponent.Zones, false);
         }
 
-        board.CalculateOnlineTotalPoints();
+        board.CalculateOnlineTotalPointsInstantly();
         board.Hand.RefreshPlayerHandText();
     }
 
@@ -2231,7 +2231,7 @@ public class GameManager : MonoBehaviour
                 }
             }
 
-            playerBoard.CalculateTotalPoints();
+            playerBoard.CalculateTotalPointsInstantly();
         }
 
         this.PlayerBoard.Hand.RefreshPlayerHandText();

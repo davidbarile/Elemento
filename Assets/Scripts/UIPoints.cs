@@ -51,6 +51,13 @@ public class UIPoints : UICardDecorationBase
         }
     }
 
+    public void SetTextInstantly(int inValue, int inMaxValue)
+    {
+        StopAllCoroutines();
+        this.destValue = -1;
+        SetText(inValue, inMaxValue);
+    }
+
     public void ResetToZero()
     {
         this.pointsValue = 0;
@@ -92,9 +99,7 @@ public class UIPoints : UICardDecorationBase
 
         if (!this.gameObject.activeInHierarchy || BoardStateManager.IsSettingState)
         {
-            StopAllCoroutines();
-            this.destValue = -1;
-            SetText(inDestValue, inMaxValue);
+            SetTextInstantly(inDestValue, inMaxValue);
             return;
         }
 
