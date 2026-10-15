@@ -231,6 +231,7 @@ namespace Elemento.Domain
                 WinType = inState.WinCondition,
                 DeckCount = inState.Deck.Count + inState.ReserveDeck.Count,
                 PowerDeckCount = inState.PowerDeck.Count,
+                NextCardInstanceId = inState.NextCardInstanceId,
                 Rules = inState.Rules.Clone(),
                 Player = player.Clone()
             };

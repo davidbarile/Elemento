@@ -7,6 +7,7 @@ using UnityEngine;
 using UnityEngine.TestTools;
 using DomainAiDifficulty = Elemento.Domain.EAiDifficulty;
 using DomainMoveType = Elemento.Domain.EMoveType;
+using DomainPowerCardType = Elemento.Domain.EPowerCardType;
 
 public class UnityDomainMapperTests
 {
@@ -119,6 +120,59 @@ public class UnityDomainMapperTests
         UnityDomainMapper.FilterMappableMoves(view, rejectedMoveKeys);
 
         Assert.That(view.LegalMoves, Is.Empty);
+    }
+
+    [TestCase(Card.ECardType.Heal, DomainPowerCardType.Heal)]
+    [TestCase(Card.ECardType.Freeze, DomainPowerCardType.Freeze)]
+    [TestCase(Card.ECardType.Lightning, DomainPowerCardType.Lightning)]
+    public void TryCreateOnlineMove_ActivationPreservesGeneratedPowerCardIdentity(
+        Card.ECardType inCardType, DomainPowerCardType inExpectedPowerCardType)
+    {
+        var board = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
+        var zone = board.ElementZones[0];
+        var move = Move.CreateMove(zone.CardCell, zone.CardCell, false, zone, false,
+            inCardType, (int)board.PlayerType, "unity-power-card");
+        var view = new PlayerViewData
+        {
+            Player = new PlayerStateData { Id = 0 },
+            Rules = new RulesConfigData { AllowSelectPowerCardType = true }
+        };
+
+        Assert.That(UnityDomainMapper.TryCreateOnlineMove(move, view, out MoveData mapped), Is.True);
+        Assert.That(mapped.PlayerId, Is.Zero);
+        Assert.That(mapped.Type, Is.EqualTo(DomainMoveType.ActivateZone));
+        Assert.That(mapped.CardId, Is.EqualTo("unity-power-card"));
+        Assert.That(mapped.SourceZoneId, Is.Zero);
+        Assert.That(mapped.TargetPlayerId, Is.Zero);
+        Assert.That(mapped.TargetZoneId, Is.Zero);
+        Assert.That(mapped.PowerCardType, Is.EqualTo(inExpectedPowerCardType));
+    }
+
+    [TestCase(Card.ECardType.Heal, UIPlayerBoard.EPlayerType.PlayerA, 0)]
+    [TestCase(Card.ECardType.Freeze, UIPlayerBoard.EPlayerType.PlayerA, 0)]
+    [TestCase(Card.ECardType.Freeze, UIPlayerBoard.EPlayerType.PlayerB, 1)]
+    [TestCase(Card.ECardType.Lightning, UIPlayerBoard.EPlayerType.PlayerA, 0)]
+    [TestCase(Card.ECardType.Lightning, UIPlayerBoard.EPlayerType.PlayerB, 1)]
+    public void TryCreateOnlineMove_MapsEveryPowerCardTargetShape(Card.ECardType inCardType,
+        UIPlayerBoard.EPlayerType inTargetPlayerType, int inExpectedTargetPlayerId)
+    {
+        var sourceBoard = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
+        var opponentBoard = CreateBoard("Opponent", UIPlayerBoard.EPlayerType.PlayerB);
+        var targetBoard = inTargetPlayerType == sourceBoard.PlayerType ? sourceBoard : opponentBoard;
+        var sourceCell = sourceBoard.Hand.CardCells[0];
+        var targetCell = targetBoard.ElementZones[1].CardCell;
+        var move = Move.CreateMove(sourceCell, targetCell, false, null, false,
+            inCardType, (int)sourceBoard.PlayerType, "unity-power-card");
+        var view = new PlayerViewData { Player = new PlayerStateData { Id = 0 } };
+
+        Assert.That(UnityDomainMapper.TryCreateOnlineMove(move, view, out MoveData mapped), Is.True);
+        Assert.That(mapped.PlayerId, Is.Zero);
+        Assert.That(mapped.Type, Is.EqualTo(DomainMoveType.PlayCard));
+        Assert.That(mapped.CardId, Is.EqualTo("unity-power-card"));
+        Assert.That(mapped.SourceZoneId, Is.EqualTo(-1));
+        Assert.That(mapped.TargetPlayerId, Is.EqualTo(inExpectedTargetPlayerId));
+        Assert.That(mapped.TargetZoneId, Is.EqualTo(1));
+        Assert.That(mapped.PowerCardType, Is.EqualTo(DomainPowerCardType.None));
     }
 
     [Test]

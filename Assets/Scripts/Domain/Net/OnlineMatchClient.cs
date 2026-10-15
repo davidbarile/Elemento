@@ -154,6 +154,16 @@ namespace Elemento.Domain.Net
             return this.TurnBuffer.TryAppend(inMove, out outReason);
         }
 
+        public string GetNextBufferedCardId()
+        {
+            if (this.CurrentView?.View == null)
+                return null;
+            if (!this.TurnBuffer.HasMoves && this.TurnBuffer.ExpectedRevision != this.Revision)
+                this.TurnBuffer.Begin(this.CurrentView);
+
+            return this.TurnBuffer.NextCardId;
+        }
+
         public bool TryUndoBufferedMove(out MoveData outMove, out string outReason)
         {
             return this.TurnBuffer.TryPop(out outMove, out outReason);

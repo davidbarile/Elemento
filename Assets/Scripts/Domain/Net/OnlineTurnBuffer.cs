@@ -18,6 +18,8 @@ namespace Elemento.Domain.Net
         public string ClientNonce { get; private set; }
         public bool HasMoves => this.moves.Count > 0;
         public bool IsComplete => this.moves.Count > 0 && this.moves[this.moves.Count - 1].Type == EMoveType.EndTurn;
+        public string NextCardId => this.mirror == null
+            ? null : CardInstanceData.CreateId(this.mirror.NextCardInstanceId);
 
         public void Begin(MatchSeatViewData inSeatView, string inClientNonce = null)
         {
@@ -48,17 +50,18 @@ namespace Elemento.Domain.Net
             if (this.IsComplete)
                 return Fail("The turn is already complete.", out outReason);
 
+            var moveToMatch = NormalizeActivation(inMove);
             MoveData acceptedMove = null;
             if (this.mirror != null)
             {
                 try
                 {
-                    acceptedMove = FindMatching(this.simulator.GetLegalMoves(this.mirror, inMove.PlayerId), inMove);
+                    acceptedMove = FindMatching(this.simulator.GetLegalMoves(this.mirror, inMove.PlayerId), moveToMatch);
                     if (acceptedMove == null)
                     {
-                        if (!IsTerminalEndMarker(this.mirror, inMove))
+                        if (!IsTerminalEndMarker(this.mirror, moveToMatch))
                             return Fail("Move is not legal in the local turn state.", out outReason);
-                        acceptedMove = inMove.Clone();
+                        acceptedMove = moveToMatch.Clone();
                         acceptedMove.ExpectedRevision = this.mirror.Revision;
                         this.mirror.Moves.Add(acceptedMove.Clone());
                         ++this.mirror.Revision;
@@ -69,13 +72,13 @@ namespace Elemento.Domain.Net
                 catch (InvalidOperationException)
                 {
                     // shortcut: masked decks prevent exact simulation after hidden-random effects; keep validating against the turn-start fair view.
-                    acceptedMove = FindMatching(this.initialLegalMoves, inMove);
+                    acceptedMove = FindMatching(this.initialLegalMoves, moveToMatch);
                     this.mirror = null;
                 }
             }
             else
             {
-                acceptedMove = FindMatching(this.initialLegalMoves, inMove);
+                acceptedMove = FindMatching(this.initialLegalMoves, moveToMatch);
             }
 
             if (acceptedMove == null)
@@ -181,7 +184,7 @@ namespace Elemento.Domain.Net
                 WinCondition = view.WinType,
                 Rules = view.Rules?.Clone() ?? new RulesConfigData(),
                 Random = new RandomStateData { State = 1 },
-                NextCardInstanceId = 1000000
+                NextCardInstanceId = view.NextCardInstanceId
             };
             state.Players.Add(view.Player.Clone());
             foreach (var opponent in view.Opponents)
@@ -192,6 +195,16 @@ namespace Elemento.Domain.Net
                 state.Players.Add(player);
             }
             return state;
+        }
+
+        private static MoveData NormalizeActivation(MoveData inMove)
+        {
+            if (inMove.Type != EMoveType.ActivateZone || string.IsNullOrEmpty(inMove.CardId))
+                return inMove;
+
+            var move = inMove.Clone();
+            move.CardId = null;
+            return move;
         }
 
         private static MoveData FindMatching(IEnumerable<MoveData> inMoves, MoveData inMove)

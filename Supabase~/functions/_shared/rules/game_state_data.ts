@@ -213,6 +213,7 @@ export class PlayerViewData {
   WinType: EWinCondition = EWinCondition.None;
   DeckCount = 0;
   PowerDeckCount = 0;
+  NextCardInstanceId = 0;
   Rules: RulesConfigData | null = null;
   Player: PlayerStateData | null = null;
   Opponents: OpponentViewData[] = [];

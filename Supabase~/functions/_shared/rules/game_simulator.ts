@@ -157,6 +157,7 @@ export class GameSimulator {
       WinType: inState.WinCondition,
       DeckCount: inState.Deck.length + inState.ReserveDeck.length,
       PowerDeckCount: inState.PowerDeck.length,
+      NextCardInstanceId: inState.NextCardInstanceId,
       Rules: cloneRules(inState.Rules),
       Player: clonePlayer(player),
     });

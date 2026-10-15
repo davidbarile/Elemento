@@ -269,7 +269,7 @@ public class CardsManager : MonoBehaviour
         this.gameDeckText.text = string.Empty;
     }
 
-    public Card SpawnPowerCardOfType(ECardType inCardType = ECardType.None)
+    public Card SpawnPowerCardOfType(ECardType inCardType = ECardType.None, string inCardId = null)
     {
         Card spawnedCard = null;
         switch (inCardType)
@@ -278,7 +278,7 @@ public class CardsManager : MonoBehaviour
                 if (this.PowerCardDatas.Count > 0)
                 {
                     var cardData = this.PowerCardDatas[0];
-                    spawnedCard = CardsManager.SpawnCard(cardData, this.gameDeck.transform, true);
+                    spawnedCard = CardsManager.SpawnCard(cardData, this.gameDeck.transform, true, inCardId: inCardId);
 
                     this.PowerCardDatas.RemoveAt(0);
 
@@ -290,15 +290,18 @@ public class CardsManager : MonoBehaviour
                 break;
 
             case ECardType.Heal:
-                spawnedCard = CardsManager.SpawnCard(this.SinglePowerCardDatas[0], this.gameDeck.transform, true);
+                spawnedCard = CardsManager.SpawnCard(this.SinglePowerCardDatas[0], this.gameDeck.transform, true,
+                    inCardId: inCardId);
                 break;
 
             case ECardType.Freeze:
-                spawnedCard = CardsManager.SpawnCard(this.SinglePowerCardDatas[1], this.gameDeck.transform, true);
+                spawnedCard = CardsManager.SpawnCard(this.SinglePowerCardDatas[1], this.gameDeck.transform, true,
+                    inCardId: inCardId);
                 break;
 
             case ECardType.Lightning:
-                spawnedCard = CardsManager.SpawnCard(this.SinglePowerCardDatas[2], this.gameDeck.transform, true);
+                spawnedCard = CardsManager.SpawnCard(this.SinglePowerCardDatas[2], this.gameDeck.transform, true,
+                    inCardId: inCardId);
                 break;
 
             default:

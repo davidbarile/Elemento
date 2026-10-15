@@ -596,7 +596,8 @@ public class GameManager : MonoBehaviour
         if (CardsManager.IN.PowerCardOverride != ECardType.None)
             cardType = CardsManager.IN.PowerCardOverride;
 
-        var powerCard = CardsManager.IN.SpawnPowerCardOfType(cardType);
+        string powerCardId = this.IsOnline ? this.onlineClient?.GetNextBufferedCardId() : null;
+        var powerCard = CardsManager.IN.SpawnPowerCardOfType(cardType, powerCardId);
 
         if (powerCard == null) yield break;
 

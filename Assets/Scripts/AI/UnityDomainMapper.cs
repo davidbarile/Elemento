@@ -217,7 +217,6 @@ public static class UnityDomainMapper
         candidate.Type = inMove.IsDiscard ? DomainMoveType.DiscardCard
             : inMove.ActivatePowerZone != null ? DomainMoveType.ActivateZone : DomainMoveType.PlayCard;
         bool isActivation = inMove.ActivatePowerZone != null;
-        candidate.CardId = isActivation ? null : candidate.CardId;
         candidate.SourceZoneId = isActivation
             ? GetOnlineZoneId(inMove.ActivatePowerZone.CardCell) : GetOnlineZoneId(inMove.SourceCell);
         candidate.TargetPlayerId = inMove.IsDiscard ? -1

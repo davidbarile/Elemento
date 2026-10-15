@@ -204,6 +204,112 @@ namespace Elemento.Domain.Tests
             Assert.That(buffer.IsComplete, Is.True);
         }
 
+        [TestCase(EPowerCardType.Heal, 0, false)]
+        [TestCase(EPowerCardType.Freeze, 0, false)]
+        [TestCase(EPowerCardType.Freeze, 1, false)]
+        [TestCase(EPowerCardType.Lightning, 0, true)]
+        [TestCase(EPowerCardType.Lightning, 1, false)]
+        public void Buffer_MapsGeneratedPowerCardIdentityForEveryLegalTarget(
+            EPowerCardType inPowerCardType, int inTargetPlayerId, bool inTargetIsFrozen)
+        {
+            var state = CreatePowerCardTurnState(inPowerCardType, inTargetPlayerId, inTargetIsFrozen);
+            var view = FairView.BuildSeatView(state, 0);
+            var activation = view.View.LegalMoves.First(inMove => inMove.Type == EMoveType.ActivateZone
+                && inMove.PowerCardType == inPowerCardType).Clone();
+            string generatedCardId = CardInstanceData.CreateId(view.View.NextCardInstanceId);
+            activation.CardId = generatedCardId;
+            var play = new MoveData
+            {
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = activation.CardId,
+                SourceZoneId = -1,
+                TargetPlayerId = inTargetPlayerId,
+                TargetZoneId = 1
+            };
+            var buffer = new OnlineTurnBuffer();
+
+            buffer.Begin(view);
+            Assert.That(buffer.NextCardId, Is.EqualTo(generatedCardId));
+            Assert.That(buffer.TryAppend(activation, out string activationReason), Is.True, activationReason);
+            Assert.That(buffer.TryAppend(play, out string playReason), Is.True, playReason);
+
+            Assert.That(buffer.Moves[0].CardId, Is.Null);
+            Assert.That(buffer.Moves[1].CardId, Is.EqualTo(generatedCardId));
+            Assert.That(buffer.Moves[1].TargetPlayerId, Is.EqualTo(inTargetPlayerId));
+            Assert.That(buffer.Moves[1].TargetZoneId, Is.EqualTo(1));
+
+            var authority = new MatchAuthority();
+            for (int i = 0; i < buffer.Moves.Count; ++i)
+            {
+                var result = authority.ValidateAndApply(state, new MoveCommandData
+                {
+                    MatchId = state.MatchId,
+                    Seat = 0,
+                    ClientMoveSequence = i + 1,
+                    ClientNonce = "power-card-turn",
+                    ExpectedRevision = state.Revision,
+                    Move = buffer.Moves[i].Clone()
+                });
+                Assert.That(result.Accepted, Is.True, result.Reason);
+            }
+        }
+
+        private static GameStateData CreatePowerCardTurnState(EPowerCardType inPowerCardType,
+            int inTargetPlayerId, bool inTargetIsFrozen)
+        {
+            var rules = new RulesConfigData
+            {
+                NumCardsToDeal = 0,
+                MovesPerTurn = 5,
+                ElementZoneStartingHealth = 5,
+                FrozenZoneHealth = 5,
+                LightningDamage = 5,
+                TotalPointsRequiredToWin = 10000,
+                AllowSelectPowerCardType = true,
+                DiscardMode = EDiscardMode.None
+            };
+            var state = new GameStateData
+            {
+                MatchId = "power-card-turn",
+                Revision = 3,
+                TurnNumber = 1,
+                StartingPlayerId = 0,
+                CurrentPlayerId = 0,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                MovesRemaining = rules.MovesPerTurn,
+                WinnerPlayerId = -1,
+                Rules = rules,
+                Random = new RandomStateData { State = 1 },
+                NextCardInstanceId = 25
+            };
+
+            for (int playerId = 0; playerId < 2; ++playerId)
+            {
+                var player = new PlayerStateData { Id = playerId, Name = "Player " + playerId };
+                for (int zoneId = 0; zoneId < 4; ++zoneId)
+                {
+                    player.Zones.Add(new ZoneStateData
+                    {
+                        Id = zoneId,
+                        ElementType = (EElementType)(zoneId + 1),
+                        Health = rules.ElementZoneStartingHealth,
+                        MaxHealth = rules.ElementZoneStartingHealth
+                    });
+                }
+                state.Players.Add(player);
+            }
+
+            state.Players[0].Zones[0].IsActivated = true;
+            var targetZone = state.Players[inTargetPlayerId].Zones[1];
+            if (inPowerCardType == EPowerCardType.Heal)
+                targetZone.Health = 1;
+            if (inTargetIsFrozen)
+                targetZone.FrozenHealth = rules.FrozenZoneHealth;
+
+            return state;
+        }
+
         private static MoveData CreateTerminalMarker(int inPlayerId)
         {
             return new MoveData

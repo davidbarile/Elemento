@@ -25,6 +25,7 @@ namespace Elemento.Domain
         public EWinCondition WinType;
         public int DeckCount;
         public int PowerDeckCount;
+        public int NextCardInstanceId;
         public RulesConfigData Rules;
         public PlayerStateData Player;
         public List<OpponentViewData> Opponents = new();
