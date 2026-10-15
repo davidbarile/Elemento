@@ -236,6 +236,23 @@ namespace Elemento.Domain.Net
 
     public static class OnlineReconciliation
     {
+        public static List<CardInstanceData> FindNewHandCards(IEnumerable<string> inExistingCardIds,
+            PlayerViewData inFinalView)
+        {
+            var existingCardIds = new HashSet<string>(inExistingCardIds ?? Array.Empty<string>(),
+                StringComparer.Ordinal);
+            List<CardInstanceData> newCards = new();
+            if (inFinalView?.Player?.Hand == null)
+                return newCards;
+
+            foreach (var card in inFinalView.Player.Hand)
+            {
+                if (card != null && !string.IsNullOrEmpty(card.Id) && !existingCardIds.Contains(card.Id))
+                    newCards.Add(card);
+            }
+            return newCards;
+        }
+
         public static bool RequiresRebuild(int inLastAppliedRevision, OnlineViewUpdateData inUpdate,
             MatchSeatViewData inProjectedView)
         {

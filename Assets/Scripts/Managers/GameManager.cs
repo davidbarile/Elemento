@@ -488,7 +488,7 @@ public class GameManager : MonoBehaviour
         SelectNextPlayer();
     }
 
-    private IEnumerator DealCardsCo(int inCount, UIHand inHand)
+    private IEnumerator DealCardsCo(int inCount, UIHand inHand, bool inShouldAdvanceTurn = true)
     {
         GameManager.IsDealingHand = true;
 
@@ -515,7 +515,7 @@ public class GameManager : MonoBehaviour
             //    break;
             //}
 
-            if (this.Deck.Cards.Count <= 2)
+            if (inShouldAdvanceTurn && this.Deck.Cards.Count <= 2)
                 CardsManager.IN.AddBatchOfCardsToGameDeck();
 
             if (this.Deck.TopCard != null)
@@ -533,13 +533,16 @@ public class GameManager : MonoBehaviour
                 Debug.Log($"<color=red>Deck.TopCard is null!   {i}/{inCount}</color>");
         }
 
-        ResetMovesRemaining(true);
-
-        SaveBoardState(null, null, false, null, true);
+        if (inShouldAdvanceTurn)
+        {
+            ResetMovesRemaining(true);
+            SaveBoardState(null, null, false, null, true);
+        }
 
         GameManager.IsDealingHand = false;
 
-        IncrementTurnPhase();
+        if (inShouldAdvanceTurn)
+            IncrementTurnPhase();
     }
 
     private Vector3 GetCardAnimDestination(UIHand inHand, int inNumCardsInHand)
@@ -1017,6 +1020,17 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator ReplayOnlineMovesCo(OnlineViewUpdateData inUpdate)
     {
+        List<string> visibleHandCardIds = new();
+        int localSeat = this.onlineClient.LocalSeat;
+        if (localSeat >= 0 && localSeat < this.PlayerBoards.Length)
+        {
+            foreach (var cell in this.PlayerBoards[localSeat].Hand.CardCells)
+            {
+                if (cell?.TopCard != null)
+                    visibleHandCardIds.Add(cell.TopCard.Id);
+            }
+        }
+
         this.isOnlineReplayActive = true;
         this.skipOnlineReplay = false;
         GameManager.IsApplyingRemoteUpdate = true;
@@ -1045,6 +1059,28 @@ public class GameManager : MonoBehaviour
                 if (board != null)
                     yield return board.PlayOnlineMoveCo(move);
             }
+
+            if (OnlineReconciliation.RequiresRebuild(this.onlineAppliedRevision, inUpdate, null))
+            {
+                var newHandCards = OnlineReconciliation.FindNewHandCards(visibleHandCardIds,
+                    inUpdate.View.View);
+                BoardStateManager.IsDoingReplay = true;
+                try
+                {
+                    HandleOnlineViewChanged(inUpdate.View);
+                }
+                finally
+                {
+                    BoardStateManager.IsDoingReplay = false;
+                }
+
+                int cardsToDeal = StageOnlineHandCardsForDeal(localSeat, newHandCards);
+                if (cardsToDeal > 0)
+                {
+                    GameManager.IsApplyingRemoteUpdate = true;
+                    yield return DealCardsCo(cardsToDeal, this.PlayerBoards[localSeat].Hand, false);
+                }
+            }
         }
         finally
         {
@@ -1058,15 +1094,42 @@ public class GameManager : MonoBehaviour
             UIDraggable.ResetInputState();
         }
 
-        if (OnlineReconciliation.RequiresRebuild(this.onlineAppliedRevision, inUpdate, null))
-            HandleOnlineViewChanged(inUpdate.View);
-
         if (this.pendingOnlineUpdate != null)
         {
             var pending = this.pendingOnlineUpdate;
             this.pendingOnlineUpdate = null;
             HandleOnlineViewUpdate(pending);
         }
+    }
+
+    private int StageOnlineHandCardsForDeal(int inSeat, IReadOnlyList<DomainCardInstanceData> inCards)
+    {
+        if (inSeat < 0 || inSeat >= this.PlayerBoards.Length || inCards == null || inCards.Count == 0)
+            return 0;
+
+        UIHand hand = this.PlayerBoards[inSeat].Hand;
+        int stagedCardCount = 0;
+        for (int i = inCards.Count - 1; i >= 0; --i)
+        {
+            foreach (var cell in hand.CardCells)
+            {
+                Card card = cell?.TopCard;
+                if (card == null || card.Id != inCards[i].Id)
+                    continue;
+
+                cell.Cards.Remove(card);
+                cell.gameObject.SetActive(false);
+                this.Deck.Cards.Add(card);
+                this.Deck.SetParentCell(card);
+                CardsManager.IN.SetCardFaceDown(card);
+                ++stagedCardCount;
+                break;
+            }
+        }
+
+        this.Deck.RefreshCellsList();
+        hand.RefreshPlayerHandText();
+        return stagedCardCount;
     }
 
     private void CancelOnlineReplay()

@@ -736,7 +736,7 @@ public class UICardCell : MonoBehaviour
                 inSourceCell.ElementZone.CalculatePoints();
             }
 
-            if (inSourceCell.CellType == ECellType.Deck)
+            if (inSourceCell.CellType == ECellType.Deck && !GameManager.IsApplyingRemoteUpdate)
             {
                 CardsManager.IN.AddBatchOfCardsToGameDeck();
             }

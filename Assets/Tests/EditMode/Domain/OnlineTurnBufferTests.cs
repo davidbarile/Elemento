@@ -183,6 +183,21 @@ namespace Elemento.Domain.Tests
     public class OnlineReconciliationTests
     {
         [Test]
+        public void FindNewHandCards_ReturnsOnlyAddedCardsInAuthoritativeOrder()
+        {
+            var view = CreateView(3);
+            view.View.Player.Hand.Add(new CardInstanceData { Id = "existing" });
+            view.View.Player.Hand.Add(new CardInstanceData { Id = "new-1" });
+            view.View.Player.Hand.Add(new CardInstanceData { Id = "new-2" });
+
+            var cards = OnlineReconciliation.FindNewHandCards(new[] { "existing" }, view.View);
+
+            Assert.That(cards, Has.Count.EqualTo(2));
+            Assert.That(cards[0].Id, Is.EqualTo("new-1"));
+            Assert.That(cards[1].Id, Is.EqualTo("new-2"));
+        }
+
+        [Test]
         public void MatchingViewAndContinuousLogDoNotRequireRebuild()
         {
             var view = CreateView(3);

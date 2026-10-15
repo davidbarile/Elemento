@@ -333,28 +333,31 @@ public class CardsManager : MonoBehaviour
         card.transform.rotation = Quaternion.identity;
 
         if (inIsFaceDown)
-            card.CardFlip.SetAnimState(ECardFlipState.Back);
+            CardsManager.IN.SetCardFaceDown(card);
         else
             card.CardFlip.SetAnimState(ECardFlipState.Front);
 
         if (inShouldSnapToCenter)
             card.transform.localPosition = Vector3.zero;
 
-        //spawn card back
-        if (inIsFaceDown)
-        {
-            var backGo = LeanPool.Spawn(CardsManager.IN.CardBackPrefab, card.CardBackParent);
-            backGo.name = "Card Back";
-            card.CardBack = backGo;
-            backGo.transform.localScale = Vector3.one;
-            backGo.transform.rotation = Quaternion.identity;
-        }
-
         card.Draggable.IsDraggable = inIsDraggable;
 
         CardsManager.IN.SpawnedCards.Add(card);
 
         return card;
+    }
+
+    public void SetCardFaceDown(Card inCard)
+    {
+        inCard.CardFlip.SetAnimState(UICardFlip.ECardFlipState.Back);
+        if (inCard.CardBack != null)
+            return;
+
+        var backGo = LeanPool.Spawn(this.CardBackPrefab, inCard.CardBackParent);
+        backGo.name = "Card Back";
+        inCard.CardBack = backGo;
+        backGo.transform.localScale = Vector3.one;
+        backGo.transform.rotation = Quaternion.identity;
     }
 
     public void SetOnlineDeckCount(int inCount)
