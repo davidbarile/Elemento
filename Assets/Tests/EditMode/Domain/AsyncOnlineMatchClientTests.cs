@@ -72,6 +72,21 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public async Task RejectedSubmit_DoesNotHideForfeitAtSameMatchRevision()
+        {
+            var transport = new AsyncTransport { RejectSubmit = true, RejectedRevision = 1 };
+            using var client = new OnlineMatchClient(transport, "match", 1);
+            await client.RefreshAsync();
+
+            await client.SubmitTurnAsync(CreateEndTurn(0));
+            transport.RaiseMatchRevision(1, "abandoned");
+
+            Assert.That(client.Revision, Is.Zero);
+            Assert.That(client.MatchRevision, Is.EqualTo(1));
+            Assert.That(client.Status, Is.EqualTo("abandoned"));
+        }
+
+        [Test]
         public async Task Refresh_ForwardsAppliedRevisionCursor()
         {
             var transport = new AsyncTransport();
@@ -93,6 +108,34 @@ namespace Elemento.Domain.Tests
             client.Dispose();
             transport.RaiseRevision(3);
             Assert.That(client.Revision, Is.EqualTo(2));
+        }
+
+        [Test]
+        public async Task MatchOnlyRevision_RefreshesAbandonedStatus()
+        {
+            var transport = new AsyncTransport();
+            using var client = new OnlineMatchClient(transport, "match", 1);
+            OnlineViewUpdateData received = null;
+            client.ViewUpdateReceived += inUpdate => received = inUpdate;
+            await client.RefreshAsync();
+
+            transport.RaiseMatchRevision(1, "abandoned");
+
+            Assert.That(client.Revision, Is.Zero);
+            Assert.That(client.MatchRevision, Is.EqualTo(1));
+            Assert.That(client.Status, Is.EqualTo("abandoned"));
+            Assert.That(received.Status, Is.EqualTo("abandoned"));
+        }
+
+        [Test]
+        public async Task LeaveMatch_UsesCurrentMatchId()
+        {
+            var transport = new AsyncTransport();
+            using var client = new OnlineMatchClient(transport, "match", 1);
+
+            await client.LeaveMatchAsync();
+
+            Assert.That(transport.LeftMatchId, Is.EqualTo("match"));
         }
 
         [Test]
@@ -206,8 +249,12 @@ namespace Elemento.Domain.Tests
             public bool Fail;
             public bool FailSubmit;
             public bool RejectSubmit;
+            public int RejectedRevision;
             public int? LastSinceRevision;
+            public string LeftMatchId;
+            public string Status = "active";
             private int revision;
+            private int matchRevision;
 
             public Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
             {
@@ -220,11 +267,12 @@ namespace Elemento.Domain.Tests
                     {
                         Accepted = false,
                         Reason = "illegal",
-                        NewRevision = this.revision,
+                        NewRevision = this.RejectedRevision,
                         View = CreateView(this.revision)
                     });
                 }
                 ++this.revision;
+                this.matchRevision = this.revision;
                 return Task.FromResult(new SubmitTurnResultData
                 {
                     Accepted = true,
@@ -239,12 +287,31 @@ namespace Elemento.Domain.Tests
                 this.LastSinceRevision = inSinceRevision;
                 return this.Fail
                     ? Task.FromException<OnlineViewUpdateData>(new InvalidOperationException("offline"))
-                    : Task.FromResult(new OnlineViewUpdateData { View = CreateView(this.revision) });
+                    : Task.FromResult(new OnlineViewUpdateData
+                    {
+                        Status = this.Status,
+                        MatchRevision = this.matchRevision,
+                        View = CreateView(this.revision)
+                    });
+            }
+
+            public Task LeaveMatch(string inMatchId)
+            {
+                this.LeftMatchId = inMatchId;
+                return Task.CompletedTask;
             }
 
             public void RaiseRevision(int inRevision)
             {
                 this.revision = inRevision;
+                this.matchRevision = inRevision;
+                this.RevisionCommitted?.Invoke("match", inRevision);
+            }
+
+            public void RaiseMatchRevision(int inRevision, string inStatus)
+            {
+                this.matchRevision = inRevision;
+                this.Status = inStatus;
                 this.RevisionCommitted?.Invoke("match", inRevision);
             }
         }
@@ -265,6 +332,11 @@ namespace Elemento.Domain.Tests
             {
                 throw new NotSupportedException();
             }
+
+            public Task LeaveMatch(string inMatchId)
+            {
+                throw new NotSupportedException();
+            }
         }
 
         private sealed class SubmitRaceTransport : IAsyncMatchTransport
@@ -281,6 +353,11 @@ namespace Elemento.Domain.Tests
             public Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
             {
                 return this.SubmitCompletion.Task;
+            }
+
+            public Task LeaveMatch(string inMatchId)
+            {
+                throw new NotSupportedException();
             }
         }
     }

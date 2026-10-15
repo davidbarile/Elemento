@@ -25,7 +25,12 @@ namespace Elemento.Domain.Net
 
         public OnlineViewUpdateData ToViewUpdate()
         {
-            var update = new OnlineViewUpdateData { View = this.View };
+            var update = new OnlineViewUpdateData
+            {
+                Status = this.Match.Status,
+                MatchRevision = this.Match.Revision,
+                View = this.View
+            };
             if (this.Moves == null)
                 return update;
 

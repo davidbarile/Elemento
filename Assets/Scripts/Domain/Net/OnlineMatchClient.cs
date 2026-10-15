@@ -15,11 +15,14 @@ namespace Elemento.Domain.Net
         private bool disposed;
         private int clientMoveSequence;
         private int lastAppliedRevision = -1;
+        private int matchRevision = -1;
 
         public string MatchId { get; }
         public int LocalSeat { get; }
         public MatchSeatViewData CurrentView { get; private set; }
         public int Revision => this.CurrentView == null ? -1 : this.CurrentView.View.Revision;
+        public int MatchRevision => this.matchRevision;
+        public string Status { get; private set; }
         public bool IsLocalTurn => this.CurrentView != null && this.CurrentView.View.CurrentPlayerId == this.LocalSeat;
         public bool UsesAsyncTransport => this.asyncTransport != null;
         public int LastAppliedRevision => this.lastAppliedRevision;
@@ -47,6 +50,7 @@ namespace Elemento.Domain.Net
             if (this.transport == null)
                 throw new InvalidOperationException("Use RefreshAsync for an asynchronous transport.");
             this.CurrentView = this.transport.FetchSeatView(this.MatchId, this.LocalSeat);
+            this.matchRevision = this.CurrentView.View.Revision;
             ViewChanged?.Invoke(this.CurrentView);
             return this.CurrentView;
         }
@@ -79,7 +83,7 @@ namespace Elemento.Domain.Net
 
         private void HandleRevisionCommitted(string inMatchId, int inRevision)
         {
-            if (inMatchId == this.MatchId && inRevision > this.Revision)
+            if (inMatchId == this.MatchId && inRevision > this.matchRevision)
             {
                 if (this.asyncTransport != null)
                     _ = RefreshAsync(this.lastAppliedRevision < 0 ? null : this.lastAppliedRevision,
@@ -111,6 +115,14 @@ namespace Elemento.Domain.Net
                 var view = update?.View;
                 if (view == null || view.View == null || view.MatchId != this.MatchId || view.Seat != this.LocalSeat)
                     throw new InvalidOperationException("The server returned an invalid seat view.");
+                int updateRevision = Math.Max(update.MatchRevision, view.View.Revision);
+                if (updateRevision < this.matchRevision)
+                {
+                    inCompleted?.Invoke(this.CurrentView);
+                    return;
+                }
+                this.matchRevision = updateRevision;
+                this.Status = update.Status;
                 if (view.View.Revision >= this.Revision)
                 {
                     this.CurrentView = view;
@@ -172,9 +184,19 @@ namespace Elemento.Domain.Net
                     throw new InvalidOperationException("The server returned an invalid submit-turn seat view.");
 
                 this.TurnBuffer.Clear();
+                if (result.Accepted)
+                {
+                    this.matchRevision = Math.Max(this.matchRevision, result.NewRevision);
+                    this.Status = "active";
+                }
                 if (result.View.View.Revision >= this.Revision)
                 {
-                    var update = new OnlineViewUpdateData { View = result.View };
+                    var update = new OnlineViewUpdateData
+                    {
+                        Status = this.Status,
+                        MatchRevision = this.matchRevision,
+                        View = result.View
+                    };
                     this.CurrentView = result.View;
                     this.ViewChanged?.Invoke(result.View);
                     this.ViewUpdateReceived?.Invoke(update);
@@ -187,6 +209,15 @@ namespace Elemento.Domain.Net
                     throw;
                 inFailed(error);
             }
+        }
+
+        public async Task LeaveMatchAsync()
+        {
+            if (this.disposed)
+                throw new ObjectDisposedException(nameof(OnlineMatchClient));
+            if (this.asyncTransport == null)
+                throw new InvalidOperationException("Leaving a match requires an asynchronous transport.");
+            await this.asyncTransport.LeaveMatch(this.MatchId);
         }
 
         public void DiscardBufferedTurn()

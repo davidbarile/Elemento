@@ -307,4 +307,27 @@ move_count=$(printf '%s' "$turn_log" | json_compact moves | json_array_length)
 last_log_revision=$(printf '%s' "$turn_log" | json_raw moves.2.revision)
 [[ $last_log_revision == "$second_revision" ]] || { echo "move log did not reach accepted revision" >&2; exit 1; }
 
-echo "T2a smoke test passed for match $match_id"
+left=$(call_function leave-match "$token0" "$view_body")
+printf '%s' "$left" | assert_true match.status abandoned
+printf '%s' "$left" | assert_true match.winner_seat 1
+forfeit_revision=$(printf '%s' "$left" | json_raw match.revision)
+expected_forfeit_revision=$((second_revision + 1))
+[[ $forfeit_revision == "$expected_forfeit_revision" ]] || { echo "forfeit did not advance revision once" >&2; exit 1; }
+
+opponent_after_leave=$(call_function get-view "$token1" "$view_body")
+printf '%s' "$opponent_after_leave" | assert_true match.status abandoned
+printf '%s' "$opponent_after_leave" | assert_true match.winner_seat 1
+printf '%s' "$opponent_after_leave" | assert_true match.revision "$forfeit_revision"
+
+left_again=$(call_function leave-match "$token0" "$view_body")
+printf '%s' "$left_again" | assert_true match.status abandoned
+printf '%s' "$left_again" | assert_true match.revision "$forfeit_revision"
+
+forfeit_moves=$(printf '%s' "$current_view" | turn_moves end)
+post_forfeit_turn=$(make_json turn "$match_id" "$current_seat" "$forfeit_revision" "t2a-$match_id-after-forfeit" "$forfeit_moves")
+post_forfeit=$(call_function submit-turn "$current_token" "$post_forfeit_turn")
+printf '%s' "$post_forfeit" | assert_true Accepted false
+post_forfeit_reason=$(printf '%s' "$post_forfeit" | json_raw Reason)
+[[ $post_forfeit_reason == "Match is not active." ]] || { echo "expected inactive match rejection, got: $post_forfeit_reason" >&2; exit 1; }
+
+echo "T2a + forfeit smoke test passed for match $match_id"

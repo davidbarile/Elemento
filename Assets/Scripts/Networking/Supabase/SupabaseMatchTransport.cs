@@ -54,6 +54,13 @@ namespace Elemento.Networking.Supabase
             return SubmitTurnResponseData.Parse(await PostAsync("submit-turn", NetJson.Serialize(inTurn)));
         }
 
+        public async Task LeaveMatch(string inMatchId)
+        {
+            if (string.IsNullOrEmpty(inMatchId))
+                throw new ArgumentException("A match id is required.", nameof(inMatchId));
+            await PostAsync("leave-match", "{\"matchId\":" + NetJson.Serialize(inMatchId) + "}");
+        }
+
         public async Task<OnlineViewUpdateData> FetchView(string inMatchId, int? inSinceRevision = null)
         {
             SupabaseMatchResponseData response = null;
@@ -85,7 +92,7 @@ namespace Elemento.Networking.Supabase
                 throw new ObjectDisposedException(nameof(SupabaseMatchTransport));
             this.realtime?.Dispose();
             this.realtime = new SupabaseRealtimeClient(this.runner, this.auth, inMatchId,
-                async () => (await FetchView(inMatchId)).View);
+                () => FetchView(inMatchId));
             this.realtime.RevisionCommitted += HandleRevisionCommitted;
             this.realtime.RequestFailed += HandleRequestFailed;
             this.realtime.Start(inMode == "live");

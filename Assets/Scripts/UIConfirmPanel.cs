@@ -33,6 +33,12 @@ public class UIConfirmPanel : UIPanelBase
         Show(inTitle, inMessage, inOnConfirm, inOnCancel, confirm, cancel, inDelayToAutoHide);
     }
 
+    public void ShowSingleButton(string inTitle, string inMessage, string inButtonText, Action inOnPress)
+    {
+        Show(inTitle, inMessage, inOnPress, null, string.Empty, inButtonText);
+        this.cancelButton.gameObject.SetActive(false);
+    }
+
     public void Show(string inTitle, string inMessage, Action inOnConfirm, Action inOnCancel, string inCancelButtonString, string inConfirmButtonString, float inDelayToAutoHide = -1)
     {
         this.onConfirm = inOnConfirm;

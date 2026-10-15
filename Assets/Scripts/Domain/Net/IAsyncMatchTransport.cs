@@ -7,6 +7,7 @@ namespace Elemento.Domain.Net
     {
         event Action<string, int> RevisionCommitted;
         Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn);
+        Task LeaveMatch(string inMatchId);
         Task<OnlineViewUpdateData> FetchView(string inMatchId, int? inSinceRevision = null);
     }
 }

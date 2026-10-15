@@ -55,6 +55,8 @@ namespace Elemento.Domain.Net
     [Serializable]
     public sealed class OnlineViewUpdateData
     {
+        public string Status;
+        public int MatchRevision;
         public MatchSeatViewData View;
         public List<MoveLogEntryData> Moves = new();
     }

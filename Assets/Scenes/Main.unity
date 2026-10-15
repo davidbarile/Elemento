@@ -11382,6 +11382,9 @@ MonoBehaviour:
   OnlineMoveIllegal:
   - That move is not legal in the current online turn.
   - "Ese movimiento no es v\xE1lido en el turno en l\xEDnea actual."
+  OnlineOpponentLeft:
+  - The other player has left the game
+  - El otro jugador ha abandonado la partida
   Undo:
   - Undo
   - Deshacer

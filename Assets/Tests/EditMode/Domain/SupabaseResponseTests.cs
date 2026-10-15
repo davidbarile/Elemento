@@ -66,6 +66,8 @@ namespace Elemento.Domain.Tests
             const string json = "{\"match\":{\"id\":\"match-1\",\"status\":\"active\",\"revision\":3},\"view\":{\"MatchId\":\"match-1\",\"Seat\":1,\"View\":{\"Revision\":3}},\"moves\":[{\"revision\":2,\"seat\":0,\"command\":{\"MatchId\":\"match-1\",\"Seat\":0,\"ClientMoveSequence\":1,\"ExpectedRevision\":1,\"ClientNonce\":\"turn-a\",\"Move\":{\"PlayerId\":0,\"Type\":2,\"CardId\":\"bomb-1\"},\"ReplayCard\":{\"Id\":\"bomb-1\",\"DefinitionId\":7,\"Bombs\":[0,0,3,0]}}},{\"revision\":3,\"seat\":0,\"command\":{\"MatchId\":\"match-1\",\"Seat\":0,\"ClientMoveSequence\":2,\"ExpectedRevision\":2,\"ClientNonce\":\"turn-a\",\"Move\":{\"PlayerId\":0,\"Type\":5}}}]}";
             var update = SupabaseMatchResponseData.Parse(json).ToViewUpdate();
 
+            Assert.That(update.Status, Is.EqualTo("active"));
+            Assert.That(update.MatchRevision, Is.EqualTo(3));
             Assert.That(update.Moves, Has.Count.EqualTo(2));
             Assert.That(update.Moves[0].RevisionBefore, Is.EqualTo(1));
             Assert.That(update.Moves[0].RevisionAfter, Is.EqualTo(2));

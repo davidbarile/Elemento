@@ -123,7 +123,7 @@ public class GameManager : MonoBehaviour
         : this.gameSession == null ? this.currentPlayerIndex == 0 : (this.gameSession.IsHumanSeat(this.currentPlayerIndex) && !this.isHandoffPending);
     public bool IsPassAndPlay => this.gameSession != null && this.gameSession.GameMode == Elemento.Domain.EGameMode.PassAndPlay;
     public bool IsOnline => this.gameSession is OnlineSession;
-    private bool IsOnlineInputBlocked => this.IsOnline && (this.isOnlineMovePending || this.isOnlineReplayActive
+    private bool IsOnlineInputBlocked => this.IsOnline && (this.isOnlineMovePending || this.isOnlineLeavePending || this.isOnlineReplayActive
         || this.onlineClient?.TurnBuffer.IsComplete == true
         || !this.IsPlayersTurn || !IsHumanPlayingPhase());
     public bool IsCurrentSeatControlledByAI => !this.IsOnline && !this.IsPassAndPlay && ((this.gameSession != null && this.gameSession.ShouldRunAI(this.currentPlayerIndex)) || this.CurrentPlayerBoard.IsAutoPlay);
@@ -149,6 +149,7 @@ public class GameManager : MonoBehaviour
     private UIPlayerBoard[] boardSlots;
     private OnlineMatchClient onlineClient;
     private bool isOnlineMovePending;
+    private bool isOnlineLeavePending;
     private bool isOnlineReplayActive;
     private bool hasOnlineRenderedView;
     private bool skipOnlineReplay;
@@ -867,6 +868,7 @@ public class GameManager : MonoBehaviour
 
         this.onlineClient = null;
         this.isOnlineMovePending = false;
+        this.isOnlineLeavePending = false;
         this.isOnlineReplayActive = false;
         this.hasOnlineRenderedView = false;
         this.pendingOnlineUpdate = null;
@@ -891,6 +893,7 @@ public class GameManager : MonoBehaviour
         SetReplayButtonVisibility(false);
         this.TurnPhase = ETurnPhase.None;
         this.isOnlineMovePending = false;
+        this.isOnlineLeavePending = false;
         this.isOnlineReplayActive = false;
         this.hasOnlineRenderedView = false;
         this.skipOnlineReplay = false;
@@ -899,6 +902,12 @@ public class GameManager : MonoBehaviour
         this.onlineRenderedView = null;
         this.onlineAppliedRevision = LoadLastSeenOnlineRevision();
         MatchSeatViewData lastSeenView = LoadLastSeenOnlineView();
+
+        if (this.onlineClient.Status == "abandoned")
+        {
+            HandleOnlineOpponentLeft();
+            return;
+        }
 
         if (lastSeenView?.View != null && lastSeenView.MatchId == this.onlineClient.MatchId
             && lastSeenView.Seat == this.onlineClient.LocalSeat
@@ -932,6 +941,11 @@ public class GameManager : MonoBehaviour
     {
         if (!this.IsOnline || this.onlineClient == null || inUpdate?.View?.View == null)
             return;
+        if (inUpdate.Status == "abandoned")
+        {
+            HandleOnlineOpponentLeft();
+            return;
+        }
         if (this.isOnlineReplayActive)
         {
             this.pendingOnlineUpdate = inUpdate;
@@ -1089,6 +1103,11 @@ public class GameManager : MonoBehaviour
 
     private void HandleOnlineViewChanged(MatchSeatViewData inSeatView, bool inIsReplayPreview)
     {
+        if (!inIsReplayPreview && this.onlineClient?.Status == "abandoned")
+        {
+            HandleOnlineOpponentLeft();
+            return;
+        }
         if (!this.IsOnline || this.onlineClient == null || inSeatView?.View == null || inSeatView.MatchId != this.onlineClient.MatchId
             || inSeatView.Seat != this.onlineClient.LocalSeat || inSeatView.View.Player == null
             || inSeatView.View.Player.Hand == null || inSeatView.View.Player.Zones == null
@@ -2668,7 +2687,7 @@ public class GameManager : MonoBehaviour
 
     public void HandleHomeButtonPress()
     {
-        if (UITutorialPanel.IsTutorialMode) return;
+        if (UITutorialPanel.IsTutorialMode || this.isOnlineLeavePending) return;
 
         UIDraggable.CancelActiveDrag();
 
@@ -2676,28 +2695,66 @@ public class GameManager : MonoBehaviour
         string messageText = this.IsOnline && this.onlineClient?.TurnBuffer.HasMoves == true
             ? LocalizationManager.GetOnlineText(LOC.IN.OnlineDiscardUnsent)
             : LOC.IN.LeaveGameMessage[LOC.LI];//$"Are you sure you want to leave the game?\n\nAll progress will  be lost.";
-        UIConfirmPanel.IN.Show(titleText, messageText, () =>
+        UIConfirmPanel.IN.Show(titleText, messageText, async () =>
         {
-            CancelOnlineReplay();
-            GameManager.IsApplyingRemoteUpdate = false;
-            GameManager.IsDealingHand = false;
-            GameManager.IsDoingActivateSequence = false;
-            GameManager.IsDoingReplay = false;
-            BoardStateManager.IsDoingReplay = false;
-            BoardStateManager.IsSettingState = false;
-            this.isHandoffPending = false;
-            this.isOnlineMovePending = false;
-            this.isOnlineReplayActive = false;
-            this.onlineClient?.DiscardBufferedTurn();
-            UIDraggable.ResetInputState();
-            CleanUpGameState();
+            if (this.IsOnline && this.onlineClient != null)
+            {
+                this.isOnlineLeavePending = true;
+                try
+                {
+                    await this.onlineClient.LeaveMatchAsync();
+                }
+                catch (Exception exception)
+                {
+                    if (this.onlineClient?.Status != "abandoned")
+                    {
+                        this.isOnlineLeavePending = false;
+                        Debug.LogWarning("Leaving online match failed: " + exception.Message);
+                        UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(LOC.IN.OnlineError));
+                        return;
+                    }
+                }
+            }
 
-            if (this.IsOnline)
-                ReleaseOnlineSession();
-
-            UISplashScreen.IN.Show();
-            UIGameBoard.IN.Hide();
+            ReturnHomeFromGame();
         });
+    }
+
+    private void HandleOnlineOpponentLeft()
+    {
+        if (!this.IsOnline || this.onlineClient == null || this.isOnlineLeavePending)
+            return;
+
+        ReleaseOnlineSession();
+        UIConfirmPanel.IN.ShowSingleButton(
+            LocalizationManager.GetOnlineText(LOC.IN.OnlineLobby),
+            LocalizationManager.GetOnlineText(LOC.IN.OnlineOpponentLeft),
+            LOC.IN.HomeScreen[LOC.LI],
+            ReturnHomeFromGame);
+    }
+
+    private void ReturnHomeFromGame()
+    {
+        CancelOnlineReplay();
+        GameManager.IsApplyingRemoteUpdate = false;
+        GameManager.IsDealingHand = false;
+        GameManager.IsDoingActivateSequence = false;
+        GameManager.IsDoingReplay = false;
+        BoardStateManager.IsDoingReplay = false;
+        BoardStateManager.IsSettingState = false;
+        this.isHandoffPending = false;
+        this.isOnlineMovePending = false;
+        this.isOnlineLeavePending = false;
+        this.isOnlineReplayActive = false;
+        this.onlineClient?.DiscardBufferedTurn();
+        UIDraggable.ResetInputState();
+        CleanUpGameState();
+
+        if (this.IsOnline)
+            ReleaseOnlineSession();
+
+        UISplashScreen.IN.Show();
+        UIGameBoard.IN.Hide();
     }
 
     public void HandlePlayGameButtonPress()
