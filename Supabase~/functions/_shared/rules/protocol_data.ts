@@ -1,4 +1,5 @@
 import {
+  CardInstanceData,
   ETurnPhase,
   EWinCondition,
   MoveData,
@@ -16,6 +17,7 @@ export class MoveCommandData {
   ClientMoveSequence = 0;
   ExpectedRevision = 0;
   Move: MoveData | null = null;
+  ReplayCard: CardInstanceData | null = null;
   ClientNonce: string | null = null;
 }
 export class MoveResultData {
@@ -63,4 +65,5 @@ export class MoveLogEntryData {
   RevisionBefore = 0;
   RevisionAfter = 0;
   Move: MoveData | null = null;
+  ReplayCard: CardInstanceData | null = null;
 }

@@ -1,6 +1,13 @@
 import { CardDefinitionData } from "./deck_definition_data.ts";
 import { GameSimulator } from "./game_simulator.ts";
-import { GameStateData, MoveData, RulesConfigData, cloneMove } from "./game_state_data.ts";
+import {
+  EMoveType,
+  EWinCondition,
+  GameStateData,
+  MoveData,
+  RulesConfigData,
+  cloneMove,
+} from "./game_state_data.ts";
 import { MatchFactory } from "./match_factory.ts";
 import { MoveCommandData, MoveLogEntryData, MoveResultData, ProtocolVersions } from "./protocol_data.ts";
 
@@ -52,14 +59,29 @@ export class MatchAuthority {
     if (log == null) throw new TypeError("inMoveLog");
     const state = this.matchFactory.Create(inSeed, inRules, decks);
     const replayAuthority = new MatchAuthority();
+    let previousEntry: MoveLogEntryData | null = null;
     for (const entry of log) {
       if (entry == null || entry.ProtocolVersion !== ProtocolVersions.Current) throw new Error("The move log contains an unsupported entry.");
       if (entry.RevisionBefore !== state.Revision) throw new Error("The move log revision sequence is invalid.");
+      if (entry.Move?.Type === EMoveType.EndTurn && entry.Seat === entry.Move.PlayerId
+        && previousEntry?.Move != null && previousEntry.Move.Type !== EMoveType.EndTurn
+        && previousEntry.Seat === entry.Seat && previousEntry.ClientNonce === entry.ClientNonce
+        && previousEntry.RevisionAfter === entry.RevisionBefore
+        && (state.CurrentPlayerId !== entry.Seat || state.WinCondition !== EWinCondition.None)) {
+        const marker = cloneMove(entry.Move);
+        marker.ExpectedRevision = state.Revision;
+        state.Moves.push(marker);
+        state.Revision = (state.Revision + 1) | 0;
+        if (state.Revision !== entry.RevisionAfter) throw new Error("The move log cannot be replayed from the supplied setup.");
+        previousEntry = entry;
+        continue;
+      }
       const result = replayAuthority.ValidateAndApply(state, Object.assign(new MoveCommandData(), {
         MatchId: entry.MatchId, Seat: entry.Seat, ClientMoveSequence: entry.ClientMoveSequence, ClientNonce: entry.ClientNonce,
         ExpectedRevision: entry.RevisionBefore, Move: entry.Move == null ? null : cloneMove(entry.Move),
       }));
       if (!result.Accepted || result.NewRevision !== entry.RevisionAfter) throw new Error("The move log cannot be replayed from the supplied setup.");
+      previousEntry = entry;
     }
     return state;
   }

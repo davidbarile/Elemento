@@ -11,12 +11,14 @@ import {
   serve,
 } from "../_shared/server.ts";
 import {
+  CardInstanceData,
   EMoveType,
   EWinCondition,
   MatchAuthority,
   MoveCommandData,
   MoveData,
 } from "../_shared/rules/mod.ts";
+import { cloneCard, cloneMove } from "../_shared/rules/game_state_data.ts";
 
 interface SubmitTurnBody {
   MatchId: string;
@@ -36,6 +38,33 @@ interface CommitTurnResult {
   ok?: boolean;
   revision?: number;
   stale?: boolean;
+}
+
+function findReplayCard(state: ReturnType<typeof hydrateState>, move: MoveData): CardInstanceData | null {
+  if ((move.Type !== EMoveType.PlayCard && move.Type !== EMoveType.DiscardCard) || move.CardId == null) return null;
+  const player = state.Players.find((candidate) => candidate.Id === move.PlayerId);
+  if (player == null) return null;
+  const cards = move.SourceZoneId < 0
+    ? player.Hand
+    : player.Zones.find((zone) => zone.Id === move.SourceZoneId)?.Cards;
+  const card = cards?.find((candidate) => candidate.Id === move.CardId);
+  return card == null ? null : cloneCard(card);
+}
+
+function acceptTerminalEndMarker(
+  state: ReturnType<typeof hydrateState>,
+  move: MoveData,
+  submittingSeat: number,
+  hasPriorAutoEndingMove: boolean,
+): MoveData | null {
+  if (!hasPriorAutoEndingMove || move.Type !== EMoveType.EndTurn || move.PlayerId !== submittingSeat
+    || (state.CurrentPlayerId === submittingSeat && state.WinCondition === EWinCondition.None)) return null;
+  const logged = cloneMove(move);
+  logged.Id = MoveData.CreateId(state.Moves.length + 1);
+  logged.ExpectedRevision = state.Revision;
+  state.Moves.push(logged);
+  state.Revision = (state.Revision + 1) | 0;
+  return logged;
 }
 
 async function idempotentTurn(
@@ -144,14 +173,26 @@ serve(async (request) => {
   const authority = new MatchAuthority();
   const commands: MoveCommandData[] = [];
   for (let index = 0; index < body.Moves.length; ++index) {
+    const requestedMove = Object.assign(new MoveData(), body.Moves[index]);
     const command = Object.assign(new MoveCommandData(), {
       MatchId: body.MatchId,
       Seat: body.Seat,
       ClientMoveSequence: index + 1,
       ExpectedRevision: body.ExpectedRevision + index,
-      Move: Object.assign(new MoveData(), body.Moves[index]),
+      Move: requestedMove,
+      ReplayCard: findReplayCard(state, requestedMove),
       ClientNonce: body.ClientNonce,
     });
+    const previousMove = commands.length > 0 ? commands[commands.length - 1].Move : null;
+    const terminalMarker = index === body.Moves.length - 1
+      ? acceptTerminalEndMarker(state, requestedMove, body.Seat,
+        previousMove != null && previousMove.Type !== EMoveType.EndTurn)
+      : null;
+    if (terminalMarker != null) {
+      command.Move = terminalMarker;
+      commands.push(command);
+      continue;
+    }
     const result = authority.ValidateAndApply(state, command);
     if (!result.Accepted) {
       return await rejectedOrStored(service, body, currentRevision, result.Reason ?? MatchAuthority.MoveReason, index);

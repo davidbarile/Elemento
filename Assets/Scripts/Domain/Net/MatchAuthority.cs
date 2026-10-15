@@ -89,12 +89,25 @@ namespace Elemento.Domain.Net
 
             var state = this.matchFactory.Create(inSeed, inRules, inDeckDefinitionsBySeat);
             var replayAuthority = new MatchAuthority();
+            MoveLogEntryData previousEntry = null;
             foreach (var entry in inMoveLog)
             {
                 if (entry == null || entry.ProtocolVersion != ProtocolVersions.Current)
                     throw new InvalidOperationException("The move log contains an unsupported entry.");
                 if (entry.RevisionBefore != state.Revision)
                     throw new InvalidOperationException("The move log revision sequence is invalid.");
+
+                if (IsTerminalEndMarker(state, entry, previousEntry))
+                {
+                    var marker = entry.Move.Clone();
+                    marker.ExpectedRevision = state.Revision;
+                    state.Moves.Add(marker);
+                    ++state.Revision;
+                    if (state.Revision != entry.RevisionAfter)
+                        throw new InvalidOperationException("The move log cannot be replayed from the supplied setup.");
+                    previousEntry = entry;
+                    continue;
+                }
 
                 var result = replayAuthority.ValidateAndApply(state, new MoveCommandData
                 {
@@ -108,9 +121,24 @@ namespace Elemento.Domain.Net
 
                 if (!result.Accepted || result.NewRevision != entry.RevisionAfter)
                     throw new InvalidOperationException("The move log cannot be replayed from the supplied setup.");
+                previousEntry = entry;
             }
 
             return state;
+        }
+
+        private static bool IsTerminalEndMarker(GameStateData inState, MoveLogEntryData inEntry,
+            MoveLogEntryData inPreviousEntry)
+        {
+            return inEntry.Move != null && inEntry.Move.Type == EMoveType.EndTurn
+                && inEntry.Seat == inEntry.Move.PlayerId
+                && inPreviousEntry?.Move != null
+                && inPreviousEntry.Move.Type != EMoveType.EndTurn
+                && inPreviousEntry.Seat == inEntry.Seat
+                && inPreviousEntry.ClientNonce == inEntry.ClientNonce
+                && inPreviousEntry.RevisionAfter == inEntry.RevisionBefore
+                && (inState.CurrentPlayerId != inEntry.Seat
+                    || inState.WinCondition != EWinCondition.None);
         }
 
         private static MoveResultData Reject(int inRevision, string inReason)

@@ -24,7 +24,10 @@ function publicMoves(rows: StoredMove[], viewingSeat: number): StoredMove[] {
   return rows.map((row) => {
     const command = Object.assign(new MoveCommandData(), row.command);
     if (command.Move != null) command.Move = Object.assign(new MoveData(), command.Move);
-    if (command.Move?.Type === EMoveType.DrawCard && row.seat !== viewingSeat) command.Move.CardId = null;
+    if (command.Move?.Type === EMoveType.DrawCard && row.seat !== viewingSeat) {
+      command.Move.CardId = null;
+      command.ReplayCard = null;
+    }
     return { ...row, command };
   });
 }
