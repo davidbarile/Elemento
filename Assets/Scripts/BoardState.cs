@@ -29,6 +29,10 @@ public class BoardState
     [Space]
     public Move Move;
     [Space]
+    public BoardHand Deck = new();
+    public List<CardData> ShuffledDeck = new();
+    public List<CardData> PowerDeck = new();
+    [Space]
     public List<BoardPlayer> Players = new();
 
     //TODO: make this very complex, taking into account, frozen, destroyed zones, shielded cards, points, etc.

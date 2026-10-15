@@ -90,18 +90,18 @@ public class UIPoints : UICardDecorationBase
     {
         this.maxValue = inMaxValue;
 
-        if (inDestValue == this.pointsValue) return;
-
-        if (this.gameObject.activeInHierarchy && !BoardStateManager.IsSettingState)
+        if (!this.gameObject.activeInHierarchy || BoardStateManager.IsSettingState)
         {
             StopAllCoroutines();
-            StartCoroutine(TickToValuCo(inDestValue));
-        }
-        else
-        {
             this.destValue = -1;
             SetText(inDestValue, inMaxValue);
+            return;
         }
+
+        if (inDestValue == this.pointsValue) return;
+
+        StopAllCoroutines();
+        StartCoroutine(TickToValuCo(inDestValue));
     }
 
     private IEnumerator TickToValuCo(int inDestValue)

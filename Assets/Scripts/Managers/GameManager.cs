@@ -29,7 +29,7 @@ public class GameManager : MonoBehaviour
     public static bool IsDoingReplay;
     public static bool IsApplyingRemoteUpdate;
     public static bool ShouldBlockInput => IsDealingHand || IsDoingActivateSequence || IsDoingReplay || IsApplyingRemoteUpdate
-        || (IN != null && (IN.isHandoffPending || IN.isUndoAnimating || IN.IsOnlineInputBlocked));
+        || (IN != null && (IN.isHandoffPending || IN.IsOnlineInputBlocked));
 
     private readonly string ANIM_STATE = "state";
 
@@ -162,7 +162,6 @@ public class GameManager : MonoBehaviour
     private readonly List<MoveLogEntryData> onlineReplayMoves = new();
     private int onlineReplayEndRevision = -1;
     private readonly Elemento.Domain.TurnUndoHistory<BoardState> undoHistory = new();
-    private bool isUndoAnimating;
 
     private BoardState lastCreatedBoardState;
 
@@ -2082,7 +2081,10 @@ public class GameManager : MonoBehaviour
             TotalMovesTaken = this.CurrentPlayerBoard.TotalMovesTaken,
             MovesRemaining = this.MovesRemaining,
             ActivePlayer = this.CurrentPlayer,
-            IsDealHand = inIsDealHand
+            IsDealHand = inIsDealHand,
+            Deck = CaptureDeckState(),
+            ShuffledDeck = new(CardsManager.IN.ShuffledCardDatas),
+            PowerDeck = new(CardsManager.IN.PowerCardDatas)
         };
 
         for (int i = 0; i < this.PlayerBoards.Length; i++)
@@ -2138,7 +2140,6 @@ public class GameManager : MonoBehaviour
 
     public void SetGameToBoardState(BoardState inBoardState, bool inShouldPlay = false)
     {
-        BoardHand preservedDeck = this.isUndoAnimating && !this.IsOnline ? CaptureDeckState() : null;
         BoardStateManager.IsSettingState = true;
         BoardStateManager.IN.CurrentReplayBoardState = inBoardState;
 
@@ -2161,13 +2162,13 @@ public class GameManager : MonoBehaviour
 
         if (this.IsOnline)
             CardsManager.IN.SetOnlineDeckCount(this.onlineClient.CurrentView.View.DeckCount);
-        else if (preservedDeck != null)
-            RestoreDeckState(preservedDeck);
         else
         {
-            CardsManager.IN.RebuildActiveDeck();
-            CardsManager.IN.GenerateShuffledGameDeck();
-            CardsManager.IN.AddBatchOfCardsToGameDeck();
+            CardsManager.IN.ShuffledCardDatas.Clear();
+            CardsManager.IN.ShuffledCardDatas.AddRange(inBoardState.ShuffledDeck);
+            CardsManager.IN.PowerCardDatas.Clear();
+            CardsManager.IN.PowerCardDatas.AddRange(inBoardState.PowerDeck);
+            RestoreDeckState(inBoardState.Deck);
         }
 
         for (int i = 0; i < inBoardState.Players.Count; i++)
@@ -2193,6 +2194,8 @@ public class GameManager : MonoBehaviour
                 handCard.CardFlip.SetAnimState(isFaceUp ? UICardFlip.ECardFlipState.Front : UICardFlip.ECardFlipState.Back);
                 cell.gameObject.SetActive(true);
             }
+
+            LayoutRebuilder.ForceRebuildLayoutImmediate(playerBoard.Hand.HandGrid);
 
             //spawn cards into each element zone of each player
             for (int j = 0; j < player.ElementZones.Length; j++)
@@ -2297,12 +2300,12 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        StartCoroutine(UndoMoveCo(boardState));
+        UndoMove(boardState);
     }
 
     public void SetUndoCheckpoint(Elemento.Domain.ETurnUndoCheckpoint inCheckpoint)
     {
-        if (this.isDoingCleanup || this.isUndoAnimating || GameManager.IsApplyingRemoteUpdate
+        if (this.isDoingCleanup || GameManager.IsApplyingRemoteUpdate
             || GameManager.IsDoingReplay || BoardStateManager.IsDoingReplay)
             return;
 
@@ -2320,20 +2323,13 @@ public class GameManager : MonoBehaviour
         RefreshUndoControls();
     }
 
-    private IEnumerator UndoMoveCo(BoardState inBoardState)
+    private void UndoMove(BoardState inBoardState)
     {
-        Move move = inBoardState.Move;
-        if (move == null)
+        if (inBoardState.Move == null)
         {
             RefreshUndoControls();
-            yield break;
+            return;
         }
-
-        Vector3 startPosition = GetUndoStartPosition(move);
-        this.isUndoAnimating = true;
-        Move.ShouldRecordMoves = false;
-        BoardStateManager.IsDoingReplay = true;
-        RefreshUndoControls();
 
         SetGameToBoardState(inBoardState);
         this.lastCreatedBoardState = inBoardState;
@@ -2341,45 +2337,12 @@ public class GameManager : MonoBehaviour
         if (!this.IsOnline)
             BoardStateManager.IN.RemoveLastBoardState();
 
-        Card restoredCard = move.SourceCell != null ? move.SourceCell.TopCard : null;
-        if (restoredCard != null)
-        {
-            Transform sourceTarget = move.SourceCell.AnimTarget != null
-                ? move.SourceCell.AnimTarget : move.SourceCell.CardHolder;
-            Vector3 destination = sourceTarget.position;
-            restoredCard.transform.position = startPosition;
-            restoredCard.transform.localScale = Vector3.one;
-            restoredCard.transform.rotation = Quaternion.identity;
-            UIDragOverlay.IN.SetDraggingItem(restoredCard.transform);
-            yield return restoredCard.transform.DOMove(destination, this.OpponentMoveTweenDuration)
-                .SetEase(Ease.InOutSine).WaitForCompletion(true);
-            move.SourceCell.SetParentCell(restoredCard);
-            UIDragOverlay.IN.SetVisible(false);
-        }
-        else
-            yield return null;
-
-        Move.ShouldRecordMoves = true;
-        BoardStateManager.IsDoingReplay = false;
-        this.isUndoAnimating = false;
         TryHighlightDiscardPile();
         if (!this.undoHistory.CanUndo)
             ShowUndoBlockedHint(this.undoHistory.Checkpoint);
         if (this.IsOnline)
             RefreshOnlineControls();
         RefreshUndoControls();
-    }
-
-    private Vector3 GetUndoStartPosition(Move inMove)
-    {
-        if (inMove.IsDiscard || inMove.TargetCell == null)
-            return this.DiscardZoneTransform.position;
-        if (inMove.TargetCell.TopCard != null)
-            return inMove.TargetCell.TopCard.Center.position;
-
-        Transform target = inMove.TargetCell.AnimTarget != null
-            ? inMove.TargetCell.AnimTarget : inMove.TargetCell.CardHolder;
-        return target.position;
     }
 
     private bool IsUndoRecordable()
