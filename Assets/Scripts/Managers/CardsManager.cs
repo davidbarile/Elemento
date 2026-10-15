@@ -382,9 +382,10 @@ public class CardsManager : MonoBehaviour
 
     public void DestroyAllCards()
     {
-        while (CardsManager.IN.SpawnedCards.Count > 0)
+        while (this.SpawnedCards.Count > 0)
         {
-            var card = CardsManager.IN.SpawnedCards[0];
+            var card = this.SpawnedCards[0];
+            this.SpawnedCards.RemoveAt(0);
 
             if (card != null)
                 card.DestroySelf();

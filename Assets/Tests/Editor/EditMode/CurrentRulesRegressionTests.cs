@@ -45,6 +45,7 @@ public class CurrentRulesRegressionTests
     public void TearDown()
     {
         UIWinLosePanel.IN = null;
+        CardsManager.IN = null;
         GameManager.IN = null;
         SettingsManager.IN = null;
         LocalizationManager.IN = null;
@@ -66,6 +67,18 @@ public class CurrentRulesRegressionTests
         }
 
         this.createdObjects.Clear();
+    }
+
+    [Test]
+    public void DestroyAllCards_RemovesDestroyedEntriesWithoutLooping()
+    {
+        var cardsManager = CreateComponent<CardsManager>("Cards Manager");
+        CardsManager.IN = cardsManager;
+        cardsManager.SpawnedCards.Add(null);
+
+        cardsManager.DestroyAllCards();
+
+        Assert.That(cardsManager.SpawnedCards, Is.Empty);
     }
 
     [Test]
