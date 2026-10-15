@@ -1,6 +1,7 @@
-import { CardDefinitionData } from "./deck_definition_data.ts";
+import { CardDefinitionData, DeckDefinitionData } from "./deck_definition_data.ts";
 import { FairView } from "./fair_view.ts";
-import { RulesConfigData } from "./game_state_data.ts";
+import { GameSimulator } from "./game_simulator.ts";
+import { EMoveType, EPowerCardType, RulesConfigData } from "./game_state_data.ts";
 import { MatchAuthority } from "./match_authority.ts";
 import { MatchFactory } from "./match_factory.ts";
 
@@ -119,5 +120,66 @@ export async function runGoldenTests(): Promise<void> {
   }
 }
 
-if (typeof Deno !== "undefined") Deno.test("C# golden fixtures", runGoldenTests);
-else await runGoldenTests();
+export function runPowerCardTests(): void {
+  const cases = [
+    { type: EPowerCardType.Heal, id: "heal", targetPlayerId: 0 },
+    { type: EPowerCardType.Freeze, id: "freeze", targetPlayerId: 1 },
+    { type: EPowerCardType.Lightning, id: "lightning", targetPlayerId: 1 },
+  ];
+
+  for (const powerCardCase of cases) {
+    const simulator = new GameSimulator();
+    const rules = Object.assign(new RulesConfigData(), { NumCardsToDeal: 0 });
+    const state = simulator.CreateGame(71, rules, []);
+    const card = DeckDefinitionData.CreatePowerCard(powerCardCase.type);
+    card.Id = powerCardCase.id;
+    state.Players[0].Hand.push(card);
+
+    if (powerCardCase.type === EPowerCardType.Heal) {
+      state.Players[0].Zones[0].Health = 0;
+      state.Players[0].Zones[0].IsDestroyed = true;
+    }
+
+    const move = simulator.GetLegalMoves(state, 0).find((candidate) =>
+      candidate.Type === EMoveType.PlayCard
+      && candidate.CardId === powerCardCase.id
+      && candidate.TargetPlayerId === powerCardCase.targetPlayerId
+      && candidate.TargetZoneId === 0);
+    if (move == null) throw new Error(`${powerCardCase.id}: expected legal power-card move`);
+
+    const powerDeckCount = state.PowerDeck.length;
+    const targetZone = state.Players[powerCardCase.targetPlayerId].Zones[0];
+    const targetHealth = targetZone.Health;
+    simulator.ApplyMove(state, move);
+
+    if (state.Players[0].Hand.length !== 0) throw new Error(`${powerCardCase.id}: source card was not consumed`);
+    if (state.PowerDeck.length !== powerDeckCount + 1
+      || state.PowerDeck[state.PowerDeck.length - 1].Id !== null
+      || !state.PowerDeck[state.PowerDeck.length - 1].IsPowerCard) {
+      throw new Error(`${powerCardCase.id}: power card was not recycled`);
+    }
+    if (state.Revision !== 1 || state.Moves.length !== 1) {
+      throw new Error(`${powerCardCase.id}: move was not recorded`);
+    }
+    if (powerCardCase.type === EPowerCardType.Heal
+      && (targetZone.Health !== rules.ElementZoneStartingHealth || targetZone.IsDestroyed)) {
+      throw new Error(`${powerCardCase.id}: zone was not healed`);
+    }
+    if (powerCardCase.type === EPowerCardType.Freeze && targetZone.FrozenHealth !== rules.FrozenZoneHealth) {
+      throw new Error(`${powerCardCase.id}: zone was not frozen`);
+    }
+    if (powerCardCase.type === EPowerCardType.Lightning && targetZone.Health !== targetHealth - rules.LightningDamage) {
+      throw new Error(`${powerCardCase.id}: zone was not damaged`);
+    }
+  }
+
+  console.log("PASS power cards");
+}
+
+if (typeof Deno !== "undefined") {
+  Deno.test("C# golden fixtures", runGoldenTests);
+  Deno.test("power cards", runPowerCardTests);
+} else {
+  await runGoldenTests();
+  runPowerCardTests();
+}

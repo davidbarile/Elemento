@@ -125,12 +125,14 @@ namespace Elemento.Domain.Tests
             heal.Id = "heal";
             heal.WildZoneHeal = state.Rules.ElementZoneStartingHealth;
             state.Players[0].Hand.Add(heal);
+            int powerDeckCount = state.PowerDeck.Count;
 
             simulator.ApplyMove(state, FindPlay(simulator, state, "heal", 0, 0));
 
             Assert.That(zone.Health, Is.EqualTo(5));
             Assert.That(zone.MaxHealth, Is.EqualTo(5));
             Assert.That(zone.IsDestroyed, Is.False);
+            AssertPowerCardConsumedAndRecycled(state, powerDeckCount);
         }
 
         [Test]
@@ -142,9 +144,11 @@ namespace Elemento.Domain.Tests
             freeze.Id = "freeze";
             freeze.WildFreeze = state.Rules.FrozenZoneHealth;
             state.Players[0].Hand.Add(freeze);
+            int powerDeckCount = state.PowerDeck.Count;
 
             simulator.ApplyMove(state, FindPlay(simulator, state, "freeze", 1, 0));
             Assert.That(state.Players[1].Zones[0].FrozenHealth, Is.EqualTo(5));
+            AssertPowerCardConsumedAndRecycled(state, powerDeckCount);
 
             simulator.EndTurn(state);
 
@@ -164,11 +168,13 @@ namespace Elemento.Domain.Tests
             lightning.Id = "lightning";
             lightning.WildLightning = 2;
             state.Players[0].Hand.Add(lightning);
+            int powerDeckCount = state.PowerDeck.Count;
 
             simulator.ApplyMove(state, FindPlay(simulator, state, "lightning", 1, 0));
 
             Assert.That(target.Cards.Count, Is.EqualTo(1));
             Assert.That(target.Cards[0].Id, Is.EqualTo("bottom"));
+            AssertPowerCardConsumedAndRecycled(state, powerDeckCount);
         }
 
         [Test]
@@ -493,6 +499,16 @@ namespace Elemento.Domain.Tests
 
             Assert.Fail("Expected legal play was not generated.");
             return null;
+        }
+
+        private static void AssertPowerCardConsumedAndRecycled(GameStateData inState, int inPowerDeckCount)
+        {
+            Assert.That(inState.Players[0].Hand, Is.Empty);
+            Assert.That(inState.PowerDeck, Has.Count.EqualTo(inPowerDeckCount + 1));
+            Assert.That(inState.PowerDeck[inState.PowerDeck.Count - 1].Id, Is.Null);
+            Assert.That(inState.PowerDeck[inState.PowerDeck.Count - 1].IsPowerCard, Is.True);
+            Assert.That(inState.Moves, Has.Count.EqualTo(1));
+            Assert.That(inState.Revision, Is.EqualTo(1));
         }
 
         private static bool HasMoveType(List<MoveData> inMoves, EMoveType inMoveType)

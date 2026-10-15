@@ -33,11 +33,18 @@ public class CurrentRulesRegressionTests
         this.gameManager.MovesRemaining = 1;
         GameManager.IN = this.gameManager;
 
+        var audioManager = CreateComponent<AudioManager>("Audio Manager");
+        audioManager.ErrorSoundClips = new AudioClip[4];
+        AudioManager.IN = audioManager;
+
         var localization = CreateComponent<LocalizationManager>("Localization");
         localization.TotalPointsTitle = new[] { "{0}/{1} Total Points" };
         localization.AllZonesDestroyedTitle = new[] { "All zones destroyed" };
         localization.You = new[] { "You" };
         localization.Opponent = new[] { "Opponent" };
+        localization.Reject_CardOnOpponentBoard = new[] { string.Empty };
+        localization.Reject_AlreadyFrozenZone = new[] { string.Empty };
+        localization.Reject_LightningOnOwnBoard = new[] { string.Empty };
         LocalizationManager.IN = localization;
         LOC.IN = localization;
     }
@@ -46,6 +53,7 @@ public class CurrentRulesRegressionTests
     public void TearDown()
     {
         UIWinLosePanel.IN = null;
+        AudioManager.IN = null;
         CardsManager.IN = null;
         GameManager.IN = null;
         SettingsManager.IN = null;
@@ -80,6 +88,61 @@ public class CurrentRulesRegressionTests
         cardsManager.DestroyAllCards();
 
         Assert.That(cardsManager.SpawnedCards, Is.Empty);
+    }
+
+    [TestCase(Card.ECardType.Heal)]
+    [TestCase(Card.ECardType.Freeze)]
+    [TestCase(Card.ECardType.Lightning)]
+    public void HandleDrop_RejectsPowerCardToHandWithoutRequiringElementZone(Card.ECardType powerCardType)
+    {
+        this.settings.FrozenZoneHealth = 3;
+
+        var handObject = CreateGameObject("Hand");
+        var hand = handObject.AddComponent<UICardCell>();
+        hand.CellType = UICardCell.ECellType.Hand;
+        hand.CardHolder = handObject.transform;
+        hand.PlayerType = UIPlayerBoard.EPlayerType.PlayerA;
+
+        var targetZone = CreateZone("Target Zone", CardData.EElementType.Air);
+        targetZone.CardCell.PlayerType = powerCardType == Card.ECardType.Heal
+            ? UIPlayerBoard.EPlayerType.PlayerB
+            : UIPlayerBoard.EPlayerType.PlayerA;
+
+        var card = CreateComponent<Card>(powerCardType + " Power Card", hand.transform);
+        card.CardType = powerCardType;
+        card.Data = new CardData { IsPowerCard = true };
+        switch (powerCardType)
+        {
+            case Card.ECardType.Heal:
+                card.Data.WildZoneHeal = 1;
+                break;
+            case Card.ECardType.Freeze:
+                card.Data.WildFreeze = this.settings.FrozenZoneHealth;
+                targetZone.FrozenHealth = this.settings.FrozenZoneHealth;
+                break;
+            case Card.ECardType.Lightning:
+                card.Data.WildLightning = 1;
+                break;
+        }
+        hand.Cards.Add(card);
+
+        DG.Tweening.DOTween.Init();
+        var previousUseSafeMode = DG.Tweening.DOTween.useSafeMode;
+        var completedTweenCount = 0;
+        try
+        {
+            targetZone.CardCell.HandleDrop(hand);
+            DG.Tweening.DOTween.useSafeMode = false;
+            Assert.DoesNotThrow(() => completedTweenCount = DG.Tweening.DOTween.Complete(card.transform, true));
+        }
+        finally
+        {
+            DG.Tweening.DOTween.useSafeMode = previousUseSafeMode;
+        }
+
+        Assert.That(completedTweenCount, Is.EqualTo(1));
+        Assert.That(card.transform.parent, Is.SameAs(hand.CardHolder));
+        Assert.That(hand.Cards, Has.Count.EqualTo(1));
     }
 
     [Test]
@@ -217,6 +280,7 @@ public class CurrentRulesRegressionTests
         zone.CardPlaceAnimator = CreateComponent<UICardPlaceAnim>(name + " Place Animator", zoneObject.transform);
 
         SetField(zone, "pointsCount", CreatePoints(name + " Points", zoneObject.transform));
+        SetField(zone, "zoneFrozenHealth", CreatePoints(name + " Frozen Health", zoneObject.transform));
         SetField(zone, "pointsCountDisplay", CreateGameObject(name + " Points Display", zoneObject.transform));
         SetField(zone, "activeDisplays", Array.Empty<GameObject>());
         SetField(zone, "frozenOverlay", CreateGameObject(name + " Frozen Overlay", zoneObject.transform));

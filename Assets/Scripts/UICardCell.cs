@@ -118,7 +118,8 @@ public class UICardCell : MonoBehaviour
             SetParentCell(this.TopCard);
             this.TopCard.SetDimmedDecorations(this.ElementType);
 
-            this.ElementZone.RefreshSiblingIndices();
+            if (this.ElementZone != null)
+                this.ElementZone.RefreshSiblingIndices();
         });
     }
 
