@@ -123,6 +123,7 @@ public class GameManager : MonoBehaviour
         : this.gameSession == null ? this.currentPlayerIndex == 0 : (this.gameSession.IsHumanSeat(this.currentPlayerIndex) && !this.isHandoffPending);
     public bool IsPassAndPlay => this.gameSession != null && this.gameSession.GameMode == Elemento.Domain.EGameMode.PassAndPlay;
     public bool IsOnline => this.gameSession is OnlineSession;
+    public bool IsGameInProgress { get; private set; }
     private bool IsOnlineInputBlocked => this.IsOnline && (this.isOnlineMovePending || this.isOnlineLeavePending || this.isOnlineReplayActive
         || this.onlineClient?.TurnBuffer.IsComplete == true
         || !this.IsPlayersTurn || !IsHumanPlayingPhase());
@@ -223,9 +224,12 @@ public class GameManager : MonoBehaviour
 
         if (this.IsOnline)
         {
+            SetGameInProgress(true);
             StartOnlineSession();
             return;
         }
+
+        SetGameInProgress(true);
 
         UISeatHandoffPanel.IN.Hide();
         this.isHandoffPending = false;
@@ -302,6 +306,14 @@ public class GameManager : MonoBehaviour
 
             SetTurnPhase(ETurnPhase.PlayerDraw);
         }
+    }
+
+    private void SetGameInProgress(bool inIsGameInProgress)
+    {
+        this.IsGameInProgress = inIsGameInProgress;
+
+        if (UISettingsPanel.IN != null)
+            UISettingsPanel.IN.RefreshPlayModeAvailability(inIsGameInProgress);
     }
 
     public void CleanUpGameState()
@@ -1911,6 +1923,7 @@ public class GameManager : MonoBehaviour
 
         //Debug.Log($"CheckWinLoseState({inPlayerBoard.Name}, inIsFromDestroyedZone)   inPlayerBoard.TotalPoints = {inPlayerBoard.TotalPoints}");
 
+        SetGameInProgress(false);
         BoardStateManager.IsDoingReplay = false;
 
         StopAllCoroutines();
@@ -2727,6 +2740,7 @@ public class GameManager : MonoBehaviour
         if (!this.IsOnline || this.onlineClient == null || this.isOnlineLeavePending)
             return;
 
+        SetGameInProgress(false);
         ReleaseOnlineSession();
         UIConfirmPanel.IN.ShowSingleButton(
             LocalizationManager.GetOnlineText(LOC.IN.OnlineLobby),
@@ -2737,6 +2751,7 @@ public class GameManager : MonoBehaviour
 
     private void ReturnHomeFromGame()
     {
+        SetGameInProgress(false);
         CancelOnlineReplay();
         GameManager.IsApplyingRemoteUpdate = false;
         GameManager.IsDealingHand = false;

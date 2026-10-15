@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Elemento.Domain;
 using NUnit.Framework;
 using TMPro;
 using UnityEngine;
@@ -101,6 +102,38 @@ public class CurrentRulesRegressionTests
         Assert.That(GameManager.ShouldBlockInput, Is.False);
     }
 
+    [TestCase(false, true, false)]
+    [TestCase(true, false, true)]
+    public void RefreshPlayModeAvailability_MatchesGameProgress(bool isGameInProgress,
+        bool expectedInteractable, bool expectedNoteVisible)
+    {
+        var panel = CreateComponent<UISettingsPanel>("Settings Panel");
+        var dropdown = CreateUiComponent<TMP_Dropdown>("Play Mode Dropdown", panel.transform);
+        var note = CreateComponent<LocalizationItem>("Play Mode Locked Note", panel.transform);
+        SetField(panel, "playModeDropdown", dropdown);
+        SetField(panel, "playModeLockedNote", note);
+
+        panel.RefreshPlayModeAvailability(isGameInProgress);
+
+        Assert.That(dropdown.interactable, Is.EqualTo(expectedInteractable));
+        Assert.That(note.gameObject.activeSelf, Is.EqualTo(expectedNoteVisible));
+    }
+
+    [Test]
+    public void SetAllowUndoPreference_UpdatesSavedLocalRulesDuringMatch()
+    {
+        this.settings.AllowUndo = true;
+        this.settings.ApplyMatchRules(new RulesConfigData
+        {
+            AllowUndo = false
+        });
+
+        this.settings.SetAllowUndoPreference(false);
+        this.settings.ClearMatchRules();
+
+        Assert.That(this.settings.AllowUndo, Is.False);
+    }
+
     [Test]
     public void CalculatePoints_SumsPointsBeforeApplyingEachMultiplier()
     {
@@ -141,11 +174,13 @@ public class CurrentRulesRegressionTests
         var opponent = CreateBoard("Opponent", new[] { 0, 0, 0, 0 });
         player.TotalPoints = totalPoints;
         this.gameManager.PlayerBoards = new[] { player, opponent };
+        SetField(this.gameManager, "<IsGameInProgress>k__BackingField", true);
         var panel = CreateWinLosePanel(4);
 
         this.gameManager.CheckWinLoseState(player);
 
         Assert.That(panel.IsShowing, Is.EqualTo(expectedWin));
+        Assert.That(this.gameManager.IsGameInProgress, Is.EqualTo(!expectedWin));
         if (expectedWin)
         {
             Assert.That(GetField<GameManager.EWinLoseState>(panel, "winLoseState"),

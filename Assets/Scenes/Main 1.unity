@@ -11335,6 +11335,9 @@ MonoBehaviour:
 
     To End Turn'
   - "Oprima el Bot\xF3n\nPara Terminar el Turno"
+  ReturnHomeToChangeMode:
+  - Return Home to change mode
+  - Vuelve al inicio para cambiar de modo
   LeaveGame:
   - Leave Game?
   - "\xBFSalir del juego?"

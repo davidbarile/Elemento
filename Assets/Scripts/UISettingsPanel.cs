@@ -21,6 +21,7 @@ public class UISettingsPanel : UIPanelBase
     [SerializeField] private TMP_Dropdown selectLanguageDropdown;
     [SerializeField] private TMP_Dropdown discardModeDropdown;
     [SerializeField] private TMP_Dropdown playModeDropdown;
+    [SerializeField] private LocalizationItem playModeLockedNote;
     [SerializeField] private TMP_Dropdown aiDifficultyDropdown;
     [SerializeField] private TextMeshProUGUI dataPathText;
     [SerializeField] private GameObject[] categoryPanels;
@@ -34,6 +35,9 @@ public class UISettingsPanel : UIPanelBase
     private void Start()
     {
         CreateAllowUndoToggle();
+        this.playModeLockedNote.localizedTexts = LOC.IN.ReturnHomeToChangeMode;
+        this.playModeLockedNote.GetComponent<TextMeshProUGUI>().text = LOC.IN.ReturnHomeToChangeMode[LOC.LI];
+        RefreshPlayModeAvailability(GameManager.IN != null && GameManager.IN.IsGameInProgress);
 
         if (!Application.isEditor)
             this.filePath = $"{Application.persistentDataPath}/PlayerData.json";
@@ -46,6 +50,7 @@ public class UISettingsPanel : UIPanelBase
         base.Show();
 
         GameManager.IN.SetGamePaused(true);
+        RefreshPlayModeAvailability(GameManager.IN.IsGameInProgress);
 
         LocalizationManager.OnLanguageChanged += RefreshDropdownsLanguage;
         RefreshDropdownsLanguage(LOC.LI);
@@ -80,7 +85,7 @@ public class UISettingsPanel : UIPanelBase
         this.showSplashScreenToggle.isOn = SettingsManager.IN.ShouldShowSplashScreen;
         this.autoDealHandToggle.isOn = SettingsManager.IN.ShouldAutoDealHand;
         this.allowSelectPowerCardTypeToggle.isOn = SettingsManager.IN.AllowSelectPowerCardType;
-        this.allowUndoToggle.isOn = SettingsManager.IN.AllowUndo;
+        this.allowUndoToggle.SetIsOnWithoutNotify(SettingsManager.IN.AllowUndo);
 
         this.selectLanguageDropdown.value = PlayerData.Data.LanguageIndex;
         this.selectLanguageDropdown.RefreshShownValue();
@@ -180,11 +185,23 @@ public class UISettingsPanel : UIPanelBase
 
     public void HandlePlayModeDropdownChange(Int32 inValue)
     {
+        if (GameManager.IN != null && GameManager.IN.IsGameInProgress)
+        {
+            this.playModeDropdown.SetValueWithoutNotify((int)SettingsManager.IN.PlayMode);
+            return;
+        }
+
         SettingsManager.IN.PlayMode = (EPlayMode)inValue;
 
         RefreshAiDifficultyVisibility();
 
         this.IsDirty = true;
+    }
+
+    public void RefreshPlayModeAvailability(bool inIsGameInProgress)
+    {
+        this.playModeDropdown.interactable = !inIsGameInProgress;
+        this.playModeLockedNote.gameObject.SetActive(inIsGameInProgress);
     }
 
     public void HandleSplashScreenToggleChanged(bool inIsOn)
@@ -207,7 +224,7 @@ public class UISettingsPanel : UIPanelBase
 
     public void HandleAllowUndoToggleChanged(bool inIsOn)
     {
-        SettingsManager.IN.AllowUndo = inIsOn;
+        SettingsManager.IN.SetAllowUndoPreference(inIsOn);
         this.IsDirty = true;
     }
 

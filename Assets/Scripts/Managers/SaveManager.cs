@@ -83,9 +83,9 @@ public class SaveManager : MonoBehaviour
 
         if (this.playerPrefsExist)
         {
-            LoadPlayerData();
+            bool didMigrateSettings = LoadPlayerData();
             InitSettingsFromData();
-            this.playerData.IsDirty = false;
+            this.playerData.IsDirty = didMigrateSettings;
         }
         else
         {
@@ -210,7 +210,7 @@ public class SaveManager : MonoBehaviour
         this.playerData.AiDifficulty = (int)SettingsManager.IN.AiDifficulty;
     }
 
-    private void LoadPlayerData()
+    private bool LoadPlayerData()
     {
         var reader = new StreamReader(this.filePath);
         var data = reader.ReadToEnd();
@@ -224,7 +224,20 @@ public class SaveManager : MonoBehaviour
         JSON jsonObject = JSON.ParseString(data);
         this.playerData = jsonObject.Deserialize<PlayerData>(deserializeSettings);
 
+        bool didMigrateSettings = false;
+        if (!jsonObject.ContainsKey(nameof(PlayerData.PlayMode)))
+        {
+            this.playerData.PlayMode = (int)SettingsManager.IN.PlayMode;
+            didMigrateSettings = true;
+        }
+        if (!jsonObject.ContainsKey(nameof(PlayerData.AllowUndo)))
+        {
+            this.playerData.AllowUndo = false;
+            didMigrateSettings = true;
+        }
+
         //Debug.Log($"Loaded: {data}");
+        return didMigrateSettings;
     }
 
     public void SaveGame()

@@ -107,7 +107,7 @@ public class SettingsManager : MonoBehaviour
         this.DiscardMode = this.discardMode;
         this.PlayMode = this.playMode;
         this.AiDifficulty = this.aiDifficulty;
-        this.AllowUndo = this.allowUndo;
+        SetAllowUndoPreference(this.allowUndo);
     }
 
     public DomainRulesConfigData GetLocalGameplayRules()
@@ -131,6 +131,14 @@ public class SettingsManager : MonoBehaviour
 
         SetGameplayRules(this.localGameplayRules);
         this.localGameplayRules = null;
+    }
+
+    public void SetAllowUndoPreference(bool inAllowUndo)
+    {
+        this.AllowUndo = inAllowUndo;
+
+        if (this.localGameplayRules != null)
+            this.localGameplayRules.AllowUndo = inAllowUndo;
     }
 
     private DomainRulesConfigData CreateGameplayRules()

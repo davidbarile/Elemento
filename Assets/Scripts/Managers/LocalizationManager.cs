@@ -304,6 +304,7 @@ public class LocalizationManager : MonoBehaviour
     [TextArea] public string[] RestoreDefaultsMessage;//$"Are you sure you want to restore all settings to default?";
     public string[] ResetDataTitle;//"Reset Data?";
     [TextArea] public string[] ResetDataMessage;//$"Are you sure you want to Delete All Data?\nThis will quit the app!";
+    public string[] ReturnHomeToChangeMode = { "Return Home to change mode", "Vuelve al inicio para cambiar de modo" };
 
     [Header("Dropdown Options")]
     public DropDownLocItem[] DropdownOptions_DiscardMode;
