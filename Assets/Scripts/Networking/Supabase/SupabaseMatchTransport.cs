@@ -47,21 +47,23 @@ namespace Elemento.Networking.Supabase
             return ToMatchData(response);
         }
 
-        public async Task<MoveResultData> SubmitMove(MoveCommandData inCommand)
+        public async Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
         {
-            if (inCommand == null)
-                throw new ArgumentNullException(nameof(inCommand));
-            return NetJson.Deserialize<MoveResultData>(await PostAsync("submit-move", NetJson.Serialize(inCommand)));
+            if (inTurn == null)
+                throw new ArgumentNullException(nameof(inTurn));
+            return SubmitTurnResponseData.Parse(await PostAsync("submit-turn", NetJson.Serialize(inTurn)));
         }
 
-        public async Task<MatchSeatViewData> FetchSeatView(string inMatchId)
+        public async Task<OnlineViewUpdateData> FetchView(string inMatchId, int? inSinceRevision = null)
         {
             SupabaseMatchResponseData response = null;
             for (int attempt = 1; attempt <= 3; ++attempt)
             {
                 try
                 {
-                    response = SupabaseMatchResponseData.Parse(await PostAsync("get-view", "{\"matchId\":" + NetJson.Serialize(inMatchId) + "}"));
+                    string body = "{\"matchId\":" + NetJson.Serialize(inMatchId)
+                        + (inSinceRevision.HasValue ? ",\"sinceRevision\":" + inSinceRevision.Value : string.Empty) + "}";
+                    response = SupabaseMatchResponseData.Parse(await PostAsync("get-view", body));
                     break;
                 }
                 catch (SupabaseHttpException) when (attempt < 3)
@@ -74,7 +76,7 @@ namespace Elemento.Networking.Supabase
                 return null;
             if (response.View.MatchId != inMatchId)
                 throw new FormatException("Mismatched seat view.");
-            return response.View;
+            return response.ToViewUpdate();
         }
 
         public void StartListening(string inMatchId, string inMode)
@@ -82,7 +84,8 @@ namespace Elemento.Networking.Supabase
             if (this.disposed)
                 throw new ObjectDisposedException(nameof(SupabaseMatchTransport));
             this.realtime?.Dispose();
-            this.realtime = new SupabaseRealtimeClient(this.runner, this.auth, inMatchId, () => FetchSeatView(inMatchId));
+            this.realtime = new SupabaseRealtimeClient(this.runner, this.auth, inMatchId,
+                async () => (await FetchView(inMatchId)).View);
             this.realtime.RevisionCommitted += HandleRevisionCommitted;
             this.realtime.RequestFailed += HandleRequestFailed;
             this.realtime.Start(inMode == "live");

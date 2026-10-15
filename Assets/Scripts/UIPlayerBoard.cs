@@ -449,6 +449,58 @@ public class UIPlayerBoard : MonoBehaviour
         this.IsTakingTurn = false;
     }
 
+    public IEnumerator PlayOnlineMoveCo(Move inMove)
+    {
+        if (inMove == null)
+            yield break;
+
+        if (inMove.ActivatePowerZone != null)
+        {
+            CardsManager.IN.PowerCardOverride = inMove.CardType;
+            inMove.ActivatePowerZone.SetActiveState(true, false);
+            inMove.ActivatePowerZone.UseActivatePower();
+            while (GameManager.IsDoingActivateSequence || GameManager.IsDealingHand)
+                yield return new WaitForSeconds(.1f);
+            yield break;
+        }
+
+        if (inMove.SourceCell?.TopCard == null || inMove.TargetCell == null)
+            yield break;
+
+        if (inMove.IsDiscard)
+        {
+            GameManager.IN.DiscardZone.SetActive(true);
+            yield return new WaitForSeconds(.3f);
+        }
+        else
+        {
+            GameManager.IN.IncrementCurrentMove(this);
+        }
+
+        Card sourceCard = inMove.SourceCell.TopCard;
+        float tweenDuration = GameManager.IN.OpponentMoveTweenDuration;
+        Transform discardPile = GameManager.IN.DiscardZoneTransform;
+        var animTarget = inMove.TargetCell.AnimTarget != null
+            ? inMove.TargetCell.AnimTarget : inMove.TargetCell.CardHolder;
+        var targetObject = inMove.TargetCell.TopCard != null ? inMove.TargetCell.TopCard.Center : animTarget;
+        Vector3 destination = inMove.IsDiscard ? discardPile.position : targetObject.position;
+        float delayAtTweenEnd = inMove.IsDiscard ? .35f : 0;
+
+        sourceCard.Draggable.AnimateTo(destination, tweenDuration, delayAtTweenEnd);
+        sourceCard.transform.DORotate(Vector3.zero, tweenDuration);
+        if (inMove.IsDiscard)
+            sourceCard.transform.DOScale(Vector3.one * .001f, tweenDuration).SetDelay(tweenDuration + .1f);
+
+        yield return new WaitForSeconds(tweenDuration + delayAtTweenEnd + .05f);
+        while (UIConfirmPanel.IN.IsShowing)
+            yield return new WaitForSeconds(.1f);
+
+        if (ReferenceEquals(inMove.SourceCell.TopCard, sourceCard))
+            Debug.LogWarning("Online replay move could not be applied through the Unity drop path.");
+        if (inMove.CardType == Card.ECardType.Bomb)
+            yield return new WaitForSeconds(.5f);
+    }
+
     private IEnumerator DoMovesCo()
     {
         this.IsTakingTurn = true;

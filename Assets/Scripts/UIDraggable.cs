@@ -285,7 +285,8 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     {
         //Debug.Log($"BeginDraggingItem");
 
-        if (GameManager.IsApplyingRemoteUpdate || UIDraggable.ShouldBlockInput || !this.IsDraggable || this.IsDragging) return;
+        if ((GameManager.IsApplyingRemoteUpdate && !this.IsAnimateDragging)
+            || UIDraggable.ShouldBlockInput || (!this.IsDraggable && !this.IsAnimateDragging) || this.IsDragging) return;
 
         var cell = this.transform.GetComponentInParent<UICardCell>();
         if (cell == null || (cell.PlayerType != GameManager.IN.CurrentPlayer && !this.IsAnimateDragging)) return;

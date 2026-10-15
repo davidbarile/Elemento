@@ -6,7 +6,8 @@ Decided: anonymous sign-in + unique username (profiles.username, citext, 3-20 [A
 (`Supabase~` ends in `~` so Unity ignores the folder.)
 
 ## Protocol (Elemento.Domain.Net)
-- `MoveCommandData`: matchId, seat, clientSeq, expectedRevision, move, clientNonce, protocolVersion.
+- `MoveCommandData`: matchId, seat, clientSeq, expectedRevision, move, optional replayCard,
+  clientNonce, protocolVersion. `replayCard` is server-authored only after a play/discard reveals it.
 - `MoveResultData`: accepted/rejected + reason, newRevision.
 - `MatchSnapshotData`: public match state at a revision (counts only for hidden zones).
 - `MatchSeatViewData`: fair per-seat view built from authoritative state: own hand, public boards,
@@ -44,15 +45,18 @@ views are updated together. A repeated `(match, seat, nonce)` returns the stored
 count with the latest available seat view. Stale revisions write nothing. After commit, the function
 broadcasts only `{revision}` on the private `match:<id>` topic.
 
-Strict trailing `EndTurn` currently supports only turns whose preceding actions leave `EndTurn`
-legal. Winning actions and rules that end the turn implicitly (`DiscardEndsTurn` or exhausted finite
-moves) need a future protocol decision before they can use batched submission; the server does not
-silently treat `EndTurn` as an unvalidated delimiter.
+The trailing `EndTurn` is validated normally while the submitting seat still owns an active,
+unfinished turn. If the immediately preceding legal action already exhausted the move budget,
+triggered `DiscardEndsTurn`, or won the match, the server accepts only that final `EndTurn` as a
+terminal marker. The marker gets its own consecutive revision/log row but does not transition the
+turn a second time. This keeps the batch envelope uniform without allowing an early delimiter.
 
 `get-view` accepts optional `sinceRevision` and then includes ordered `moves` rows with revisions
 greater than that value. Move actions are public, but `CardId` is removed from an opponent's
-`DrawCard` action. Direct authenticated reads of `match_moves` are disabled so this redaction cannot
-be bypassed.
+`DrawCard` action. For play/discard rows, the server stores the now-public card snapshot as
+`ReplayCard`; this lets passive clients reproduce consumed bombs and other effects even when the
+card is absent from the final view. Direct authenticated reads of `match_moves` are disabled so
+redaction cannot be bypassed.
 
 The single-command `submit-move` endpoint remains deployed only for old builds and is deprecated.
 
@@ -61,10 +65,39 @@ notification / poll on `turn_deadline`, resume by fetching the seat view at curr
 
 ## Client (Unity)
 `OnlineSession : IGameSession`, viewing seat = local seat via `SeatViewBinder` (local player always
-at bottom). Local input is matched to an authoritative legal `MoveData` and submitted through
-`OnlineMatchClient`; each returned or pushed `MatchSeatViewData` fully rebuilds the visible board.
-Rejected optimistic UI changes are discarded by re-rendering the last server view. Supabase uses
-`IAsyncMatchTransport`; the in-memory transport remains available for simulation tests.
+at bottom). During the local turn, normal Unity drag/drop and activation paths apply immediately.
+Each completed UI action is mapped to `MoveData`, checked against an `OnlineTurnBuffer`, and appended
+in order without a network request. The buffer starts from the last confirmed fair seat view and
+uses a best-effort local `GameStateData` mirror for owned/public state. Hidden opponent hands and
+deck order make a complete mirror impossible; after an action depends on hidden randomness (notably
+an activation draw), validation falls back to the legal actions exposed at turn start plus the
+existing Unity drop/activation rules and local duplicate-card/turn checks. UI actions are mapped
+structurally before the evolving mirror validates them, so actions made newly legal by earlier
+deterministic moves are not incorrectly filtered against the stale turn-start list. Newly drawn
+hidden-random cards still cannot become further buffered actions until a server view reveals them.
+
+End Turn appends the explicit `EndTurn` action and sends the whole buffer through `submit-turn`.
+One nonce is created when the turn buffer begins and remains unchanged across network retries. A
+network failure retains the buffer and exposes End Turn as the retry action. A server rejection
+clears the buffer and immediately rebuilds from the response seat view (or a follow-up `get-view`).
+Leaving during a local turn with buffered actions requires confirmation before those actions are
+discarded.
+
+Realtime, polling, and app-focus refreshes call `get-view` with the last applied revision. Ordered
+move rows are animated through the existing Unity move/drop and activation paths at the configured
+game speed; the existing speed-up control becomes a localized Skip control during replay. Input is
+locked for the replay and the final fair seat view is authoritative, so the board is rebuilt after
+animation when the projected state is absent or differs. Last applied revision is persisted per
+match in `PlayerPrefs` for async resume. The corresponding fair seat view is persisted as the cold-
+resume replay base; it contains only data the server already released to that seat.
+
+Played/discarded cards from a masked opponent hand are materialized from the server-authored
+`ReplayCard` snapshot before the existing Unity drop path runs, so consumed bombs retain their
+card-specific explosion. Older log rows that predate `ReplayCard` can replay only when the card is
+recoverable from the final public zones; otherwise the final authoritative rebuild remains the
+compatibility fallback.
+Supabase uses `IAsyncMatchTransport`; the in-memory single-move transport remains only for domain
+simulation and legacy protocol tests.
 
 ## Decisions David must make
 1. Supabase org + project (new org vs existing; project name; region, e.g. us-west-1).

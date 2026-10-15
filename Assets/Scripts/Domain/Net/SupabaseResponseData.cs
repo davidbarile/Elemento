@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace Elemento.Domain.Net
 {
@@ -8,6 +9,7 @@ namespace Elemento.Domain.Net
         [NetJsonName("match")] public SupabaseMatchRecordData Match;
         [NetJsonName("seat")] public int Seat;
         [NetJsonName("view")] public MatchSeatViewData View;
+        [NetJsonName("moves")] public List<SupabaseMoveRowData> Moves = new();
 
         public static SupabaseMatchResponseData Parse(string inJson)
         {
@@ -18,6 +20,55 @@ namespace Elemento.Domain.Net
                 throw new FormatException("Missing Supabase seat view for a non-waiting match.");
             if (result.View != null && (result.View.View == null || result.View.MatchId != result.Match.Id))
                 throw new FormatException("Invalid Supabase seat view.");
+            return result;
+        }
+
+        public OnlineViewUpdateData ToViewUpdate()
+        {
+            var update = new OnlineViewUpdateData { View = this.View };
+            if (this.Moves == null)
+                return update;
+
+            foreach (var row in this.Moves)
+            {
+                if (row?.Command?.Move == null)
+                    throw new FormatException("Invalid move log row in Supabase response.");
+                update.Moves.Add(new MoveLogEntryData
+                {
+                    MatchId = row.Command.MatchId,
+                    Seat = row.Seat,
+                    ClientMoveSequence = row.Command.ClientMoveSequence,
+                    ClientNonce = row.Command.ClientNonce,
+                    RevisionBefore = row.Command.ExpectedRevision,
+                    RevisionAfter = row.Revision,
+                    Move = row.Command.Move.Clone(),
+                    ReplayCard = row.Command.ReplayCard?.Clone()
+                });
+            }
+
+            return update;
+        }
+    }
+
+    [Serializable]
+    public sealed class SupabaseMoveRowData
+    {
+        [NetJsonName("revision")] public int Revision;
+        [NetJsonName("seat")] public int Seat;
+        [NetJsonName("command")] public MoveCommandData Command;
+    }
+
+    public static class SubmitTurnResponseData
+    {
+        public static SubmitTurnResultData Parse(string inJson)
+        {
+            var result = NetJson.Deserialize<SubmitTurnResultData>(inJson);
+            if (result == null)
+                throw new FormatException("Missing submit-turn response.");
+            if (result.NewRevision < 0 || result.MoveCount < 0)
+                throw new FormatException("Invalid submit-turn response counters.");
+            if (result.View == null || result.View.View == null)
+                throw new FormatException("Missing submit-turn seat view.");
             return result;
         }
     }

@@ -7,12 +7,14 @@ namespace Elemento.Domain.Net
     public sealed class OnlineMatchClient : IDisposable
     {
         public event Action<MatchSeatViewData> ViewChanged;
+        public event Action<OnlineViewUpdateData> ViewUpdateReceived;
         public event Action<Exception> RequestFailed;
 
         private readonly IMatchTransport transport;
         private readonly IAsyncMatchTransport asyncTransport;
         private bool disposed;
         private int clientMoveSequence;
+        private int lastAppliedRevision = -1;
 
         public string MatchId { get; }
         public int LocalSeat { get; }
@@ -20,6 +22,8 @@ namespace Elemento.Domain.Net
         public int Revision => this.CurrentView == null ? -1 : this.CurrentView.View.Revision;
         public bool IsLocalTurn => this.CurrentView != null && this.CurrentView.View.CurrentPlayerId == this.LocalSeat;
         public bool UsesAsyncTransport => this.asyncTransport != null;
+        public int LastAppliedRevision => this.lastAppliedRevision;
+        public OnlineTurnBuffer TurnBuffer { get; } = new();
 
         public OnlineMatchClient(IAsyncMatchTransport inTransport, string inMatchId, int inLocalSeat)
         {
@@ -50,7 +54,7 @@ namespace Elemento.Domain.Net
         public MoveResultData SubmitMove(MoveData inMove)
         {
             if (this.transport == null)
-                throw new InvalidOperationException("Use SubmitMoveAsync for an asynchronous transport.");
+                throw new InvalidOperationException("Single-move submission is unavailable for an asynchronous transport.");
             if (inMove == null)
                 throw new ArgumentNullException(nameof(inMove));
             if (this.CurrentView == null)
@@ -78,25 +82,40 @@ namespace Elemento.Domain.Net
             if (inMatchId == this.MatchId && inRevision > this.Revision)
             {
                 if (this.asyncTransport != null)
-                    _ = RefreshAsync(null, inError => this.RequestFailed?.Invoke(inError));
+                    _ = RefreshAsync(this.lastAppliedRevision < 0 ? null : this.lastAppliedRevision,
+                        null, inError => this.RequestFailed?.Invoke(inError));
                 else
                     Refresh();
             }
         }
 
-        public async Task RefreshAsync(Action<MatchSeatViewData> inCompleted = null, Action<Exception> inFailed = null)
+        public Task RefreshAsync(Action<MatchSeatViewData> inCompleted = null, Action<Exception> inFailed = null)
+        {
+            return RefreshAsync(null, inCompleted, inFailed);
+        }
+
+        public async Task RefreshAsync(int? inSinceRevision, Action<MatchSeatViewData> inCompleted = null,
+            Action<Exception> inFailed = null)
         {
             try
             {
-                var view = this.asyncTransport == null ? Refresh() : await this.asyncTransport.FetchSeatView(this.MatchId);
+                if (this.asyncTransport == null)
+                {
+                    inCompleted?.Invoke(Refresh());
+                    return;
+                }
+
+                var update = await this.asyncTransport.FetchView(this.MatchId, inSinceRevision);
                 if (this.disposed)
                     return;
+                var view = update?.View;
                 if (view == null || view.View == null || view.MatchId != this.MatchId || view.Seat != this.LocalSeat)
                     throw new InvalidOperationException("The server returned an invalid seat view.");
-                if (this.asyncTransport != null && view.View.Revision >= this.Revision)
+                if (view.View.Revision >= this.Revision)
                 {
                     this.CurrentView = view;
                     this.ViewChanged?.Invoke(view);
+                    this.ViewUpdateReceived?.Invoke(update);
                 }
                 inCompleted?.Invoke(this.CurrentView);
             }
@@ -108,34 +127,54 @@ namespace Elemento.Domain.Net
             }
         }
 
-        public async Task SubmitMoveAsync(MoveData inMove, Action<MoveResultData> inCompleted = null, Action<Exception> inFailed = null)
+        public bool TryBufferMove(MoveData inMove, out string outReason)
+        {
+            if (inMove == null)
+                throw new ArgumentNullException(nameof(inMove));
+            if (this.CurrentView?.View == null)
+            {
+                outReason = "The confirmed seat view is unavailable.";
+                return false;
+            }
+
+            if (!this.TurnBuffer.HasMoves && this.TurnBuffer.ExpectedRevision != this.Revision)
+                this.TurnBuffer.Begin(this.CurrentView);
+            return this.TurnBuffer.TryAppend(inMove, out outReason);
+        }
+
+        public async Task SubmitTurnAsync(MoveData inEndTurnMove,
+            Action<SubmitTurnResultData> inCompleted = null, Action<Exception> inFailed = null)
         {
             try
             {
-                if (inMove == null)
-                    throw new ArgumentNullException(nameof(inMove));
                 if (this.disposed)
                     throw new ObjectDisposedException(nameof(OnlineMatchClient));
                 if (this.asyncTransport == null)
-                {
-                    inCompleted?.Invoke(SubmitMove(inMove));
+                    throw new InvalidOperationException("Batched turns require an asynchronous transport.");
+                if (!this.TurnBuffer.HasMoves && this.TurnBuffer.ExpectedRevision != this.Revision)
+                    this.TurnBuffer.Begin(this.CurrentView);
+                if (!this.TurnBuffer.IsComplete
+                    && !this.TurnBuffer.TryAppend(inEndTurnMove, out string reason))
+                    throw new InvalidOperationException(reason);
+
+                var result = await this.asyncTransport.SubmitTurn(
+                    this.TurnBuffer.CreateRequest(this.MatchId, this.LocalSeat));
+                if (this.disposed)
                     return;
-                }
-                if (this.CurrentView == null)
-                    await RefreshAsync();
-                var command = new MoveCommandData
+
+                if (result?.View?.View == null || result.View.MatchId != this.MatchId
+                    || result.View.Seat != this.LocalSeat)
+                    throw new InvalidOperationException("The server returned an invalid submit-turn seat view.");
+
+                this.TurnBuffer.Clear();
+                if (result.View.View.Revision >= this.Revision)
                 {
-                    MatchId = this.MatchId,
-                    Seat = this.LocalSeat,
-                    ClientMoveSequence = ++this.clientMoveSequence,
-                    ExpectedRevision = this.Revision,
-                    Move = inMove,
-                    ClientNonce = Guid.NewGuid().ToString("N")
-                };
-                var result = await this.asyncTransport.SubmitMove(command);
-                await RefreshAsync();
-                if (!this.disposed)
-                    inCompleted?.Invoke(result);
+                    var update = new OnlineViewUpdateData { View = result.View };
+                    this.CurrentView = result.View;
+                    this.ViewChanged?.Invoke(result.View);
+                    this.ViewUpdateReceived?.Invoke(update);
+                }
+                inCompleted?.Invoke(result);
             }
             catch (Exception error)
             {
@@ -143,6 +182,17 @@ namespace Elemento.Domain.Net
                     throw;
                 inFailed(error);
             }
+        }
+
+        public void DiscardBufferedTurn()
+        {
+            this.TurnBuffer.Clear();
+        }
+
+        public void MarkAppliedRevision(int inRevision)
+        {
+            if (inRevision > this.lastAppliedRevision)
+                this.lastAppliedRevision = inRevision;
         }
 
         public void Dispose()

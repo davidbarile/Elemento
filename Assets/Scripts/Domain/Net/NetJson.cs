@@ -158,6 +158,9 @@ namespace Elemento.Domain.Net
 
         private static object ConvertValue(object inValue, Type inTargetType)
         {
+            Type nullableType = Nullable.GetUnderlyingType(inTargetType);
+            if (nullableType != null)
+                return inValue == null ? null : ConvertValue(inValue, nullableType);
             if (inValue == null)
                 return inTargetType.IsValueType ? Activator.CreateInstance(inTargetType) : null;
             if (inTargetType == typeof(string))

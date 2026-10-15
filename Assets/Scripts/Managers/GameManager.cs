@@ -121,13 +121,16 @@ public class GameManager : MonoBehaviour
         : this.gameSession == null ? this.currentPlayerIndex == 0 : (this.gameSession.IsHumanSeat(this.currentPlayerIndex) && !this.isHandoffPending);
     public bool IsPassAndPlay => this.gameSession != null && this.gameSession.GameMode == Elemento.Domain.EGameMode.PassAndPlay;
     public bool IsOnline => this.gameSession is OnlineSession;
-    private bool IsOnlineInputBlocked => this.IsOnline && (this.isOnlineMovePending || !this.IsPlayersTurn || !IsHumanPlayingPhase());
+    private bool IsOnlineInputBlocked => this.IsOnline && (this.isOnlineMovePending || this.isOnlineReplayActive
+        || this.onlineClient?.TurnBuffer.IsComplete == true
+        || !this.IsPlayersTurn || !IsHumanPlayingPhase());
     public bool IsCurrentSeatControlledByAI => !this.IsOnline && !this.IsPassAndPlay && ((this.gameSession != null && this.gameSession.ShouldRunAI(this.currentPlayerIndex)) || this.CurrentPlayerBoard.IsAutoPlay);
 
     public bool CanControlPlayer(EPlayerType inPlayerType)
     {
         if (this.IsOnline)
-            return this.IsPlayersTurn && (int)inPlayerType - 1 == ((OnlineSession)this.gameSession).LocalSeat;
+            return !this.IsOnlineInputBlocked && this.IsPlayersTurn
+                && (int)inPlayerType - 1 == ((OnlineSession)this.gameSession).LocalSeat;
 
         return this.IsPlayersTurn && (!this.IsPassAndPlay || this.CurrentPlayer == inPlayerType);
     }
@@ -144,6 +147,12 @@ public class GameManager : MonoBehaviour
     private UIPlayerBoard[] boardSlots;
     private OnlineMatchClient onlineClient;
     private bool isOnlineMovePending;
+    private bool isOnlineReplayActive;
+    private bool hasOnlineRenderedView;
+    private bool skipOnlineReplay;
+    private int onlineAppliedRevision = -1;
+    private Coroutine onlineReplayCoroutine;
+    private OnlineViewUpdateData pendingOnlineUpdate;
 
     private BoardState lastCreatedBoardState;
 
@@ -372,23 +381,53 @@ public class GameManager : MonoBehaviour
     //called by End Turn Button
     public void EndTurn()
     {
-        if (GameManager.ShouldBlockInput || UIDraggable.ShouldBlockInput || UITutorialPanel.IsTutorialMode) return;
+        bool isOnlineRetry = this.IsOnline && this.onlineClient?.TurnBuffer.IsComplete == true
+            && !this.isOnlineMovePending;
+        if (!isOnlineRetry && (GameManager.ShouldBlockInput || UIDraggable.ShouldBlockInput)) return;
+        if (UITutorialPanel.IsTutorialMode) return;
         if (!IsHumanPlayingPhase()) return;//ignore stale/double end-turn requests
 
         if (this.IsOnline)
         {
-            if (UnityDomainMapper.TryGetOnlineEndTurnMove(this.onlineClient.CurrentView.View, out DomainMoveData move))
-                SubmitOnlineMove(move);
+            DomainMoveData move = isOnlineRetry
+                ? this.onlineClient.TurnBuffer.Moves[this.onlineClient.TurnBuffer.Moves.Count - 1].Clone()
+                : null;
+            if (move != null
+                || UnityDomainMapper.TryGetOnlineEndTurnMove(this.onlineClient.CurrentView.View, out move)
+                || this.onlineClient.TurnBuffer.HasMoves && TryCreateOnlineEndMarker(out move))
+                SubmitOnlineTurn(move);
             else
-                RejectOnlineMove("End turn is not legal in the current server view.");
+                RejectOnlineMove(LocalizationManager.GetOnlineText(LOC.IN.OnlineMoveIllegal));
             return;
         }
 
         SelectNextPlayer();
     }
 
+    private bool TryCreateOnlineEndMarker(out DomainMoveData outMove)
+    {
+        outMove = null;
+        if (!this.IsOnline || this.onlineClient?.CurrentView?.View?.Player == null)
+            return false;
+        outMove = new DomainMoveData
+        {
+            PlayerId = this.onlineClient.LocalSeat,
+            Type = Elemento.Domain.EMoveType.EndTurn,
+            SourceZoneId = -1,
+            TargetPlayerId = -1,
+            TargetZoneId = -1
+        };
+        return true;
+    }
+
     public void HandleSpeedUpOpponentTurnButtonPress()
     {
+        if (this.isOnlineReplayActive)
+        {
+            this.skipOnlineReplay = true;
+            Time.timeScale = 100;
+            return;
+        }
         if (UITutorialPanel.IsTutorialMode || UIDraggable.ShouldBlockInput) return;
 
         //TODO: this is breaking when in Opponent Draw mode
@@ -776,7 +815,7 @@ public class GameManager : MonoBehaviour
     private void ConfigureSession()
     {
         if (this.onlineClient != null)
-            this.onlineClient.ViewChanged -= HandleOnlineViewChanged;
+            this.onlineClient.ViewUpdateReceived -= HandleOnlineViewUpdate;
 
         this.onlineClient = null;
         if (SettingsManager.IN.PlayMode != EPlayMode.Multiplayer && OnlineMatchContext.IsActive)
@@ -785,7 +824,7 @@ public class GameManager : MonoBehaviour
         this.gameSession = SessionFactory.Create(SettingsManager.IN.PlayMode);
         this.onlineClient = (this.gameSession as OnlineSession)?.Client;
         if (this.onlineClient != null)
-            this.onlineClient.ViewChanged += HandleOnlineViewChanged;
+            this.onlineClient.ViewUpdateReceived += HandleOnlineViewUpdate;
 
         if (this.boardSlots == null || this.boardSlots.Length != this.PlayerBoards.Length)
         {
@@ -798,11 +837,16 @@ public class GameManager : MonoBehaviour
 
     private void ReleaseOnlineSession()
     {
+        CancelOnlineReplay();
         if (this.onlineClient != null)
-            this.onlineClient.ViewChanged -= HandleOnlineViewChanged;
+            this.onlineClient.ViewUpdateReceived -= HandleOnlineViewUpdate;
 
         this.onlineClient = null;
         this.isOnlineMovePending = false;
+        this.isOnlineReplayActive = false;
+        this.hasOnlineRenderedView = false;
+        this.pendingOnlineUpdate = null;
+        this.onlineAppliedRevision = -1;
         UIOnlineLobbyPanel.IN.ReleaseMatch();
         this.gameSession = null;
     }
@@ -821,11 +865,87 @@ public class GameManager : MonoBehaviour
         SetReplayButtonVisibility(false);
         this.TurnPhase = ETurnPhase.None;
         this.isOnlineMovePending = false;
+        this.isOnlineReplayActive = false;
+        this.hasOnlineRenderedView = false;
+        this.skipOnlineReplay = false;
+        this.pendingOnlineUpdate = null;
+        this.onlineAppliedRevision = LoadLastSeenOnlineRevision();
+        MatchSeatViewData lastSeenView = LoadLastSeenOnlineView();
 
-        if (this.onlineClient.CurrentView != null)
+        if (lastSeenView?.View != null && lastSeenView.MatchId == this.onlineClient.MatchId
+            && lastSeenView.Seat == this.onlineClient.LocalSeat
+            && lastSeenView.View.Revision == this.onlineAppliedRevision
+            && this.onlineClient.CurrentView?.View != null
+            && this.onlineAppliedRevision < this.onlineClient.Revision)
+        {
+            HandleOnlineViewChanged(lastSeenView);
+            GameManager.IsApplyingRemoteUpdate = true;
+            _ = this.onlineClient.RefreshAsync(this.onlineAppliedRevision, null, inError =>
+            {
+                GameManager.IsApplyingRemoteUpdate = false;
+                HandleOnlineViewChanged(this.onlineClient.CurrentView);
+                Debug.LogWarning(inError.Message);
+            });
+        }
+        else if (this.onlineClient.CurrentView != null
+            && (this.onlineAppliedRevision < 0 || this.onlineAppliedRevision >= this.onlineClient.Revision))
+        {
             HandleOnlineViewChanged(this.onlineClient.CurrentView);
+        }
         else
-            _ = this.onlineClient.RefreshAsync(null, inError => Debug.LogWarning(inError.Message));
+        {
+            int? sinceRevision = this.onlineAppliedRevision < 0 ? null : this.onlineAppliedRevision;
+            _ = this.onlineClient.RefreshAsync(sinceRevision, null,
+                inError => Debug.LogWarning(inError.Message));
+        }
+    }
+
+    private void HandleOnlineViewUpdate(OnlineViewUpdateData inUpdate)
+    {
+        if (!this.IsOnline || this.onlineClient == null || inUpdate?.View?.View == null)
+            return;
+        if (this.isOnlineReplayActive)
+        {
+            this.pendingOnlineUpdate = inUpdate;
+            this.skipOnlineReplay = true;
+            return;
+        }
+        if (this.onlineClient.TurnBuffer.HasMoves)
+        {
+            if (inUpdate.View.View.Revision <= this.onlineClient.TurnBuffer.ExpectedRevision)
+                return;
+
+            bool isCommittedRetry = HasOnlineTurnNonce(inUpdate.Moves,
+                this.onlineClient.TurnBuffer.ClientNonce);
+            this.onlineClient.DiscardBufferedTurn();
+            if (!isCommittedRetry)
+                UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(LOC.IN.OnlineTurnRejected));
+            HandleOnlineViewChanged(inUpdate.View);
+            return;
+        }
+
+        if (this.hasOnlineRenderedView && this.onlineAppliedRevision >= 0
+            && inUpdate.Moves != null && inUpdate.Moves.Count > 0
+            && OnlineReconciliation.HasContinuousMoveLog(this.onlineAppliedRevision, inUpdate.Moves,
+                inUpdate.View.View.Revision))
+        {
+            this.onlineReplayCoroutine = StartCoroutine(ReplayOnlineMovesCo(inUpdate));
+            return;
+        }
+
+        HandleOnlineViewChanged(inUpdate.View);
+    }
+
+    private static bool HasOnlineTurnNonce(List<MoveLogEntryData> inMoves, string inClientNonce)
+    {
+        if (inMoves == null || string.IsNullOrEmpty(inClientNonce))
+            return false;
+        foreach (var entry in inMoves)
+        {
+            if (entry != null && entry.ClientNonce == inClientNonce)
+                return true;
+        }
+        return false;
     }
 
     private void HandleOnlineViewChanged(MatchSeatViewData inSeatView)
@@ -852,6 +972,11 @@ public class GameManager : MonoBehaviour
             RefreshPassAndPlayHandVisibility();
             RefreshTurnAndMoveCountDisplay();
             RefreshOnlineControls();
+            this.onlineAppliedRevision = inSeatView.View.Revision;
+            this.hasOnlineRenderedView = true;
+            this.onlineClient.MarkAppliedRevision(this.onlineAppliedRevision);
+            SaveLastSeenOnlineRevision(this.onlineAppliedRevision);
+            SaveLastSeenOnlineView(inSeatView);
         }
         finally
         {
@@ -863,6 +988,210 @@ public class GameManager : MonoBehaviour
             UIDraggable.ResetInputState();
             GameManager.IsApplyingRemoteUpdate = false;
         }
+    }
+
+    private IEnumerator ReplayOnlineMovesCo(OnlineViewUpdateData inUpdate)
+    {
+        this.isOnlineReplayActive = true;
+        this.skipOnlineReplay = false;
+        GameManager.IsApplyingRemoteUpdate = true;
+        Move.ShouldRecordMoves = false;
+        SetOnlineReplayButton(true);
+
+        try
+        {
+            foreach (var entry in inUpdate.Moves)
+            {
+                if (this.skipOnlineReplay)
+                    break;
+                if (entry?.Move == null || entry.Move.Type == Elemento.Domain.EMoveType.EndTurn)
+                    continue;
+                if (entry.Move.Type == Elemento.Domain.EMoveType.DrawCard)
+                {
+                    yield return new WaitForSeconds(.2f);
+                    continue;
+                }
+
+                MaterializeOnlineReplayCard(entry.Move, entry.ReplayCard, inUpdate.View.View);
+                if (!UnityDomainMapper.TryCreateOnlineReplayMove(entry.Move, this.PlayerBoards, out Move move))
+                    continue;
+                UIPlayerBoard board = entry.Seat >= 0 && entry.Seat < this.PlayerBoards.Length
+                    ? this.PlayerBoards[entry.Seat] : null;
+                if (board != null)
+                    yield return board.PlayOnlineMoveCo(move);
+            }
+        }
+        finally
+        {
+            Move.ShouldRecordMoves = true;
+            GameManager.IsApplyingRemoteUpdate = false;
+            this.isOnlineReplayActive = false;
+            this.skipOnlineReplay = false;
+            this.onlineReplayCoroutine = null;
+            Time.timeScale = this.gameSpeed;
+            SetOnlineReplayButton(false);
+            UIDraggable.ResetInputState();
+        }
+
+        if (OnlineReconciliation.RequiresRebuild(this.onlineAppliedRevision, inUpdate, null))
+            HandleOnlineViewChanged(inUpdate.View);
+
+        if (this.pendingOnlineUpdate != null)
+        {
+            var pending = this.pendingOnlineUpdate;
+            this.pendingOnlineUpdate = null;
+            HandleOnlineViewUpdate(pending);
+        }
+    }
+
+    private void CancelOnlineReplay()
+    {
+        if (this.onlineReplayCoroutine != null)
+            StopCoroutine(this.onlineReplayCoroutine);
+        this.onlineReplayCoroutine = null;
+        this.isOnlineReplayActive = false;
+        this.skipOnlineReplay = false;
+        Move.ShouldRecordMoves = true;
+        GameManager.IsApplyingRemoteUpdate = false;
+        Time.timeScale = this.gameSpeed;
+        if (this.speedUpOpponentTurnButton != null)
+            SetOnlineReplayButton(false);
+        UIDraggable.ResetInputState();
+    }
+
+    private void MaterializeOnlineReplayCard(DomainMoveData inMove, DomainCardInstanceData inReplayCard,
+        Elemento.Domain.PlayerViewData inFinalView)
+    {
+        if (inMove == null || inMove.SourceZoneId >= 0 || string.IsNullOrEmpty(inMove.CardId)
+            || inMove.PlayerId < 0 || inMove.PlayerId >= this.PlayerBoards.Length)
+            return;
+
+        UIPlayerBoard board = this.PlayerBoards[inMove.PlayerId];
+        foreach (var cell in board.Hand.CardCells)
+        {
+            if (cell?.TopCard != null && cell.TopCard.Id == inMove.CardId)
+                return;
+        }
+
+        DomainCardInstanceData cardData = inReplayCard?.Clone()
+            ?? FindOnlineReplayCard(inFinalView, inMove.CardId);
+        if (cardData == null)
+            return;
+
+        foreach (var cell in board.Hand.CardCells)
+        {
+            if (cell?.TopCard == null)
+                continue;
+            cell.TopCard.DestroySelf();
+            cell.Cards.Clear();
+            AddOnlineHandCard(board, board.Hand.CardCells.IndexOf(cell), cardData, false);
+            return;
+        }
+    }
+
+    private static DomainCardInstanceData FindOnlineReplayCard(Elemento.Domain.PlayerViewData inView,
+        string inCardId)
+    {
+        if (inView?.Player != null)
+        {
+            var card = FindOnlineReplayCard(inView.Player.Zones, inCardId);
+            if (card != null)
+                return card;
+        }
+        if (inView?.Opponents != null)
+        {
+            foreach (var opponent in inView.Opponents)
+            {
+                var card = FindOnlineReplayCard(opponent.Zones, inCardId);
+                if (card != null)
+                    return card;
+            }
+        }
+        return null;
+    }
+
+    private static DomainCardInstanceData FindOnlineReplayCard(List<DomainZoneStateData> inZones,
+        string inCardId)
+    {
+        if (inZones == null)
+            return null;
+        foreach (var zone in inZones)
+        {
+            foreach (var card in zone.Cards)
+            {
+                if (card.Id == inCardId)
+                    return card;
+            }
+        }
+        return null;
+    }
+
+    private void SetOnlineReplayButton(bool inIsVisible)
+    {
+        this.speedUpOpponentTurnButton.SetActive(inIsVisible);
+        if (!inIsVisible)
+        {
+            var speedLabel = this.speedUpOpponentTurnButton.GetComponentInChildren<TextMeshProUGUI>(true);
+            if (speedLabel != null)
+                speedLabel.text = LOC.IN.SpeedUp[LOC.LI];
+            return;
+        }
+
+        var label = this.speedUpOpponentTurnButton.GetComponentInChildren<TextMeshProUGUI>(true);
+        if (label != null)
+            label.text = LocalizationManager.GetOnlineText(LOC.IN.OnlineSkipReplay);
+    }
+
+    private int LoadLastSeenOnlineRevision()
+    {
+        string key = GetOnlineRevisionKey();
+        return string.IsNullOrEmpty(key) ? -1 : PlayerPrefs.GetInt(key, -1);
+    }
+
+    private void SaveLastSeenOnlineRevision(int inRevision)
+    {
+        string key = GetOnlineRevisionKey();
+        if (string.IsNullOrEmpty(key))
+            return;
+        PlayerPrefs.SetInt(key, inRevision);
+        PlayerPrefs.Save();
+    }
+
+    private MatchSeatViewData LoadLastSeenOnlineView()
+    {
+        string key = GetOnlineViewKey();
+        if (string.IsNullOrEmpty(key) || !PlayerPrefs.HasKey(key))
+            return null;
+        try
+        {
+            return NetJson.Deserialize<MatchSeatViewData>(PlayerPrefs.GetString(key));
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("Stored online replay view was invalid: " + exception.Message);
+            return null;
+        }
+    }
+
+    private void SaveLastSeenOnlineView(MatchSeatViewData inView)
+    {
+        string key = GetOnlineViewKey();
+        if (string.IsNullOrEmpty(key) || inView == null)
+            return;
+        PlayerPrefs.SetString(key, NetJson.Serialize(inView));
+        PlayerPrefs.Save();
+    }
+
+    private string GetOnlineRevisionKey()
+    {
+        return this.onlineClient == null || string.IsNullOrEmpty(this.onlineClient.MatchId)
+            ? null : "Elemento.Online.LastSeenRevision." + this.onlineClient.MatchId;
+    }
+
+    private string GetOnlineViewKey()
+    {
+        return this.onlineClient == null || string.IsNullOrEmpty(this.onlineClient.MatchId)
+            ? null : "Elemento.Online.LastSeenView." + this.onlineClient.MatchId;
     }
 
     private void RenderOnlineView(Elemento.Domain.PlayerViewData inView)
@@ -1020,28 +1349,35 @@ public class GameManager : MonoBehaviour
             this.endTurnButton.SetActive(false);
             this.discardToEndTurnZone.SetActive(false);
             this.DiscardZone.SetActive(false);
+            this.speedUpOpponentTurnButton.SetActive(false);
             return;
         }
 
-        bool canMove = this.IsPlayersTurn && IsHumanPlayingPhase() && !this.isOnlineMovePending;
-        bool canEndTurn = canMove && UnityDomainMapper.TryGetOnlineEndTurnMove(view, out _);
+        bool hasCompleteRetry = this.onlineClient.TurnBuffer.IsComplete;
+        bool canMove = this.IsPlayersTurn && IsHumanPlayingPhase() && !this.isOnlineMovePending
+            && !hasCompleteRetry;
+        bool canEndTurn = !this.isOnlineMovePending && this.IsPlayersTurn && IsHumanPlayingPhase()
+            && (hasCompleteRetry || UnityDomainMapper.TryGetOnlineEndTurnMove(view, out _));
         this.beginTurnButton.SetActive(false);
         this.endTurnButton.SetActive(canEndTurn);
         this.discardToEndTurnZone.SetActive(canMove && SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn);
         this.DiscardZone.SetActive(canMove && SettingsManager.IN.DiscardMode == EDiscardMode.AllowDiscard);
+        SetOnlineReplayButton(this.isOnlineReplayActive);
+        if (this.isOnlineMovePending)
+            this.playerTurnText.text = LocalizationManager.GetOnlineText(LOC.IN.OnlineSendingTurn);
     }
 
-    private void SubmitOnlineMove(DomainMoveData inMove)
+    private void SubmitOnlineTurn(DomainMoveData inMove)
     {
         if (!this.IsOnline || this.onlineClient == null || inMove == null || this.isOnlineMovePending)
             return;
 
         this.isOnlineMovePending = true;
         RefreshOnlineControls();
-        _ = this.onlineClient.SubmitMoveAsync(inMove, HandleOnlineMoveCompleted, HandleOnlineMoveFailed);
+        _ = this.onlineClient.SubmitTurnAsync(inMove, HandleOnlineTurnCompleted, HandleOnlineTurnFailed);
     }
 
-    private void HandleOnlineMoveCompleted(MoveResultData inResult)
+    private void HandleOnlineTurnCompleted(SubmitTurnResultData inResult)
     {
         this.isOnlineMovePending = false;
         if (!this.IsOnline || this.onlineClient == null)
@@ -1049,32 +1385,34 @@ public class GameManager : MonoBehaviour
 
         if (inResult == null || !inResult.Accepted)
         {
-            string reason = inResult == null || string.IsNullOrEmpty(inResult.Reason)
-                ? "The server rejected the move."
-                : inResult.Reason;
-            UIAlertPanel.IN.Show(reason);
-            HandleOnlineViewChanged(this.onlineClient.CurrentView);
+            UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(LOC.IN.OnlineTurnRejected));
+            if (this.onlineClient.CurrentView != null)
+                HandleOnlineViewChanged(this.onlineClient.CurrentView);
+            else
+                _ = this.onlineClient.RefreshAsync(null, HandleOnlineViewChanged,
+                    inError => Debug.LogWarning("Online resync failed: " + inError.Message));
             return;
         }
 
         RefreshOnlineControls();
     }
 
-    private void HandleOnlineMoveFailed(Exception inException)
+    private void HandleOnlineTurnFailed(Exception inException)
     {
         this.isOnlineMovePending = false;
         if (!this.IsOnline || this.onlineClient == null)
             return;
 
-        UIAlertPanel.IN.Show(inException?.Message ?? "The online move failed.");
-        _ = this.onlineClient.RefreshAsync(HandleOnlineViewChanged,
-            inError => Debug.LogWarning("Online resync failed: " + inError.Message));
+        Debug.LogWarning("Online turn submission failed: " + inException?.Message);
+        UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(LOC.IN.OnlineTurnRetry));
+        RefreshTurnAndMoveCountDisplay();
         RefreshOnlineControls();
     }
 
     private void RejectOnlineMove(string inReason)
     {
         UIAlertPanel.IN.Show(inReason);
+        this.onlineClient?.DiscardBufferedTurn();
         if (this.onlineClient?.CurrentView != null)
             HandleOnlineViewChanged(this.onlineClient.CurrentView);
     }
@@ -1082,7 +1420,16 @@ public class GameManager : MonoBehaviour
     private void OnDestroy()
     {
         if (this.onlineClient != null)
-            this.onlineClient.ViewChanged -= HandleOnlineViewChanged;
+            this.onlineClient.ViewUpdateReceived -= HandleOnlineViewUpdate;
+    }
+
+    private void OnApplicationFocus(bool inHasFocus)
+    {
+        if (!inHasFocus || !this.IsOnline || this.onlineClient == null || this.isOnlineMovePending)
+            return;
+        int? sinceRevision = this.onlineAppliedRevision < 0 ? null : this.onlineAppliedRevision;
+        _ = this.onlineClient.RefreshAsync(sinceRevision, null,
+            inError => Debug.LogWarning("Online resume refresh failed: " + inError.Message));
     }
 
     private void ApplyViewingSeat(int inViewingSeat)
@@ -1346,6 +1693,8 @@ public class GameManager : MonoBehaviour
     {
         if (this.IsOnline)
         {
+            if (!Move.ShouldRecordMoves || this.isOnlineReplayActive || inIsDealHand)
+                return;
             var view = this.onlineClient?.CurrentView?.View;
             if (view == null)
             {
@@ -1355,10 +1704,13 @@ public class GameManager : MonoBehaviour
 
             var unityMove = Move.CreateMove(inSourceCell, inTargetCell, inIsDiscard, inActivatedZone,
                 inIsDealHand, inCardType, (int)this.CurrentPlayer, inCardId);
-            if (UnityDomainMapper.TryCreateOnlineMove(unityMove, view, out DomainMoveData move))
-                SubmitOnlineMove(move);
+            if (UnityDomainMapper.TryCreateOnlineMove(unityMove, view, out DomainMoveData move)
+                && this.onlineClient.TryBufferMove(move, out _))
+            {
+                RefreshOnlineControls();
+            }
             else
-                RejectOnlineMove("The move is not legal in the current server view.");
+                RejectOnlineMove(LocalizationManager.GetOnlineText(LOC.IN.OnlineMoveIllegal));
             return;
         }
 
@@ -1788,13 +2140,15 @@ public class GameManager : MonoBehaviour
         if (UITutorialPanel.IsTutorialMode) return;
 
         UIDraggable.CancelActiveDrag();
-        GameManager.IsApplyingRemoteUpdate = false;
-        BoardStateManager.IsSettingState = false;
 
         string titleText = LOC.IN.LeaveGame[LOC.LI];// "Leave Game?";
-        string messageText = LOC.IN.LeaveGameMessage[LOC.LI];//$"Are you sure you want to leave the game?\n\nAll progress will  be lost.";
+        string messageText = this.IsOnline && this.onlineClient?.TurnBuffer.HasMoves == true
+            ? LocalizationManager.GetOnlineText(LOC.IN.OnlineDiscardUnsent)
+            : LOC.IN.LeaveGameMessage[LOC.LI];//$"Are you sure you want to leave the game?\n\nAll progress will  be lost.";
         UIConfirmPanel.IN.Show(titleText, messageText, () =>
         {
+            CancelOnlineReplay();
+            GameManager.IsApplyingRemoteUpdate = false;
             GameManager.IsDealingHand = false;
             GameManager.IsDoingActivateSequence = false;
             GameManager.IsDoingReplay = false;
@@ -1802,6 +2156,8 @@ public class GameManager : MonoBehaviour
             BoardStateManager.IsSettingState = false;
             this.isHandoffPending = false;
             this.isOnlineMovePending = false;
+            this.isOnlineReplayActive = false;
+            this.onlineClient?.DiscardBufferedTurn();
             UIDraggable.ResetInputState();
             CleanUpGameState();
 

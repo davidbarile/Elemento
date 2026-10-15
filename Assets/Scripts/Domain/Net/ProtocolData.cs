@@ -17,6 +17,7 @@ namespace Elemento.Domain.Net
         public int ClientMoveSequence;
         public int ExpectedRevision;
         public MoveData Move;
+        public CardInstanceData ReplayCard;
         public string ClientNonce;
     }
 
@@ -28,6 +29,34 @@ namespace Elemento.Domain.Net
         public string Reason;
         public int NewRevision;
         public MoveLogEntryData LogEntry;
+    }
+
+    [Serializable]
+    public sealed class SubmitTurnRequestData
+    {
+        public string MatchId;
+        public int Seat;
+        public int ExpectedRevision;
+        public string ClientNonce;
+        public List<MoveData> Moves = new();
+    }
+
+    [Serializable]
+    public sealed class SubmitTurnResultData
+    {
+        public bool Accepted;
+        public string Reason;
+        public int? FailedIndex;
+        public int NewRevision;
+        public int MoveCount;
+        public MatchSeatViewData View;
+    }
+
+    [Serializable]
+    public sealed class OnlineViewUpdateData
+    {
+        public MatchSeatViewData View;
+        public List<MoveLogEntryData> Moves = new();
     }
 
     [Serializable]
@@ -79,5 +108,6 @@ namespace Elemento.Domain.Net
         public int RevisionBefore;
         public int RevisionAfter;
         public MoveData Move;
+        public CardInstanceData ReplayCard;
     }
 }

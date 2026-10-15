@@ -11255,6 +11255,24 @@ MonoBehaviour:
   TapToContinue:
   - Tap to Continue
   - Toca para continuar
+  OnlineSendingTurn:
+  - "Sending turn\u2026"
+  - "Enviando turno\u2026"
+  OnlineTurnRetry:
+  - Couldn't send turn. Press End Turn to retry.
+  - No se pudo enviar el turno. Pulsa Fin de turno para reintentar.
+  OnlineTurnRejected:
+  - Turn rejected, resyncing
+  - Turno rechazado, resincronizando
+  OnlineSkipReplay:
+  - Skip
+  - Omitir
+  OnlineDiscardUnsent:
+  - Discard your unsent moves?
+  - "\xBFDescartar tus movimientos no enviados?"
+  OnlineMoveIllegal:
+  - That move is not legal in the current online turn.
+  - "Ese movimiento no es v\xE1lido en el turno en l\xEDnea actual."
   YourTurn:
   - Your Turn
   - Tu Turno

@@ -134,9 +134,6 @@ public class UICardCell : MonoBehaviour
 
                 DeleteCard(inSourceCell);
 
-                if (GameManager.IN.IsPlayersTurn && !GameManager.IN.IsCurrentSeatControlledByAI)
-                    GameManager.IN.EndTurn();
-
                 AudioManager.IN.PlayCardDropSound(6, .5f, 1);
             }
             else
@@ -149,6 +146,10 @@ public class UICardCell : MonoBehaviour
                 inSourceCell.ElementZone.CalculatePoints();
 
             GameManager.IN.SaveBoardState(inSourceCell, this, true, inCardId: cardId);
+
+            if (SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn
+                && GameManager.IN.IsPlayersTurn && !GameManager.IN.IsCurrentSeatControlledByAI)
+                GameManager.IN.EndTurn();
 
             return;
         }

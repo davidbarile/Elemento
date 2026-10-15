@@ -6,7 +6,7 @@ namespace Elemento.Domain.Net
     public interface IAsyncMatchTransport
     {
         event Action<string, int> RevisionCommitted;
-        Task<MoveResultData> SubmitMove(MoveCommandData inCommand);
-        Task<MatchSeatViewData> FetchSeatView(string inMatchId);
+        Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn);
+        Task<OnlineViewUpdateData> FetchView(string inMatchId, int? inSinceRevision = null);
     }
 }
