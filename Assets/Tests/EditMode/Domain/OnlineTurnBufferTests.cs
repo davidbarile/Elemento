@@ -183,6 +183,26 @@ namespace Elemento.Domain.Tests
     public class OnlineReconciliationTests
     {
         [Test]
+        public void BuildLocalMoveLog_CreatesReplayableSequentialEntriesWithoutAliasingMoves()
+        {
+            var first = new MoveData { PlayerId = 1, Type = EMoveType.PlayCard, CardId = "card" };
+            var second = new MoveData { PlayerId = 1, Type = EMoveType.EndTurn };
+
+            var entries = OnlineReconciliation.BuildLocalMoveLog("match", 1, "nonce", 7,
+                new[] { first, second });
+            first.CardId = "mutated";
+
+            Assert.That(entries, Has.Count.EqualTo(2));
+            Assert.That(entries[0].RevisionBefore, Is.EqualTo(7));
+            Assert.That(entries[0].RevisionAfter, Is.EqualTo(8));
+            Assert.That(entries[0].Move.ExpectedRevision, Is.EqualTo(7));
+            Assert.That(entries[0].Move.CardId, Is.EqualTo("card"));
+            Assert.That(entries[1].RevisionBefore, Is.EqualTo(8));
+            Assert.That(entries[1].RevisionAfter, Is.EqualTo(9));
+            Assert.That(entries[1].Move.ExpectedRevision, Is.EqualTo(8));
+        }
+
+        [Test]
         public void FindNewHandCards_ReturnsOnlyAddedCardsInAuthoritativeOrder()
         {
             var view = CreateView(3);

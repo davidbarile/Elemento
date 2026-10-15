@@ -236,6 +236,36 @@ namespace Elemento.Domain.Net
 
     public static class OnlineReconciliation
     {
+        public static List<MoveLogEntryData> BuildLocalMoveLog(string inMatchId, int inSeat,
+            string inClientNonce, int inStartingRevision, IReadOnlyList<MoveData> inMoves)
+        {
+            List<MoveLogEntryData> entries = new();
+            if (inMoves == null)
+                return entries;
+
+            int revision = inStartingRevision;
+            for (int i = 0; i < inMoves.Count; ++i)
+            {
+                if (inMoves[i] == null)
+                    continue;
+
+                var move = inMoves[i].Clone();
+                move.ExpectedRevision = revision;
+                entries.Add(new MoveLogEntryData
+                {
+                    MatchId = inMatchId,
+                    Seat = inSeat,
+                    ClientMoveSequence = i + 1,
+                    ClientNonce = inClientNonce,
+                    RevisionBefore = revision,
+                    RevisionAfter = revision + 1,
+                    Move = move
+                });
+                ++revision;
+            }
+            return entries;
+        }
+
         public static List<CardInstanceData> FindNewHandCards(IEnumerable<string> inExistingCardIds,
             PlayerViewData inFinalView)
         {
