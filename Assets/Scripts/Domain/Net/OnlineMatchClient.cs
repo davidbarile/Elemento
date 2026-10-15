@@ -165,7 +165,7 @@ namespace Elemento.Domain.Net
                 var result = await this.asyncTransport.SubmitTurn(
                     this.TurnBuffer.CreateRequest(this.MatchId, this.LocalSeat));
                 if (this.disposed)
-                    return;
+                    throw new ObjectDisposedException(nameof(OnlineMatchClient));
 
                 if (result?.View?.View == null || result.View.MatchId != this.MatchId
                     || result.View.Seat != this.LocalSeat)

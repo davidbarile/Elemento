@@ -19,6 +19,7 @@ namespace Elemento.Networking.Supabase
 
     internal sealed class SupabaseHttpClient
     {
+        private const int TimeoutSeconds = 30;
         private readonly MonoBehaviour runner;
 
         public SupabaseHttpClient(MonoBehaviour inRunner)
@@ -26,11 +27,22 @@ namespace Elemento.Networking.Supabase
             this.runner = inRunner != null ? inRunner : throw new ArgumentNullException(nameof(inRunner));
         }
 
-        public Task<string> SendAsync(string inPath, string inBody, string inAccessToken, string inMethod = "POST")
+        public async Task<string> SendAsync(string inPath, string inBody, string inAccessToken, string inMethod = "POST")
         {
             var completion = new TaskCompletionSource<string>();
-            this.runner.StartCoroutine(Send(inPath, inBody, inAccessToken, inMethod, completion));
-            return completion.Task;
+            try
+            {
+                this.runner.StartCoroutine(Send(inPath, inBody, inAccessToken, inMethod, completion));
+            }
+            catch (Exception error)
+            {
+                completion.TrySetException(error);
+            }
+
+            Task finished = await Task.WhenAny(completion.Task, Task.Delay((TimeoutSeconds + 5) * 1000));
+            if (finished != completion.Task)
+                throw new TimeoutException("Supabase HTTP request timed out.");
+            return await completion.Task;
         }
 
         private IEnumerator Send(string inPath, string inBody, string inAccessToken, string inMethod, TaskCompletionSource<string> inCompletion)
@@ -38,7 +50,7 @@ namespace Elemento.Networking.Supabase
             using (var request = new UnityWebRequest(SupabaseConfig.Url + inPath, inMethod))
             {
                 request.downloadHandler = new DownloadHandlerBuffer();
-                request.timeout = 30;
+                request.timeout = TimeoutSeconds;
                 if (inBody != null)
                     request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(inBody));
                 request.SetRequestHeader("Content-Type", "application/json");

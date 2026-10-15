@@ -11365,8 +11365,8 @@ MonoBehaviour:
   - Enter a six-character invite code
   - "Introduce un c\xF3digo de seis caracteres"
   OnlineSendingTurn:
-  - "Sending turn\u2026"
-  - "Enviando turno\u2026"
+  - Sending turn...
+  - Enviando turno...
   OnlineTurnRetry:
   - Couldn't send turn. Press End Turn to retry.
   - No se pudo enviar el turno. Pulsa Fin de turno para reintentar.

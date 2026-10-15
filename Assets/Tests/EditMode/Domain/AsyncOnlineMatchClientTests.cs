@@ -148,6 +148,28 @@ namespace Elemento.Domain.Tests
             Assert.That(client.TurnBuffer.HasMoves, Is.False);
         }
 
+        [Test]
+        public async Task SubmitTurn_DisposedBeforeResponseReportsFailure()
+        {
+            var transport = new SubmitRaceTransport();
+            var client = new OnlineMatchClient(transport, "match", 1);
+            await client.RefreshAsync();
+            Exception failure = null;
+
+            Task submit = client.SubmitTurnAsync(CreateEndTurn(0), null, inError => failure = inError);
+            client.Dispose();
+            transport.SubmitCompletion.SetResult(new SubmitTurnResultData
+            {
+                Accepted = true,
+                NewRevision = 1,
+                MoveCount = 1,
+                View = CreateView(1)
+            });
+            await submit;
+
+            Assert.That(failure, Is.TypeOf<ObjectDisposedException>());
+        }
+
         private static MatchSeatViewData CreateView(int inRevision)
         {
             var view = new PlayerViewData

@@ -935,6 +935,7 @@ public class GameManager : MonoBehaviour
             bool isCommittedRetry = HasOnlineTurnNonce(inUpdate.Moves,
                 this.onlineClient.TurnBuffer.ClientNonce);
             this.onlineClient.DiscardBufferedTurn();
+            this.isOnlineMovePending = false;
             if (!isCommittedRetry)
                 UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(LOC.IN.OnlineTurnRejected));
             HandleOnlineViewChanged(inUpdate.View);
@@ -1407,6 +1408,8 @@ public class GameManager : MonoBehaviour
         this.isOnlineMovePending = false;
         if (!this.IsOnline || this.onlineClient == null)
             return;
+
+        RefreshTurnAndMoveCountDisplay();
 
         if (inResult == null || !inResult.Accepted)
         {
