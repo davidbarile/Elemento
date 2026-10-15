@@ -17,6 +17,15 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public void WaitingGetView_ParsesExplicitNullView()
+        {
+            var result = SupabaseMatchResponseData.Parse("{\"match\":{\"id\":\"match-1\",\"status\":\"waiting\",\"revision\":0},\"view\":null}");
+
+            Assert.That(result.Match.Status, Is.EqualTo("waiting"));
+            Assert.That(result.View, Is.Null);
+        }
+
+        [Test]
         public void JoinAndGetView_KeepFairViewEnvelopeAndSeat()
         {
             const string view = "{\"ProtocolVersion\":1,\"MatchId\":\"match-1\",\"Seat\":1,\"View\":{\"Revision\":12,\"CurrentPlayerId\":1}}";
@@ -53,6 +62,7 @@ namespace Elemento.Domain.Tests
             Assert.Throws<FormatException>(() => SupabaseMatchResponseData.Parse("{\"error\":\"missing profile\"}"));
             Assert.Throws<FormatException>(() => SupabaseSessionData.Parse("{\"access_token\":\"access\"}"));
             Assert.Throws<FormatException>(() => SupabaseMatchResponseData.Parse("{\"match\":{\"id\":\"one\"},\"view\":{\"MatchId\":\"two\",\"View\":{}}}"));
+            Assert.Throws<FormatException>(() => SupabaseMatchResponseData.Parse("{\"match\":{\"id\":\"one\",\"status\":\"active\"},\"view\":null}"));
         }
     }
 }

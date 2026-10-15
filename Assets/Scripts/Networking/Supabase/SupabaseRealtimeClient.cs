@@ -69,13 +69,12 @@ namespace Elemento.Networking.Supabase
             try
             {
                 var view = await this.fetchView();
-                NotifyRevision(view.View.Revision);
+                this.lastFailure = null;
+                if (view != null)
+                    NotifyRevision(view.View.Revision);
             }
-            catch (SupabaseHttpException exception) when (exception.ResponseCode == 404)
-            {
-                // A waiting match has no seat view until a second player joins.
-            }
-            catch (Exception exception) { ReportFailure(exception); }
+            catch (SupabaseHttpException exception) { ReportFailure(exception); }
+            catch (Exception exception) { LogRealtimeFailure("polling", exception); }
         }
 
         private void NotifyRevision(int inRevision)
@@ -120,8 +119,8 @@ namespace Elemento.Networking.Supabase
                         var envelope = NetJson.Deserialize<RealtimeMessageData>(Encoding.UTF8.GetString(message.ToArray()));
                         if (envelope.Event == "phx_reply" && envelope.Payload?.Status == "error")
                         {
-                            ReportFailure(new InvalidOperationException("Supabase Realtime rejected the private channel request."));
-                            continue;
+                            LogRealtimeFailure("subscription", new InvalidOperationException("Supabase Realtime rejected the private channel request."));
+                            return;
                         }
                         if (envelope.Topic == "realtime:match:" + this.matchId && envelope.Event == "broadcast" && envelope.Payload?.Payload != null)
                             NotifyRevision(envelope.Payload.Payload.Revision);
@@ -131,7 +130,7 @@ namespace Elemento.Networking.Supabase
             catch (Exception exception)
             {
                 // Polling remains active when WebSockets or private channel auth fail.
-                ReportFailure(exception);
+                LogRealtimeFailure("connection", exception);
             }
         }
 
@@ -151,7 +150,7 @@ namespace Elemento.Networking.Supabase
             {
                 // Polling remains active after socket loss or disposal.
                 if (!this.disposed)
-                    ReportFailure(exception);
+                    LogRealtimeFailure("heartbeat", exception);
             }
         }
 
@@ -198,8 +197,14 @@ namespace Elemento.Networking.Supabase
                 return;
 
             this.lastFailure = failure;
-            Debug.LogWarning("Supabase realtime fallback: " + inException.Message);
+            Debug.LogWarning("Supabase polling failed after retries: " + inException.Message);
             this.RequestFailed?.Invoke(inException);
+        }
+
+        private void LogRealtimeFailure(string inStage, Exception inException)
+        {
+            if (!this.disposed)
+                Debug.LogWarning("Supabase realtime " + inStage + " failed; polling remains active: " + inException.Message);
         }
 
         public void Dispose()

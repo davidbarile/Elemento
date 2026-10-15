@@ -116,9 +116,10 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     {
         this.client = new OnlineMatchClient(this.transport, inMatch.MatchId, inMatch.Seat);
         this.client.ViewChanged += HandleInitialView;
-        this.transport.StartListening(inMatch.MatchId, "live");
-        // A waiting creator has no seat view yet; polling retries once the opponent joins.
-        _ = this.client.RefreshAsync(null, exception => Debug.LogWarning("Waiting for seat view: " + exception.Message));
+        this.transport.StartListening(inMatch.MatchId, inMatch.Mode);
+        if (inMatch.View == null && inMatch.Status == "waiting")
+            return;
+        _ = this.client.RefreshAsync(null, HandleTransportFailed);
     }
 
     private void HandleInitialView(MatchSeatViewData inView)
@@ -158,12 +159,28 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     private void ShowError(Exception inException)
     {
         Debug.LogWarning("Online lobby failed: " + inException.Message);
-        this.statusText.text = LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineError);
+        string error = LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineError);
+#if UNITY_EDITOR
+        bool includeReason = true;
+#else
+        bool includeReason = Debug.isDebugBuild;
+#endif
+        if (includeReason)
+        {
+            string reason = inException.Message.Replace('\r', ' ').Replace('\n', ' ');
+            if (reason.Length > 80)
+                reason = reason.Substring(0, 77) + "...";
+            error += " (" + reason + ")";
+        }
+        this.statusText.text = error;
     }
 
     private void HandleTransportFailed(Exception inException)
     {
-        ShowError(inException);
+        if (inException is SupabaseHttpException)
+            ShowError(inException);
+        else
+            Debug.LogWarning("Online transport ignored a non-HTTP failure: " + inException.Message);
     }
 
     private void SetBusy(bool inIsBusy)

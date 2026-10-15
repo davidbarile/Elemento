@@ -27,10 +27,10 @@ serve(async (request) => {
 
   const [matchResult, viewResult] = await Promise.all([
     service.from("matches").select(publicMatchFields).eq("id", body.matchId).single(),
-    service.from("match_seat_views").select("view").eq("match_id", body.matchId).eq("seat", player.seat).single(),
+    service.from("match_seat_views").select("view").eq("match_id", body.matchId).eq("seat", player.seat).maybeSingle(),
   ]);
   if (matchResult.error != null) databaseFailure("load match", matchResult.error);
   if (viewResult.error != null) databaseFailure("load seat view", viewResult.error);
 
-  return json({ match: matchResult.data, view: viewResult.data.view });
+  return json({ match: matchResult.data, view: viewResult.data?.view ?? null });
 });

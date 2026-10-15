@@ -10,6 +10,7 @@ namespace Elemento.Networking.Supabase
         public string MatchId;
         public string InviteCode;
         public string Mode;
+        public string Status;
         public int Seat;
         public MatchSeatViewData View;
     }
@@ -55,9 +56,24 @@ namespace Elemento.Networking.Supabase
 
         public async Task<MatchSeatViewData> FetchSeatView(string inMatchId)
         {
-            var response = SupabaseMatchResponseData.Parse(await PostAsync("get-view", "{\"matchId\":" + NetJson.Serialize(inMatchId) + "}"));
-            if (response.View == null || response.View.MatchId != inMatchId)
-                throw new FormatException("Missing or mismatched seat view.");
+            SupabaseMatchResponseData response = null;
+            for (int attempt = 1; attempt <= 3; ++attempt)
+            {
+                try
+                {
+                    response = SupabaseMatchResponseData.Parse(await PostAsync("get-view", "{\"matchId\":" + NetJson.Serialize(inMatchId) + "}"));
+                    break;
+                }
+                catch (SupabaseHttpException) when (attempt < 3)
+                {
+                    await Task.Delay(500 * attempt);
+                }
+            }
+
+            if (response.View == null)
+                return null;
+            if (response.View.MatchId != inMatchId)
+                throw new FormatException("Mismatched seat view.");
             return response.View;
         }
 
@@ -99,6 +115,7 @@ namespace Elemento.Networking.Supabase
                 MatchId = inResponse.Match.Id,
                 InviteCode = inResponse.Match.InviteCode,
                 Mode = inResponse.Match.Mode,
+                Status = inResponse.Match.Status,
                 Seat = inResponse.Seat,
                 View = inResponse.View
             };

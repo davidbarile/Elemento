@@ -14,6 +14,8 @@ namespace Elemento.Domain.Net
             var result = NetJson.Deserialize<SupabaseMatchResponseData>(inJson);
             if (result == null || result.Match == null || string.IsNullOrEmpty(result.Match.Id))
                 throw new FormatException("Missing match in Supabase response.");
+            if (result.View == null && result.Match.Status != "waiting")
+                throw new FormatException("Missing Supabase seat view for a non-waiting match.");
             if (result.View != null && (result.View.View == null || result.View.MatchId != result.Match.Id))
                 throw new FormatException("Invalid Supabase seat view.");
             return result;

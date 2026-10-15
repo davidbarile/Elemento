@@ -131,6 +131,17 @@ call_function() {
     -d "$body"
 }
 
+call_function_with_status() {
+  local name=$1 token=$2 body=$3
+  curl --silent --show-error \
+    -X POST "$SUPABASE_URL/functions/v1/$name" \
+    -H "apikey: $ANON_KEY" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d "$body" \
+    --write-out $'\n%{http_code}'
+}
+
 echo "Creating two anonymous users..."
 auth0=$(signup)
 auth1=$(signup)
@@ -148,8 +159,15 @@ match_id=$(printf '%s' "$created" | json_raw match.id)
 invite_code=$(printf '%s' "$created" | json_raw match.invite_code)
 [[ -n $match_id && -n $invite_code ]]
 
-call_function join-match "$token1" "$(make_json join "$invite_code")" >/dev/null
 view_body=$(make_json view "$match_id")
+waiting_response=$(call_function_with_status get-view "$token0" "$view_body")
+waiting_status=${waiting_response##*$'\n'}
+waiting_view=${waiting_response%$'\n'*}
+[[ $waiting_status == 200 ]] || { echo "waiting get-view failed with HTTP $waiting_status" >&2; exit 1; }
+printf '%s' "$waiting_view" | assert_true match.status waiting
+printf '%s' "$waiting_view" | assert_true view null
+
+call_function join-match "$token1" "$(make_json join "$invite_code")" >/dev/null
 view0=$(call_function get-view "$token0" "$view_body")
 view1=$(call_function get-view "$token1" "$view_body")
 printf '%s' "$view0" | assert_view_safe

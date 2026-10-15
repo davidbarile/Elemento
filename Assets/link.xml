@@ -1,0 +1,6 @@
+<linker>
+  <assembly fullname="Elemento.Domain" preserve="all" />
+  <assembly fullname="Assembly-CSharp">
+    <type fullname="Elemento.Networking.Supabase.*" preserve="all" />
+  </assembly>
+</linker>
