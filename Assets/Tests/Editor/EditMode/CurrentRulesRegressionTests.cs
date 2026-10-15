@@ -90,6 +90,69 @@ public class CurrentRulesRegressionTests
         Assert.That(cardsManager.SpawnedCards, Is.Empty);
     }
 
+    [Test]
+    public void RetireForDestruction_DetachesViewBeforeSameFrameHierarchyRefresh()
+    {
+        var cardsManager = CreateComponent<CardsManager>("Cards Manager");
+        CardsManager.IN = cardsManager;
+        var deckObject = CreateGameObject("Deck");
+        var deck = deckObject.AddComponent<UICardCell>();
+        deck.CardHolder = deckObject.transform;
+        var card = CreateComponent<Card>("Card", deck.CardHolder);
+        card.Data = new CardData();
+        cardsManager.SpawnedCards.Add(card);
+        deck.RefreshCellsList();
+
+        var retire = typeof(Card).GetMethod("RetireForDestruction",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(retire, Is.Not.Null);
+        Assert.That(retire.Invoke(card, new object[] { false }), Is.EqualTo(true));
+        deck.RefreshCellsList();
+
+        Assert.That(deck.Cards, Is.Empty);
+        Assert.That(card.IsDestroyed, Is.True);
+        Assert.That(card.transform.parent, Is.Null);
+        Assert.That(card.gameObject.activeSelf, Is.False);
+        Assert.That(cardsManager.SpawnedCards, Is.Empty);
+        Assert.That(cardsManager.ShuffledCardDatas, Is.Empty);
+        Assert.That(cardsManager.PowerCardDatas, Is.Empty);
+    }
+
+    [Test]
+    public void CardRestore_MultipleImmediateCyclesDoNotAccumulateViewsOrPools()
+    {
+        var cardsManager = CreateComponent<CardsManager>("Cards Manager");
+        CardsManager.IN = cardsManager;
+        var deckObject = CreateGameObject("Deck");
+        var deck = deckObject.AddComponent<UICardCell>();
+        deck.CardHolder = deckObject.transform;
+        var shuffledCardData = new CardData { Name = "Shuffled" };
+        var powerCardData = new CardData { Name = "Power", IsPowerCard = true };
+
+        for (int i = 0; i < 3; ++i)
+        {
+            cardsManager.RestoreCardDataPools(new[] { shuffledCardData }, new[] { powerCardData });
+            var card = CreateComponent<Card>("Restored Card " + i, deck.CardHolder);
+            card.Data = shuffledCardData;
+            SetField(card, "<Id>k__BackingField", "restored-card");
+            cardsManager.SpawnedCards.Add(card);
+            deck.RefreshCellsList();
+
+            Assert.That(deck.Cards, Has.Count.EqualTo(1));
+            Assert.That(cardsManager.SpawnedCards, Has.Count.EqualTo(1));
+            Assert.That(cardsManager.ShuffledCardDatas, Has.Count.EqualTo(1));
+            Assert.That(cardsManager.PowerCardDatas, Has.Count.EqualTo(1));
+
+            cardsManager.DestroyAllCards(false);
+            deck.RefreshCellsList();
+
+            Assert.That(deck.Cards, Is.Empty);
+            Assert.That(cardsManager.SpawnedCards, Is.Empty);
+            Assert.That(cardsManager.ShuffledCardDatas, Has.Count.EqualTo(1));
+            Assert.That(cardsManager.PowerCardDatas, Has.Count.EqualTo(1));
+        }
+    }
+
     [TestCase(Card.ECardType.Heal)]
     [TestCase(Card.ECardType.Freeze)]
     [TestCase(Card.ECardType.Lightning)]

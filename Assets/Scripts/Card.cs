@@ -1,5 +1,6 @@
 using System;
 using CardInstanceData = Elemento.Domain.CardInstanceData;
+using DG.Tweening;
 using JoshH.UI;
 using Lean.Pool;
 using Sirenix.OdinInspector;
@@ -76,6 +77,7 @@ public class Card : MonoBehaviour
     public Transform CardBackParent;
 
     private bool isDestroyed;
+    public bool IsDestroyed => this.isDestroyed;
 
     public void Configure(CardData inCardData, string inId = null)
     {
@@ -497,23 +499,48 @@ public class Card : MonoBehaviour
 
     public void DestroySelf()
     {
+        DestroySelf(true);
+    }
+
+    public void DestroySelf(bool inShouldRecycleData)
+    {
+        if (!RetireForDestruction(inShouldRecycleData)) return;
+
+#if UNITY_EDITOR
+        if (!Application.isPlaying)
+            DestroyImmediate(this.gameObject);
+        else
+#endif
+        Destroy(this.gameObject);
+    }
+
+    private bool RetireForDestruction(bool inShouldRecycleData)
+    {
+        if (this.isDestroyed) return false;
+
+        this.isDestroyed = true;
+        this.transform.DOKill();
+
         if (this.CardBack != null)
             LeanPool.Despawn(this.CardBack);
 
         CardsManager.IN.SpawnedCards.Remove(this);
 
-        if (this.Data.IsPowerCard)
-            CardsManager.IN.PowerCardDatas.Add(this.Data);
-        else
-            CardsManager.IN.ShuffledCardDatas.Add(this.Data);
+        if (inShouldRecycleData)
+        {
+            if (this.Data.IsPowerCard)
+                CardsManager.IN.PowerCardDatas.Add(this.Data);
+            else
+                CardsManager.IN.ShuffledCardDatas.Add(this.Data);
+        }
 
         Card.OnLightningDamageChanged -= UpdateLightningDamage;
         Card.OnFreezeHealthChanged -= UpdateFreezeHealth;
         Card.OnZoneHealthChanged -= UpdateZoneHealth;
         SkinManager.OnSkinChanged -= SetShieldMultBgColors;
 
-        this.isDestroyed = true;
-
-        Destroy(this.gameObject);
+        this.transform.SetParent(null);
+        this.gameObject.SetActive(false);
+        return true;
     }
 }

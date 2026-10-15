@@ -82,6 +82,43 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public void Buffer_MultiplePopsRebuildMirrorWithoutDuplicatingCards()
+        {
+            var state = new MatchFactory().Create(63,
+                new RulesConfigData
+                {
+                    NumCardsToDeal = 4,
+                    MovesPerTurn = 4,
+                    TotalPointsRequiredToWin = 10000
+                },
+                OnlineProtocolTests.CreateDeckDefinitionsBySeat(), "match");
+            var simulator = new GameSimulator();
+            var buffer = new OnlineTurnBuffer();
+            buffer.Begin(FairView.BuildSeatView(state, 0));
+            List<MoveData> moves = new();
+
+            for (int i = 0; i < 3; ++i)
+            {
+                var move = simulator.GetLegalMoves(state, 0)
+                    .First(inMove => inMove.Type == EMoveType.PlayCard).Clone();
+                moves.Add(move);
+                Assert.That(buffer.TryAppend(move, out string appendReason), Is.True, appendReason);
+                simulator.ApplyMove(state, move);
+            }
+
+            for (int i = moves.Count - 1; i >= 0; --i)
+            {
+                Assert.That(buffer.TryPop(out MoveData popped, out string popReason), Is.True, popReason);
+                Assert.That(popped.CardId, Is.EqualTo(moves[i].CardId));
+                Assert.That(buffer.Moves.Select(inMove => inMove.CardId),
+                    Is.EqualTo(moves.Take(i).Select(inMove => inMove.CardId)));
+            }
+
+            Assert.That(buffer.Moves, Is.Empty);
+            Assert.That(buffer.TryAppend(moves[0], out string replayReason), Is.True, replayReason);
+        }
+
+        [Test]
         public void Buffer_AcceptsTerminalMarkerAfterMoveBudgetAutoEndsTurn()
         {
             var state = new MatchFactory().Create(57,

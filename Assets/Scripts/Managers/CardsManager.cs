@@ -383,7 +383,21 @@ public class CardsManager : MonoBehaviour
         }
     }
 
+    public void RestoreCardDataPools(IEnumerable<CardData> inShuffledCardDatas,
+        IEnumerable<CardData> inPowerCardDatas)
+    {
+        this.ShuffledCardDatas.Clear();
+        this.ShuffledCardDatas.AddRange(inShuffledCardDatas);
+        this.PowerCardDatas.Clear();
+        this.PowerCardDatas.AddRange(inPowerCardDatas);
+    }
+
     public void DestroyAllCards()
+    {
+        DestroyAllCards(true);
+    }
+
+    public void DestroyAllCards(bool inShouldRecycleData)
     {
         while (this.SpawnedCards.Count > 0)
         {
@@ -391,7 +405,7 @@ public class CardsManager : MonoBehaviour
             this.SpawnedCards.RemoveAt(0);
 
             if (card != null)
-                card.DestroySelf();
+                card.DestroySelf(inShouldRecycleData);
         }
     }
 }

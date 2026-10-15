@@ -317,6 +317,11 @@ public class GameManager : MonoBehaviour
 
     public void CleanUpGameState()
     {
+        CleanUpGameState(true);
+    }
+
+    private void CleanUpGameState(bool inShouldRecycleCards)
+    {
         this.isDoingCleanup = true;
         try
         {
@@ -331,7 +336,7 @@ public class GameManager : MonoBehaviour
                 board.Reset();
             }
 
-            CardsManager.IN.DestroyAllCards();
+            CardsManager.IN.DestroyAllCards(inShouldRecycleCards);
 
             foreach (var board in this.PlayerBoards)
             {
@@ -2143,7 +2148,7 @@ public class GameManager : MonoBehaviour
         BoardStateManager.IsSettingState = true;
         BoardStateManager.IN.CurrentReplayBoardState = inBoardState;
 
-        CleanUpGameState();
+        CleanUpGameState(false);
 
         SetHealthOnAllElementZones();
 
@@ -2160,16 +2165,12 @@ public class GameManager : MonoBehaviour
 
         this.DiscardZone.SetActive(SettingsManager.IN.DiscardMode == EDiscardMode.AllowDiscard);
 
+        CardsManager.IN.RestoreCardDataPools(inBoardState.ShuffledDeck, inBoardState.PowerDeck);
+
         if (this.IsOnline)
             CardsManager.IN.SetOnlineDeckCount(this.onlineClient.CurrentView.View.DeckCount);
         else
-        {
-            CardsManager.IN.ShuffledCardDatas.Clear();
-            CardsManager.IN.ShuffledCardDatas.AddRange(inBoardState.ShuffledDeck);
-            CardsManager.IN.PowerCardDatas.Clear();
-            CardsManager.IN.PowerCardDatas.AddRange(inBoardState.PowerDeck);
             RestoreDeckState(inBoardState.Deck);
-        }
 
         for (int i = 0; i < inBoardState.Players.Count; i++)
         {
@@ -2342,7 +2343,87 @@ public class GameManager : MonoBehaviour
             ShowUndoBlockedHint(this.undoHistory.Checkpoint);
         if (this.IsOnline)
             RefreshOnlineControls();
+        ValidateUndoCardState(inBoardState);
         RefreshUndoControls();
+    }
+
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    [System.Diagnostics.Conditional("DEVELOPMENT_BUILD")]
+    private void ValidateUndoCardState(BoardState inBoardState)
+    {
+        List<string> expectedIds = new();
+        AddCardIds(expectedIds, inBoardState.Deck.CardIds);
+        foreach (var player in inBoardState.Players)
+        {
+            AddCardIds(expectedIds, player.Hand.CardIds);
+            foreach (var zone in player.ElementZones)
+                AddCardIds(expectedIds, zone.CardIds);
+        }
+
+        int expectedAnonymousCount = inBoardState.ShuffledDeck.Count + inBoardState.PowerDeck.Count;
+        List<string> logicalIds = new();
+        AddCardIds(logicalIds, this.Deck.Cards);
+        foreach (var playerBoard in this.PlayerBoards)
+        {
+            foreach (var cell in playerBoard.Hand.CardCells)
+                AddCardIds(logicalIds, cell.Cards);
+            foreach (var zone in playerBoard.ElementZones)
+                AddCardIds(logicalIds, zone.CardCell.Cards);
+        }
+        AddCardIds(logicalIds, GetLiveCards(this.DiscardZoneTransform));
+        AddCardIds(logicalIds, GetLiveCards(this.DiscardToEndTurnZoneTransform));
+
+        int actualAnonymousCount = CardsManager.IN.ShuffledCardDatas.Count + CardsManager.IN.PowerCardDatas.Count;
+        if (!Elemento.Domain.CardIdentityValidator.TryValidate(expectedIds, expectedAnonymousCount,
+            logicalIds, actualAnonymousCount, out string logicalError))
+        {
+            Debug.LogError("Undo card ownership invariant failed: " + logicalError);
+        }
+
+        List<string> registryIds = new();
+        AddCardIds(registryIds, CardsManager.IN.SpawnedCards);
+        if (!Elemento.Domain.CardIdentityValidator.TryValidate(expectedIds, 0,
+            registryIds, 0, out string registryError))
+        {
+            Debug.LogError("Undo CardsManager invariant failed: " + registryError);
+        }
+
+        List<string> viewIds = new();
+        foreach (var card in Resources.FindObjectsOfTypeAll<Card>())
+        {
+            if (card == null || card.IsDestroyed || !card.gameObject.scene.IsValid()
+                || string.IsNullOrEmpty(card.Id))
+                continue;
+            viewIds.Add(card.Id);
+        }
+
+        if (!Elemento.Domain.CardIdentityValidator.TryValidate(expectedIds, 0,
+            viewIds, 0, out string viewError))
+        {
+            Debug.LogError("Undo card GameObject invariant failed: " + viewError);
+        }
+    }
+
+    private static void AddCardIds(List<string> inIds, IEnumerable<string> inCardIds)
+    {
+        if (inCardIds == null) return;
+        foreach (string cardId in inCardIds)
+            inIds.Add(cardId);
+    }
+
+    private static void AddCardIds(List<string> inIds, IEnumerable<Card> inCards)
+    {
+        if (inCards == null) return;
+        foreach (var card in inCards)
+        {
+            if (card != null && !card.IsDestroyed)
+                inIds.Add(card.Id);
+        }
+    }
+
+    private static Card[] GetLiveCards(Transform inParent)
+    {
+        return inParent == null ? Array.Empty<Card>() : inParent.GetComponentsInChildren<Card>(true);
     }
 
     private bool IsUndoRecordable()
