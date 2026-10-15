@@ -70,6 +70,7 @@ namespace Elemento.Domain
         public int MaxCardsPerZone = 20;
         public int CardSpawnBatchSize = 10;
         public bool AllowSelectPowerCardType = true;
+        public bool AllowUndo;
         public EDiscardMode DiscardMode = EDiscardMode.AllowDiscard;
 
         public RulesConfigData Clone()
@@ -88,6 +89,7 @@ namespace Elemento.Domain
                 MaxCardsPerZone = this.MaxCardsPerZone,
                 CardSpawnBatchSize = this.CardSpawnBatchSize,
                 AllowSelectPowerCardType = this.AllowSelectPowerCardType,
+                AllowUndo = this.AllowUndo,
                 DiscardMode = this.DiscardMode
             };
         }

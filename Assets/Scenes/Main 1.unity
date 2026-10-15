@@ -11277,6 +11277,9 @@ MonoBehaviour:
   OnlineOpponentLeft:
   - The other player has left the game
   - El otro jugador ha abandonado la partida
+  OnlineMatchSettings:
+  - The creator's gameplay settings apply to both players.
+  - Los ajustes de juego del creador se aplican a ambos jugadores.
   Undo:
   - Undo
   - Deshacer

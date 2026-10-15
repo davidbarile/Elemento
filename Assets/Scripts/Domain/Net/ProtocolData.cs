@@ -57,6 +57,7 @@ namespace Elemento.Domain.Net
     {
         public string Status;
         public int MatchRevision;
+        public RulesConfigData Rules;
         public MatchSeatViewData View;
         public List<MoveLogEntryData> Moves = new();
     }

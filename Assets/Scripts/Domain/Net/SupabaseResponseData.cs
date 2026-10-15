@@ -29,6 +29,7 @@ namespace Elemento.Domain.Net
             {
                 Status = this.Match.Status,
                 MatchRevision = this.Match.Revision,
+                Rules = this.Match.Rules ?? this.View?.View?.Rules,
                 View = this.View
             };
             if (this.Moves == null)
@@ -85,6 +86,7 @@ namespace Elemento.Domain.Net
         [NetJsonName("invite_code")] public string InviteCode;
         [NetJsonName("mode")] public string Mode;
         [NetJsonName("status")] public string Status;
+        [NetJsonName("rules")] public RulesConfigData Rules;
         [NetJsonName("revision")] public int Revision;
     }
 

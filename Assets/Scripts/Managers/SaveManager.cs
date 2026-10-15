@@ -188,23 +188,24 @@ public class SaveManager : MonoBehaviour
 
     private void SetPlayerDataFromSettings()
     {
+        var localRules = SettingsManager.IN.GetLocalGameplayRules();
         this.playerData.ShouldShowSplashScreen = SettingsManager.IN.ShouldShowSplashScreen;
         this.playerData.ShouldAutoDealHand = SettingsManager.IN.ShouldAutoDealHand;
-        this.playerData.AllowSelectPowerCardType = SettingsManager.IN.AllowSelectPowerCardType;
-        this.playerData.AllowUndo = SettingsManager.IN.AllowUndo;
+        this.playerData.AllowSelectPowerCardType = localRules.AllowSelectPowerCardType;
+        this.playerData.AllowUndo = localRules.AllowUndo;
 
         this.playerData.MusicVolume = SettingsManager.IN.MusicVolume;
         this.playerData.EffectsVolume = SettingsManager.IN.EffectsVolume;
 
-        this.playerData.NumCardsToDeal = SettingsManager.IN.NumCardsToDeal;
-        this.playerData.MaxCardsInHand = SettingsManager.IN.MaxCardsInHand;
-        this.playerData.MovesPerTurn = SettingsManager.IN.MovesPerTurn;
-        this.playerData.ElementZoneStartingHealth = SettingsManager.IN.ElementZoneStartingHealth;
-        this.playerData.FrozenZoneHealth = SettingsManager.IN.FrozenZoneHealth;
-        this.playerData.LightningDamage = SettingsManager.IN.LightningDamage;
-        this.playerData.ElementZonePointsRequiredToActivate = SettingsManager.IN.ElementZonePointsRequiredToActivate;
-        this.playerData.TotalPointsRequiredToWin = SettingsManager.IN.TotalPointsRequiredToWin;
-        this.playerData.DiscardMode = (int)SettingsManager.IN.DiscardMode;
+        this.playerData.NumCardsToDeal = localRules.NumCardsToDeal;
+        this.playerData.MaxCardsInHand = localRules.MaxCardsInHand;
+        this.playerData.MovesPerTurn = localRules.MovesPerTurn;
+        this.playerData.ElementZoneStartingHealth = localRules.ElementZoneStartingHealth;
+        this.playerData.FrozenZoneHealth = localRules.FrozenZoneHealth;
+        this.playerData.LightningDamage = localRules.LightningDamage;
+        this.playerData.ElementZonePointsRequiredToActivate = localRules.ElementZonePointsRequiredToActivate;
+        this.playerData.TotalPointsRequiredToWin = localRules.TotalPointsRequiredToWin;
+        this.playerData.DiscardMode = (int)localRules.DiscardMode;
         this.playerData.PlayMode = (int)SettingsManager.IN.PlayMode;
         this.playerData.AiDifficulty = (int)SettingsManager.IN.AiDifficulty;
     }

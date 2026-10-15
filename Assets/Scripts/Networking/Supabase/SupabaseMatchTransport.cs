@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Elemento.Domain;
 using Elemento.Domain.Net;
 using UnityEngine;
 
@@ -11,6 +12,7 @@ namespace Elemento.Networking.Supabase
         public string InviteCode;
         public string Mode;
         public string Status;
+        public RulesConfigData Rules;
         public int Seat;
         public MatchSeatViewData View;
     }
@@ -31,11 +33,15 @@ namespace Elemento.Networking.Supabase
             this.auth = inAuth ?? throw new ArgumentNullException(nameof(inAuth));
         }
 
-        public async Task<SupabaseMatchData> CreateMatch(string inMode)
+        public async Task<SupabaseMatchData> CreateMatch(string inMode, RulesConfigData inRules)
         {
             if (inMode != "live" && inMode != "async")
                 throw new ArgumentException("Match mode must be live or async.", nameof(inMode));
-            var response = SupabaseMatchResponseData.Parse(await PostAsync("create-match", "{\"mode\":" + NetJson.Serialize(inMode) + "}"));
+            if (inRules == null)
+                throw new ArgumentNullException(nameof(inRules));
+            string body = "{\"mode\":" + NetJson.Serialize(inMode)
+                + ",\"rules\":" + NetJson.Serialize(inRules) + "}";
+            var response = SupabaseMatchResponseData.Parse(await PostAsync("create-match", body));
             return ToMatchData(response);
         }
 
@@ -126,6 +132,7 @@ namespace Elemento.Networking.Supabase
                 InviteCode = inResponse.Match.InviteCode,
                 Mode = inResponse.Match.Mode,
                 Status = inResponse.Match.Status,
+                Rules = inResponse.Match.Rules ?? inResponse.View?.View?.Rules,
                 Seat = inResponse.Seat,
                 View = inResponse.View
             };

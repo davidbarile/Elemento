@@ -9,9 +9,11 @@ namespace Elemento.Domain.Tests
         [Test]
         public void CreateMatch_ParsesNestedMetadataAndInviteCode()
         {
-            var result = SupabaseMatchResponseData.Parse("{\"match\":{\"id\":\"match-1\",\"invite_code\":\"ABC234\",\"mode\":\"live\",\"status\":\"waiting\",\"revision\":0},\"seat\":0}");
+            var result = SupabaseMatchResponseData.Parse("{\"match\":{\"id\":\"match-1\",\"invite_code\":\"ABC234\",\"mode\":\"live\",\"status\":\"waiting\",\"rules\":{\"NumCardsToDeal\":4,\"AllowUndo\":true},\"revision\":0},\"seat\":0}");
             Assert.That(result.Match.Id, Is.EqualTo("match-1"));
             Assert.That(result.Match.InviteCode, Is.EqualTo("ABC234"));
+            Assert.That(result.Match.Rules.NumCardsToDeal, Is.EqualTo(4));
+            Assert.That(result.Match.Rules.AllowUndo, Is.True);
             Assert.That(result.Seat, Is.Zero);
             Assert.That(result.View, Is.Null);
         }
@@ -63,11 +65,13 @@ namespace Elemento.Domain.Tests
         [Test]
         public void GetView_ParsesOrderedMoveRowsAndReplayCard()
         {
-            const string json = "{\"match\":{\"id\":\"match-1\",\"status\":\"active\",\"revision\":3},\"view\":{\"MatchId\":\"match-1\",\"Seat\":1,\"View\":{\"Revision\":3}},\"moves\":[{\"revision\":2,\"seat\":0,\"command\":{\"MatchId\":\"match-1\",\"Seat\":0,\"ClientMoveSequence\":1,\"ExpectedRevision\":1,\"ClientNonce\":\"turn-a\",\"Move\":{\"PlayerId\":0,\"Type\":2,\"CardId\":\"bomb-1\"},\"ReplayCard\":{\"Id\":\"bomb-1\",\"DefinitionId\":7,\"Bombs\":[0,0,3,0]}}},{\"revision\":3,\"seat\":0,\"command\":{\"MatchId\":\"match-1\",\"Seat\":0,\"ClientMoveSequence\":2,\"ExpectedRevision\":2,\"ClientNonce\":\"turn-a\",\"Move\":{\"PlayerId\":0,\"Type\":5}}}]}";
+            const string json = "{\"match\":{\"id\":\"match-1\",\"status\":\"active\",\"revision\":3,\"rules\":{\"TotalPointsRequiredToWin\":75,\"AllowUndo\":true}},\"view\":{\"MatchId\":\"match-1\",\"Seat\":1,\"View\":{\"Revision\":3}},\"moves\":[{\"revision\":2,\"seat\":0,\"command\":{\"MatchId\":\"match-1\",\"Seat\":0,\"ClientMoveSequence\":1,\"ExpectedRevision\":1,\"ClientNonce\":\"turn-a\",\"Move\":{\"PlayerId\":0,\"Type\":2,\"CardId\":\"bomb-1\"},\"ReplayCard\":{\"Id\":\"bomb-1\",\"DefinitionId\":7,\"Bombs\":[0,0,3,0]}}},{\"revision\":3,\"seat\":0,\"command\":{\"MatchId\":\"match-1\",\"Seat\":0,\"ClientMoveSequence\":2,\"ExpectedRevision\":2,\"ClientNonce\":\"turn-a\",\"Move\":{\"PlayerId\":0,\"Type\":5}}}]}";
             var update = SupabaseMatchResponseData.Parse(json).ToViewUpdate();
 
             Assert.That(update.Status, Is.EqualTo("active"));
             Assert.That(update.MatchRevision, Is.EqualTo(3));
+            Assert.That(update.Rules.TotalPointsRequiredToWin, Is.EqualTo(75));
+            Assert.That(update.Rules.AllowUndo, Is.True);
             Assert.That(update.Moves, Has.Count.EqualTo(2));
             Assert.That(update.Moves[0].RevisionBefore, Is.EqualTo(1));
             Assert.That(update.Moves[0].RevisionAfter, Is.EqualTo(2));

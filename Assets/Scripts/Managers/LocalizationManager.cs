@@ -271,6 +271,7 @@ public class LocalizationManager : MonoBehaviour
     public string[] OnlineDiscardUnsent = { "Discard your unsent moves?", "¿Descartar tus movimientos no enviados?" };
     public string[] OnlineMoveIllegal = { "That move is not legal in the current online turn.", "Ese movimiento no es válido en el turno en línea actual." };
     public string[] OnlineOpponentLeft = { "The other player has left the game", "El otro jugador ha abandonado la partida" };
+    public string[] OnlineMatchSettings = { "The creator's gameplay settings apply to both players.", "Los ajustes de juego del creador se aplican a ambos jugadores." };
     public string[] AllowUndo = { "Allow Undo", "Permitir deshacer" };
     public string[] UndoPastDraw = { "Can't undo past a draw.", "No puedes deshacer más allá de un robo." };
     public string[] UndoPastReveal = { "Can't undo past revealing a hidden card.", "No puedes deshacer más allá de revelar una carta oculta." };

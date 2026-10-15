@@ -43,7 +43,7 @@ make_json() {
   if [[ $JSON_TOOL == jq ]]; then
     case "$kind" in
       profile) jq -cn --arg id "$1" --arg username "$2" '[{id:$id,username:$username}]' ;;
-      create) jq -cn '{mode:"live"}' ;;
+      create) jq -cn '{mode:"live",rules:{NumCardsToDeal:4,MaxCardsInHand:9,TotalPointsRequiredToWin:75,AllowUndo:true}}' ;;
       join) jq -cn --arg inviteCode "$1" '{inviteCode:$inviteCode}' ;;
       view) jq -cn --arg matchId "$1" '{matchId:$matchId}' ;;
       view_log) jq -cn --arg matchId "$1" --argjson sinceRevision "$2" '{matchId:$matchId,sinceRevision:$sinceRevision}' ;;
@@ -53,7 +53,7 @@ make_json() {
     python3 -c 'import json,sys
 kind=sys.argv[1]; a=sys.argv[2:]
 if kind=="profile": value=[{"id":a[0],"username":a[1]}]
-elif kind=="create": value={"mode":"live"}
+elif kind=="create": value={"mode":"live","rules":{"NumCardsToDeal":4,"MaxCardsInHand":9,"TotalPointsRequiredToWin":75,"AllowUndo":True}}
 elif kind=="join": value={"inviteCode":a[0]}
 elif kind=="view": value={"matchId":a[0]}
 elif kind=="view_log": value={"matchId":a[0],"sinceRevision":int(a[1])}
@@ -211,6 +211,8 @@ created=$(call_function create-match "$token0" "$(make_json create)")
 match_id=$(printf '%s' "$created" | json_raw match.id)
 invite_code=$(printf '%s' "$created" | json_raw match.invite_code)
 [[ -n $match_id && -n $invite_code ]]
+printf '%s' "$created" | assert_true match.rules.TotalPointsRequiredToWin 75
+printf '%s' "$created" | assert_true match.rules.AllowUndo true
 
 view_body=$(make_json view "$match_id")
 waiting_response=$(call_function_with_status get-view "$token0" "$view_body")
@@ -218,11 +220,20 @@ waiting_status=${waiting_response##*$'\n'}
 waiting_view=${waiting_response%$'\n'*}
 [[ $waiting_status == 200 ]] || { echo "waiting get-view failed with HTTP $waiting_status" >&2; exit 1; }
 printf '%s' "$waiting_view" | assert_true match.status waiting
+printf '%s' "$waiting_view" | assert_true match.rules.TotalPointsRequiredToWin 75
+printf '%s' "$waiting_view" | assert_true match.rules.AllowUndo true
 printf '%s' "$waiting_view" | assert_true view null
 
-call_function join-match "$token1" "$(make_json join "$invite_code")" >/dev/null
+joined=$(call_function join-match "$token1" "$(make_json join "$invite_code")")
+printf '%s' "$joined" | assert_true match.rules.TotalPointsRequiredToWin 75
+printf '%s' "$joined" | assert_true match.rules.AllowUndo true
+printf '%s' "$joined" | assert_true view.View.Rules.TotalPointsRequiredToWin 75
 view0=$(call_function get-view "$token0" "$view_body")
 view1=$(call_function get-view "$token1" "$view_body")
+printf '%s' "$view0" | assert_true match.rules.TotalPointsRequiredToWin 75
+printf '%s' "$view1" | assert_true match.rules.TotalPointsRequiredToWin 75
+printf '%s' "$view0" | assert_true view.View.Rules.AllowUndo true
+printf '%s' "$view1" | assert_true view.View.Rules.AllowUndo true
 printf '%s' "$view0" | assert_view_safe
 printf '%s' "$view1" | assert_view_safe
 

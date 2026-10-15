@@ -82,9 +82,11 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         {
             this.transport = new SupabaseMatchTransport(this, this.auth);
             this.transport.RequestFailed += HandleTransportFailed;
-            var match = await this.transport.CreateMatch("live");
+            var rules = UnityDomainMapper.CreateRules(SettingsManager.IN, GameManager.IN.PlayerBoards,
+                CardsManager.IN.CardSpawnBatchSize);
+            var match = await this.transport.CreateMatch("live", rules);
             this.inviteCode = match.InviteCode;
-            this.statusText.text = string.Format(LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineWaiting), this.inviteCode);
+            this.statusText.text = GetWaitingText();
             StartMatch(match);
         }
         catch (Exception exception) { ReleaseMatch(); ShowError(exception); }
@@ -114,6 +116,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
 
     private void StartMatch(SupabaseMatchData inMatch)
     {
+        // TODO: Support optional per-player handicap settings separately from these shared match rules.
+        SettingsManager.IN.ApplyMatchRules(inMatch.Rules ?? inMatch.View?.View?.Rules);
         this.client = new OnlineMatchClient(this.transport, inMatch.MatchId, inMatch.Seat);
         this.client.ViewChanged += HandleInitialView;
         this.transport.StartListening(inMatch.MatchId, inMatch.Mode);
@@ -154,6 +158,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             this.transport.Dispose();
         }
         this.transport = null;
+        SettingsManager.IN?.ClearMatchRules();
     }
 
     private void ShowError(Exception inException)
@@ -209,6 +214,13 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.joinText.text = LocalizationManager.GetOnlineText(loc.OnlineJoinMatch);
         this.backText.text = LocalizationManager.GetOnlineText(loc.OnlineBack);
         if (!string.IsNullOrEmpty(this.inviteCode))
-            this.statusText.text = string.Format(LocalizationManager.GetOnlineText(loc.OnlineWaiting), this.inviteCode);
+            this.statusText.text = GetWaitingText();
+    }
+
+    private string GetWaitingText()
+    {
+        string waiting = string.Format(LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineWaiting),
+            this.inviteCode);
+        return waiting + "\n" + LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineMatchSettings);
     }
 }

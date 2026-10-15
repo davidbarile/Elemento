@@ -1,4 +1,6 @@
 using UnityEngine;
+using DomainDiscardMode = Elemento.Domain.EDiscardMode;
+using DomainRulesConfigData = Elemento.Domain.RulesConfigData;
 
 public class SettingsManager : MonoBehaviour
 {
@@ -41,6 +43,7 @@ public class SettingsManager : MonoBehaviour
     private EPlayMode playMode;
     private EAiDifficulty aiDifficulty;
     private bool allowUndo;
+    private DomainRulesConfigData localGameplayRules;
 
     //settings
     public bool ShouldShowSplashScreen;
@@ -105,5 +108,63 @@ public class SettingsManager : MonoBehaviour
         this.PlayMode = this.playMode;
         this.AiDifficulty = this.aiDifficulty;
         this.AllowUndo = this.allowUndo;
+    }
+
+    public DomainRulesConfigData GetLocalGameplayRules()
+    {
+        return (this.localGameplayRules ?? CreateGameplayRules()).Clone();
+    }
+
+    public void ApplyMatchRules(DomainRulesConfigData inRules)
+    {
+        if (inRules == null)
+            return;
+
+        this.localGameplayRules ??= CreateGameplayRules();
+        SetGameplayRules(inRules);
+    }
+
+    public void ClearMatchRules()
+    {
+        if (this.localGameplayRules == null)
+            return;
+
+        SetGameplayRules(this.localGameplayRules);
+        this.localGameplayRules = null;
+    }
+
+    private DomainRulesConfigData CreateGameplayRules()
+    {
+        return new DomainRulesConfigData
+        {
+            NumCardsToDeal = this.NumCardsToDeal,
+            MaxCardsInHand = this.MaxCardsInHand,
+            MovesPerTurn = this.MovesPerTurn,
+            ElementZoneStartingHealth = this.ElementZoneStartingHealth,
+            FrozenZoneHealth = this.FrozenZoneHealth,
+            LightningDamage = this.LightningDamage,
+            ElementZonePointsRequiredToActivate = this.ElementZonePointsRequiredToActivate,
+            TotalPointsRequiredToWin = this.TotalPointsRequiredToWin,
+            FrozenZonesMeltAmountPerTurn = this.FrozenZonesMeltAmountPerTurn,
+            AllowSelectPowerCardType = this.AllowSelectPowerCardType,
+            AllowUndo = this.AllowUndo,
+            DiscardMode = (DomainDiscardMode)this.DiscardMode
+        };
+    }
+
+    private void SetGameplayRules(DomainRulesConfigData inRules)
+    {
+        this.NumCardsToDeal = inRules.NumCardsToDeal;
+        this.MaxCardsInHand = inRules.MaxCardsInHand;
+        this.MovesPerTurn = inRules.MovesPerTurn;
+        this.ElementZoneStartingHealth = inRules.ElementZoneStartingHealth;
+        this.FrozenZoneHealth = inRules.FrozenZoneHealth;
+        this.LightningDamage = inRules.LightningDamage;
+        this.ElementZonePointsRequiredToActivate = inRules.ElementZonePointsRequiredToActivate;
+        this.TotalPointsRequiredToWin = inRules.TotalPointsRequiredToWin;
+        this.FrozenZonesMeltAmountPerTurn = inRules.FrozenZonesMeltAmountPerTurn;
+        this.AllowSelectPowerCardType = inRules.AllowSelectPowerCardType;
+        this.AllowUndo = inRules.AllowUndo;
+        this.DiscardMode = (EDiscardMode)inRules.DiscardMode;
     }
 }

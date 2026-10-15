@@ -79,6 +79,7 @@ export async function requireProfile(service: SupabaseClient, userId: string): P
 export function rulesFrom(value: unknown): RulesConfigData {
   if (value == null) return new RulesConfigData();
   if (typeof value !== "object" || Array.isArray(value)) throw new HttpError(400, "invalid rules");
+  if ("AllowUndo" in value && typeof value.AllowUndo !== "boolean") throw new HttpError(400, "invalid rules");
   return Object.assign(new RulesConfigData(), value);
 }
 

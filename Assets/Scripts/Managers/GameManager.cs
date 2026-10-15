@@ -939,6 +939,8 @@ public class GameManager : MonoBehaviour
 
     private void HandleOnlineViewUpdate(OnlineViewUpdateData inUpdate)
     {
+        if (inUpdate?.Rules != null)
+            SettingsManager.IN.ApplyMatchRules(inUpdate.Rules);
         if (!this.IsOnline || this.onlineClient == null || inUpdate?.View?.View == null)
             return;
         if (inUpdate.Status == "abandoned")

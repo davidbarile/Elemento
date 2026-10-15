@@ -47,6 +47,7 @@ public static class UnityDomainMapper
             MaxCardsPerZone = maxCardsPerZone,
             CardSpawnBatchSize = inCardSpawnBatchSize,
             AllowSelectPowerCardType = inSettings.AllowSelectPowerCardType,
+            AllowUndo = inSettings.AllowUndo,
             DiscardMode = (DomainDiscardMode)inSettings.DiscardMode
         };
     }
