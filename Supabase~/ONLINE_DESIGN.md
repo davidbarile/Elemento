@@ -29,11 +29,27 @@ snapshots (JSON) from seeded AI self-play, and a Deno test replays them in the T
 match byte-for-byte. Revisit C (.NET WASM) if the port proves costly. D is rejected because the
 seed/deck order would be visible to the host and async play needs an always-on authority.
 
-Flow of a move: client sends `MoveCommandData` -> Edge Function (auth'd user -> seat via
-`match_players`) -> load `match_secrets.state` -> validate seat/turn/expectedRevision/legality ->
-apply (server performs draws) -> in one transaction: conditional `revision` bump, insert
-`match_moves` (idempotent on clientNonce), update `match_secrets` and both `match_seat_views` ->
-broadcast `{revision}` on private topic `match:<id>` -> each client refetches its own seat view.
+## Batched online turns
+New clients send the whole ordered turn to `submit-turn` as
+`{MatchId, Seat, ExpectedRevision, ClientNonce, Moves}`. `ClientNonce` identifies the whole turn,
+and `Moves` must be non-empty and end with `EndTurn`; the server does not append it. The function
+authenticates seat ownership, loads `match_secrets.state`, and replays every move through the shared
+TypeScript `MatchAuthority` with consecutive expected revisions. Any illegal move rejects the whole
+batch without writes and returns its zero-based `FailedIndex` plus the caller's current seat view.
+
+An accepted turn is committed by one `commit_turn` RPC transaction: the match row is conditionally
+advanced from `ExpectedRevision`, one `match_moves` row is inserted per move at consecutive
+revisions, the turn nonce is stored only on the final row, and the secret state plus both fair seat
+views are updated together. A repeated `(match, seat, nonce)` returns the stored revision and move
+count. Stale revisions write nothing. After commit, the function broadcasts only `{revision}` on the
+private `match:<id>` topic.
+
+`get-view` accepts optional `sinceRevision` and then includes ordered `moves` rows with revisions
+greater than that value. Move actions are public, but `CardId` is removed from an opponent's
+`DrawCard` action. Direct authenticated reads of `match_moves` are disabled so this redaction cannot
+be bypassed.
+
+The single-command `submit-move` endpoint remains deployed only for old builds and is deprecated.
 
 Live vs async are the same pipeline: live = both clients subscribed to Realtime; async = push
 notification / poll on `turn_deadline`, resume by fetching the seat view at current revision.

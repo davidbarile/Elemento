@@ -46,7 +46,8 @@ make_json() {
       create) jq -cn '{mode:"live"}' ;;
       join) jq -cn --arg inviteCode "$1" '{inviteCode:$inviteCode}' ;;
       view) jq -cn --arg matchId "$1" '{matchId:$matchId}' ;;
-      command) jq -cn --arg match "$1" --argjson seat "$2" --argjson revision "$3" --arg nonce "$4" --argjson sequence "$5" --argjson move "$6" '{ProtocolVersion:1,MatchId:$match,Seat:$seat,ClientMoveSequence:$sequence,ExpectedRevision:$revision,Move:$move,ClientNonce:$nonce}' ;;
+      view_log) jq -cn --arg matchId "$1" --argjson sinceRevision "$2" '{matchId:$matchId,sinceRevision:$sinceRevision}' ;;
+      turn) jq -cn --arg match "$1" --argjson seat "$2" --argjson revision "$3" --arg nonce "$4" --argjson moves "$5" '{MatchId:$match,Seat:$seat,ExpectedRevision:$revision,ClientNonce:$nonce,Moves:$moves}' ;;
     esac
   else
     python3 -c 'import json,sys
@@ -55,8 +56,60 @@ if kind=="profile": value=[{"id":a[0],"username":a[1]}]
 elif kind=="create": value={"mode":"live"}
 elif kind=="join": value={"inviteCode":a[0]}
 elif kind=="view": value={"matchId":a[0]}
-else: value={"ProtocolVersion":1,"MatchId":a[0],"Seat":int(a[1]),"ClientMoveSequence":int(a[4]),"ExpectedRevision":int(a[2]),"Move":json.loads(a[5]),"ClientNonce":a[3]}
+elif kind=="view_log": value={"matchId":a[0],"sinceRevision":int(a[1])}
+else: value={"MatchId":a[0],"Seat":int(a[1]),"ExpectedRevision":int(a[2]),"ClientNonce":a[3],"Moves":json.loads(a[4])}
 print(json.dumps(value,separators=(",",":")))' "$kind" "$@"
+  fi
+}
+
+json_array_length() {
+  if [[ $JSON_TOOL == jq ]]; then
+    jq -r 'length'
+  else
+    python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'
+  fi
+}
+
+turn_moves() {
+  local mode=$1
+  if [[ $JSON_TOOL == jq ]]; then
+    jq -ce --arg mode "$mode" '
+      .view.View.LegalMoves as $legal
+      | ($legal | map(select(.Type == 5)) | first) as $end
+      | ($legal | map(select(.Type != 5)) | first) as $action
+      | if $end == null then error("EndTurn is not legal")
+        elif $mode == "end" then [$end]
+        elif $action == null then error("no non-EndTurn move is legal")
+        else [$action, $end]
+        end'
+  else
+    python3 -c 'import json,sys
+value=json.load(sys.stdin); mode=sys.argv[1]; legal=value["view"]["View"]["LegalMoves"]
+end=next((move for move in legal if move["Type"]==5),None)
+action=next((move for move in legal if move["Type"]!=5),None)
+assert end is not None, "EndTurn is not legal"
+assert mode=="end" or action is not None, "no non-EndTurn move is legal"
+print(json.dumps([end] if mode=="end" else [action,end],separators=(",",":")))' "$mode"
+  fi
+}
+
+bogus_moves() {
+  if [[ $JSON_TOOL == jq ]]; then
+    jq -ce '
+      .view.View.LegalMoves as $legal
+      | ($legal | map(select(.Type == 5)) | first) as $end
+      | ($legal | map(select(.Type != 5)) | first) as $action
+      | if $end == null or $action == null then error("bogus-card test needs action and EndTurn")
+        else [$action, ($action + {CardId:"bogus-card-id"}), $end]
+        end'
+  else
+    python3 -c 'import json,sys
+value=json.load(sys.stdin); legal=value["view"]["View"]["LegalMoves"]
+end=next((move for move in legal if move["Type"]==5),None)
+action=next((move for move in legal if move["Type"]!=5),None)
+assert end is not None and action is not None, "bogus-card test needs action and EndTurn"
+bogus=dict(action); bogus["CardId"]="bogus-card-id"
+print(json.dumps([action,bogus,end],separators=(",",":")))'
   fi
 }
 
@@ -92,11 +145,11 @@ assert_true() {
 
 result_signature() {
   if [[ $JSON_TOOL == jq ]]; then
-    jq -cS '{ProtocolVersion,Accepted,Reason,NewRevision,LogEntry}'
+    jq -cS '{Accepted,NewRevision,MoveCount}'
   else
     python3 -c 'import json,sys
 value=json.load(sys.stdin)
-print(json.dumps({key:value[key] for key in ("ProtocolVersion","Accepted","Reason","NewRevision","LogEntry")},separators=(",",":"),sort_keys=True))'
+print(json.dumps({key:value[key] for key in ("Accepted","NewRevision","MoveCount")},separators=(",",":"),sort_keys=True))'
   fi
 }
 
@@ -182,24 +235,15 @@ else
   current_view=$view1
   current_token=$token1
 fi
-move=$(printf '%s' "$current_view" | json_compact view.View.LegalMoves.0)
-nonce="e1-$match_id-1"
-command=$(make_json command "$match_id" "$current_seat" "$revision" "$nonce" 1 "$move")
-
-accepted=$(call_function submit-move "$current_token" "$command")
-printf '%s' "$accepted" | assert_true Accepted true
-accepted_revision=$(printf '%s' "$accepted" | json_raw NewRevision)
-
-idempotent=$(call_function submit-move "$current_token" "$command")
-printf '%s' "$idempotent" | assert_true Accepted true
-accepted_signature=$(printf '%s' "$accepted" | result_signature)
-idempotent_signature=$(printf '%s' "$idempotent" | result_signature)
-[[ $idempotent_signature == "$accepted_signature" ]] || { echo "idempotent result changed" >&2; echo "A=$accepted_signature" >&2; echo "B=$idempotent_signature" >&2; exit 1; }
+end_moves=$(printf '%s' "$current_view" | turn_moves end)
+first_turn=$(make_json turn "$match_id" "$current_seat" "$revision" "t2a-$match_id-1" "$end_moves")
+first_accepted=$(call_function submit-turn "$current_token" "$first_turn")
+printf '%s' "$first_accepted" | assert_true Accepted true
+printf '%s' "$first_accepted" | assert_true MoveCount 1
+first_revision=$(printf '%s' "$first_accepted" | json_raw NewRevision)
 
 latest0=$(call_function get-view "$token0" "$view_body")
 latest1=$(call_function get-view "$token1" "$view_body")
-persisted_revision=$(printf '%s' "$latest0" | json_raw match.revision)
-[[ $persisted_revision == "$accepted_revision" ]] || { echo "idempotent retry advanced revision" >&2; exit 1; }
 next_seat=$(printf '%s' "$latest0" | json_raw match.current_seat)
 if [[ $next_seat == 0 ]]; then
   next_view=$latest0
@@ -208,11 +252,59 @@ else
   next_view=$latest1
   next_token=$token1
 fi
-stale_move=$(printf '%s' "$next_view" | json_compact view.View.LegalMoves.0)
-stale_command=$(make_json command "$match_id" "$next_seat" "$revision" "e1-$match_id-stale" 2 "$stale_move")
-stale=$(call_function submit-move "$next_token" "$stale_command")
+action_moves=$(printf '%s' "$next_view" | turn_moves action)
+action_count=$(printf '%s' "$action_moves" | json_array_length)
+[[ $action_count == 2 ]] || { echo "expected action + EndTurn" >&2; exit 1; }
+second_nonce="t2a-$match_id-2"
+second_turn=$(make_json turn "$match_id" "$next_seat" "$first_revision" "$second_nonce" "$action_moves")
+second_accepted=$(call_function submit-turn "$next_token" "$second_turn")
+printf '%s' "$second_accepted" | assert_true Accepted true
+printf '%s' "$second_accepted" | assert_true MoveCount 2
+second_revision=$(printf '%s' "$second_accepted" | json_raw NewRevision)
+
+idempotent=$(call_function submit-turn "$next_token" "$second_turn")
+printf '%s' "$idempotent" | assert_true Accepted true
+accepted_signature=$(printf '%s' "$second_accepted" | result_signature)
+idempotent_signature=$(printf '%s' "$idempotent" | result_signature)
+[[ $idempotent_signature == "$accepted_signature" ]] || { echo "idempotent turn result changed" >&2; echo "A=$accepted_signature" >&2; echo "B=$idempotent_signature" >&2; exit 1; }
+
+latest0=$(call_function get-view "$token0" "$view_body")
+latest1=$(call_function get-view "$token1" "$view_body")
+persisted_revision=$(printf '%s' "$latest0" | json_raw match.revision)
+[[ $persisted_revision == "$second_revision" ]] || { echo "idempotent retry advanced revision" >&2; exit 1; }
+current_seat=$(printf '%s' "$latest0" | json_raw match.current_seat)
+if [[ $current_seat == 0 ]]; then
+  current_view=$latest0
+  current_token=$token0
+else
+  current_view=$latest1
+  current_token=$token1
+fi
+
+stale_moves=$(printf '%s' "$current_view" | turn_moves end)
+stale_turn=$(make_json turn "$match_id" "$current_seat" "$first_revision" "t2a-$match_id-stale" "$stale_moves")
+stale=$(call_function submit-turn "$current_token" "$stale_turn")
 printf '%s' "$stale" | assert_true Accepted false
 stale_reason=$(printf '%s' "$stale" | json_raw Reason)
 [[ $stale_reason == "Command revision is stale." ]] || { echo "expected stale revision rejection, got: $stale_reason" >&2; exit 1; }
 
-echo "E1 smoke test passed for match $match_id"
+illegal_moves=$(printf '%s' "$current_view" | bogus_moves)
+illegal_turn=$(make_json turn "$match_id" "$current_seat" "$second_revision" "t2a-$match_id-illegal" "$illegal_moves")
+before_illegal_view=$(printf '%s' "$current_view" | json_compact view)
+illegal=$(call_function submit-turn "$current_token" "$illegal_turn")
+printf '%s' "$illegal" | assert_true Accepted false
+printf '%s' "$illegal" | assert_true FailedIndex 1
+after_illegal=$(call_function get-view "$current_token" "$view_body")
+after_illegal_revision=$(printf '%s' "$after_illegal" | json_raw match.revision)
+[[ $after_illegal_revision == "$second_revision" ]] || { echo "illegal turn changed revision" >&2; exit 1; }
+after_illegal_view=$(printf '%s' "$after_illegal" | json_compact view)
+[[ $after_illegal_view == "$before_illegal_view" ]] || { echo "illegal turn changed the seat view" >&2; exit 1; }
+
+log_body=$(make_json view_log "$match_id" "$revision")
+turn_log=$(call_function get-view "$token0" "$log_body")
+move_count=$(printf '%s' "$turn_log" | json_compact moves | json_array_length)
+[[ $move_count == 3 ]] || { echo "expected 3 moves after sinceRevision, got $move_count" >&2; exit 1; }
+last_log_revision=$(printf '%s' "$turn_log" | json_raw moves.2.revision)
+[[ $last_log_revision == "$second_revision" ]] || { echo "move log did not reach accepted revision" >&2; exit 1; }
+
+echo "T2a smoke test passed for match $match_id"

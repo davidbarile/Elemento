@@ -1,3 +1,4 @@
+// Deprecated: retained for old builds. New clients submit complete turns through submit-turn.
 import {
   authenticate,
   bodyJson,
