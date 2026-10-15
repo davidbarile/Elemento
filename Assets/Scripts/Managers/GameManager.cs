@@ -311,6 +311,9 @@ public class GameManager : MonoBehaviour
     {
         this.IsGameInProgress = inIsGameInProgress;
 
+        if (!inIsGameInProgress)
+            UIWaitingForOpponentPanel.IN?.Hide();
+
         if (UISettingsPanel.IN != null)
             UISettingsPanel.IN.RefreshPlayModeAvailability(inIsGameInProgress);
     }
@@ -856,6 +859,8 @@ public class GameManager : MonoBehaviour
 
     private void ConfigureSession()
     {
+        UIWaitingForOpponentPanel.IN?.Hide();
+
         if (this.onlineClient != null)
             this.onlineClient.ViewUpdateReceived -= HandleOnlineViewUpdate;
 
@@ -894,6 +899,7 @@ public class GameManager : MonoBehaviour
         this.onlineRenderedView = null;
         UIOnlineLobbyPanel.IN.ReleaseMatch();
         this.gameSession = null;
+        UIWaitingForOpponentPanel.IN?.Hide();
     }
 
     private void StartOnlineSession()
@@ -902,6 +908,7 @@ public class GameManager : MonoBehaviour
         CancelInvoke();
         CleanUpGameState();
         UISeatHandoffPanel.IN.Hide();
+        UIWaitingForOpponentPanel.IN?.Hide();
         this.isHandoffPending = false;
         this.beginTurnButton.SetActive(false);
         this.endTurnButton.SetActive(false);
@@ -1193,6 +1200,7 @@ public class GameManager : MonoBehaviour
 
         this.isOnlineReplayActive = true;
         this.skipOnlineReplay = false;
+        UIWaitingForOpponentPanel.IN?.Hide();
         GameManager.IsDoingReplay = true;
         GameManager.IsApplyingRemoteUpdate = true;
         Move.ShouldRecordMoves = false;
@@ -1282,6 +1290,7 @@ public class GameManager : MonoBehaviour
         ETurnPhase restoreTurnPhase = this.TurnPhase;
         this.isOnlineReplayActive = true;
         this.skipOnlineReplay = false;
+        UIWaitingForOpponentPanel.IN?.Hide();
         GameManager.IsDoingReplay = true;
         GameManager.IsApplyingRemoteUpdate = true;
         Move.ShouldRecordMoves = false;
@@ -1664,6 +1673,8 @@ public class GameManager : MonoBehaviour
 
     private void RefreshOnlineControls()
     {
+        RefreshWaitingForOpponentPanel();
+
         var view = this.onlineClient?.CurrentView?.View;
         if (view == null)
         {
@@ -1691,6 +1702,22 @@ public class GameManager : MonoBehaviour
         if (this.isOnlineMovePending)
             this.playerTurnText.text = LocalizationManager.GetOnlineText(LOC.IN.OnlineSendingTurn);
         RefreshUndoControls();
+    }
+
+    private void RefreshWaitingForOpponentPanel()
+    {
+        UIWaitingForOpponentPanel panel = UIWaitingForOpponentPanel.IN;
+        if (panel == null)
+            return;
+
+        bool shouldShow = this.IsOnline && this.IsGameInProgress
+            && this.onlineClient?.CurrentView?.View != null
+            && !this.IsPlayersTurn && !this.isOnlineReplayActive;
+
+        if (shouldShow && !panel.IsShowing)
+            panel.Show();
+        else if (!shouldShow && panel.IsShowing)
+            panel.Hide();
     }
 
     private void SubmitOnlineTurn(DomainMoveData inMove)

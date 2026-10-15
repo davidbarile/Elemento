@@ -23,6 +23,7 @@ public class SingletonManager : MonoBehaviour
     [SerializeField] private UIWinLosePanel winLosePanel;
     [SerializeField] private UIAlertPanel alertPanel;
     [SerializeField] private UISeatHandoffPanel seatHandoffPanel;
+    [SerializeField] private UIWaitingForOpponentPanel waitingForOpponentPanel;
     [SerializeField] private UIUsernamePanel usernamePanel;
     [SerializeField] private UIOnlineLobbyPanel onlineLobbyPanel;
 
@@ -49,6 +50,7 @@ public class SingletonManager : MonoBehaviour
         UIWinLosePanel.IN = this.winLosePanel;
         UIAlertPanel.IN = this.alertPanel;
         UISeatHandoffPanel.IN = this.seatHandoffPanel;
+        UIWaitingForOpponentPanel.IN = this.waitingForOpponentPanel;
         UIUsernamePanel.IN = this.usernamePanel;
         UIOnlineLobbyPanel.IN = this.onlineLobbyPanel;
 
@@ -61,6 +63,7 @@ public class SingletonManager : MonoBehaviour
         UIAlertPanel.IN.SetVisible(false);
         UITutorialPanel.IN.SetVisible(false);
         UISeatHandoffPanel.IN.SetVisible(false);
+        UIWaitingForOpponentPanel.IN?.SetVisible(false);
         UIUsernamePanel.IN?.SetVisible(false);
         UIOnlineLobbyPanel.IN?.SetVisible(false);
     }

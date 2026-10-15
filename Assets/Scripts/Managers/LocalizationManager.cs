@@ -261,6 +261,7 @@ public class LocalizationManager : MonoBehaviour
     public string[] OnlineInviteCodePlaceholder = { "Enter code", "Introduce el código" };
     public string[] OnlineInviteCodeLabel = { "Invite Code", "Código de invitación" };
     public string[] OnlineWaiting = { "Waiting for Opponent", "Esperando al rival" };
+    public string[] OnlineWaitingForOpponent = { "Waiting for opponent...", "Esperando al rival..." };
     public string[] OnlineBack = { "Back", "Volver" };
     public string[] OnlineWorking = { "Connecting…", "Conectando…" };
     public string[] OnlineError = { "Connection failed. Please try again.", "Error de conexión. Inténtalo de nuevo." };
