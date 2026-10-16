@@ -2133,7 +2133,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: -145}
+  m_AnchoredPosition: {x: 0.000061035156, y: -145}
   m_SizeDelta: {x: 0, y: 725}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &74181793
@@ -10530,6 +10530,7 @@ MonoBehaviour:
   delayBetweenDeal: 0.35
   dealTweenDuration: 0.22
   OpponentMoveTweenDuration: 0.45
+  OpponentMovePauseDuration: 0.4
   ActivateDiscardTweenDuration: 0.3
   HandInsertTweenDuration: 0.06
   CardSnapBackTweenSpeed: 0.1
@@ -10945,6 +10946,15 @@ MonoBehaviour:
   GameDeck:
   - 'Game Deck:'
   - 'Mazo del Juego:'
+  GameModeAI:
+  - Against AI
+  - Contra IA
+  GameModeMultiplayer:
+  - Multiplayer
+  - Multijugador
+  GameModePassAndPlay:
+  - Pass & Play
+  - Pasar & Jugar
   Hide:
   - Hide
   - Esconder
@@ -47816,6 +47826,50 @@ PrefabInstance:
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
       value: 
       objectReference: {fileID: 523220428}
+    - target: {fileID: 3073096069101649437, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 3073096069101649437, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
+      value: 
+      objectReference: {fileID: 523220428}
+    - target: {fileID: 3073096069101649437, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
+      value: HandlePlayModePlayButtonPress
+      objectReference: {fileID: 0}
+    - target: {fileID: 3073096069101649437, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_IntArgument
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 3457369358286236774, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 3457369358286236774, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
+      value: 
+      objectReference: {fileID: 523220428}
+    - target: {fileID: 3457369358286236774, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
+      value: HandlePlayModePlayButtonPress
+      objectReference: {fileID: 0}
+    - target: {fileID: 3457369358286236774, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_IntArgument
+      value: 2
+      objectReference: {fileID: 0}
+    - target: {fileID: 4493789946084172982, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 4493789946084172982, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
+      value: 
+      objectReference: {fileID: 523220428}
+    - target: {fileID: 4493789946084172982, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
+      value: HandlePlayModePlayButtonPress
+      objectReference: {fileID: 0}
     - target: {fileID: 6927421928935805124, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
       value: 

@@ -3205,6 +3205,14 @@ public class GameManager : MonoBehaviour
         RestartGame();
     }
 
+    public void HandlePlayModePlayButtonPress(int inPlayMode)
+    {
+        UISplashScreen.IN.Hide();
+        UIGameBoard.IN.Show();
+
+        RestartGame();
+    }
+
     public void HandleTutorialButtonPress()
     {
         UISplashScreen.IN.Hide();

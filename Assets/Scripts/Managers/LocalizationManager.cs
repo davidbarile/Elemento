@@ -118,6 +118,9 @@ public class LocalizationManager : MonoBehaviour
     [TextArea] public string[] EndTurn;
     public string[] Export;
     public string[] GameDeck;
+    public string[] GameModeAI;
+    public string[] GameModeMultiplayer;
+    public string[] GameModePassAndPlay;
     public string[] Hide;
     public string[] HomeScreen;
     public string[] HideAll;
