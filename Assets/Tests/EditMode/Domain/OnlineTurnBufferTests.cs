@@ -456,6 +456,23 @@ namespace Elemento.Domain.Tests
             Assert.That(OnlineReconciliation.RequiresRebuild(4, update, null), Is.True);
         }
 
+        [Test]
+        public void ContinuousMoveLog_DropsPrefixAlreadyShownByAnEarlierReplayUpdate()
+        {
+            var moves = new List<MoveLogEntryData>
+            {
+                new() { RevisionBefore = 2, RevisionAfter = 3, Move = new MoveData() },
+                new() { RevisionBefore = 3, RevisionAfter = 4, Move = new MoveData() },
+                new() { RevisionBefore = 4, RevisionAfter = 5, Move = new MoveData() }
+            };
+
+            List<MoveLogEntryData> result = OnlineReconciliation.GetContinuousMoveLog(3, moves, 5);
+
+            Assert.That(result, Has.Count.EqualTo(2));
+            Assert.That(result[0].RevisionBefore, Is.EqualTo(3));
+            Assert.That(result[1].RevisionAfter, Is.EqualTo(5));
+        }
+
         private static MatchSeatViewData CreateView(int inRevision)
         {
             return new MatchSeatViewData

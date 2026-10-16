@@ -325,5 +325,29 @@ namespace Elemento.Domain.Net
             }
             return revision == inFinalRevision;
         }
+
+        public static List<MoveLogEntryData> GetContinuousMoveLog(int inLastAppliedRevision,
+            IReadOnlyList<MoveLogEntryData> inMoves, int inFinalRevision)
+        {
+            List<MoveLogEntryData> result = new();
+            if (inMoves == null)
+                return result;
+
+            bool foundStart = false;
+            foreach (var entry in inMoves)
+            {
+                if (!foundStart)
+                {
+                    if (entry == null || entry.RevisionBefore != inLastAppliedRevision)
+                        continue;
+                    foundStart = true;
+                }
+                result.Add(entry);
+            }
+
+            if (!HasContinuousMoveLog(inLastAppliedRevision, result, inFinalRevision))
+                result.Clear();
+            return result;
+        }
     }
 }

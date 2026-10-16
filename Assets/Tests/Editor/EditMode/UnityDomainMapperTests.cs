@@ -176,6 +176,25 @@ public class UnityDomainMapperTests
     }
 
     [Test]
+    public void TryCreateOnlineMove_MapsZoneCardReturnedToOwnHand()
+    {
+        var board = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
+        var sourceCell = board.ElementZones[0].CardCell;
+        var targetCell = board.Hand.CardCells[0];
+        AddCard(sourceCell, "return-me", 7, inPoints: 2);
+        var move = Move.CreateMove(sourceCell, targetCell, inPlayerId: (int)board.PlayerType,
+            inCardId: "return-me");
+        var view = new PlayerViewData { Player = new PlayerStateData { Id = 0 } };
+
+        Assert.That(UnityDomainMapper.TryCreateOnlineMove(move, view, out MoveData mapped), Is.True);
+        Assert.That(mapped.PlayerId, Is.Zero);
+        Assert.That(mapped.CardId, Is.EqualTo("return-me"));
+        Assert.That(mapped.SourceZoneId, Is.Zero);
+        Assert.That(mapped.TargetPlayerId, Is.Zero);
+        Assert.That(mapped.TargetZoneId, Is.EqualTo(-1));
+    }
+
+    [Test]
     public void TryCreateOnlineReplayMove_MissingIceIdDoesNotUseAnotherHandCard()
     {
         var sourceBoard = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
@@ -219,6 +238,28 @@ public class UnityDomainMapperTests
         Assert.That(replayMove.SourceCell, Is.SameAs(sourceBoard.Hand.CardCells[1]));
         Assert.That(replayMove.TargetCell, Is.SameAs(targetBoard.ElementZones[1].CardCell));
         Assert.That(replayMove.Data.CardId, Is.EqualTo("card-00000010"));
+    }
+
+    [Test]
+    public void TryCreateOnlineReplayMove_MapsZoneCardReturnedToOwnHand()
+    {
+        var board = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
+        AddCard(board.ElementZones[0].CardCell, "return-me", 7, inPoints: 2);
+        var returnMove = new MoveData
+        {
+            PlayerId = 0,
+            Type = DomainMoveType.PlayCard,
+            CardId = "return-me",
+            SourceZoneId = 0,
+            TargetPlayerId = 0,
+            TargetZoneId = -1
+        };
+
+        Assert.That(UnityDomainMapper.TryCreateOnlineReplayMove(returnMove,
+            new[] { board }, out Move replayMove), Is.True);
+        Assert.That(replayMove.SourceCell, Is.SameAs(board.ElementZones[0].CardCell));
+        Assert.That(replayMove.TargetCell, Is.SameAs(board.Hand.CardCells[0]));
+        Assert.That(replayMove.Data.CardId, Is.EqualTo("return-me"));
     }
 
     [Test]

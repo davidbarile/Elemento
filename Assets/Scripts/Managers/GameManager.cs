@@ -71,6 +71,7 @@ public class GameManager : MonoBehaviour
     [Range(0, 1)][SerializeField] private float delayBetweenDeal = 1;
     [Range(0, 1)][SerializeField] private float dealTweenDuration = .5f;
     [Range(0, 1)] public float OpponentMoveTweenDuration = .5f;
+    [Range(0, 1)] public float OpponentMovePauseDuration = .4f;
     [Range(0, 1)] public float ActivateDiscardTweenDuration = .2f;
     [Range(0, 1)] public float HandInsertTweenDuration = .2f;
     [Range(0, 1)] public float CardSnapBackTweenSpeed = .2f;
@@ -985,7 +986,6 @@ public class GameManager : MonoBehaviour
         if (this.isOnlineReplayActive)
         {
             this.pendingOnlineUpdate = inUpdate;
-            this.skipOnlineReplay = true;
             return;
         }
         if (this.onlineClient.TurnBuffer.HasMoves)
@@ -1006,12 +1006,13 @@ public class GameManager : MonoBehaviour
             return;
         }
 
+        List<MoveLogEntryData> replayMoves = OnlineReconciliation.GetContinuousMoveLog(
+            this.onlineAppliedRevision, inUpdate.Moves, inUpdate.View.View.Revision);
         if (this.hasOnlineRenderedView && this.onlineAppliedRevision >= 0
-            && inUpdate.Moves != null && inUpdate.Moves.Count > 0
-            && OnlineReconciliation.HasContinuousMoveLog(this.onlineAppliedRevision, inUpdate.Moves,
-                inUpdate.View.View.Revision))
+            && replayMoves.Count > 0)
         {
-            SetOnlineReplayHistory(this.onlineRenderedView, inUpdate.Moves,
+            inUpdate.Moves = replayMoves;
+            SetOnlineReplayHistory(this.onlineRenderedView, replayMoves,
                 inUpdate.View.View.Revision);
             this.onlineReplayCoroutine = StartCoroutine(ReplayOnlineMovesCo(inUpdate));
             return;
@@ -1030,11 +1031,32 @@ public class GameManager : MonoBehaviour
     private void SetOnlineReplayHistory(MatchSeatViewData inStartView,
         IReadOnlyList<MoveLogEntryData> inMoves, int inEndRevision)
     {
-        ClearOnlineReplayHistory();
         if (inStartView?.View == null || inMoves == null || inMoves.Count == 0)
             return;
 
-        this.onlineReplayStartView = inStartView;
+        MoveLogEntryData firstMove = null;
+        foreach (var entry in inMoves)
+        {
+            if (entry != null)
+            {
+                firstMove = entry;
+                break;
+            }
+        }
+        MoveLogEntryData previousMove = this.onlineReplayMoves.Count > 0
+            ? this.onlineReplayMoves[this.onlineReplayMoves.Count - 1] : null;
+        bool isContinuation = this.onlineReplayStartView?.View != null
+            && this.onlineReplayEndRevision == inStartView.View.Revision
+            && previousMove != null && firstMove != null
+            && previousMove.Seat == firstMove.Seat
+            && previousMove.ClientNonce == firstMove.ClientNonce;
+
+        if (!isContinuation)
+        {
+            ClearOnlineReplayHistory();
+            this.onlineReplayStartView = inStartView;
+        }
+
         foreach (var entry in inMoves)
         {
             if (entry != null)
@@ -1342,6 +1364,8 @@ public class GameManager : MonoBehaviour
             if (board == null)
                 throw new InvalidOperationException("Online replay move has an invalid seat: " + entry.Seat);
             yield return board.PlayOnlineMoveCo(move);
+            if (this.OpponentMovePauseDuration > 0)
+                yield return new WaitForSeconds(this.OpponentMovePauseDuration);
             if (replayCard?.IsPowerCard == true && replayCard.Id == entry.Move.CardId)
                 pendingPowerCard = null;
         }
@@ -2257,9 +2281,10 @@ public class GameManager : MonoBehaviour
         var wrapupItems = new List<WrapupItemData>();
         var playerPoints = new List<int>();
 
-        this.PlayerBoard.CalculateTotalPoints(false);
+        UIPlayerBoard playerBoard = this.IsOnline ? this.PlayerInputBoard : this.PlayerBoard;
+        playerBoard.CalculateTotalPoints(false);
 
-        foreach (var zone in this.PlayerBoard.ElementZones)
+        foreach (var zone in playerBoard.ElementZones)
         {
             int points = zone.IsDestroyed ? -1 : zone.Points;
             playerPoints.Add(points);
@@ -2268,13 +2293,14 @@ public class GameManager : MonoBehaviour
         var playerData = new WrapupItemData
         {
             PlayerName = LOC.IN.You[LOC.LI],//"You"
-            TotalPoints = this.PlayerBoard.TotalPoints,
+            TotalPoints = playerBoard.TotalPoints,
             ElementPoints = playerPoints
         };
 
         wrapupItems.Add(playerData);
 
-        var opponentBoard = this.PlayerBoards[1];
+        UIPlayerBoard opponentBoard = Array.Find(this.PlayerBoards,
+            inBoard => !ReferenceEquals(inBoard, playerBoard));
 
         opponentBoard.CalculateTotalPoints(false);
 

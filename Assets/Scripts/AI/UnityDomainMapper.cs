@@ -231,7 +231,7 @@ public static class UnityDomainMapper
         candidate.PowerCardType = isActivation && inView.Rules?.AllowSelectPowerCardType == true
             ? MapPowerCardType(inMove.CardType) : DomainPowerCardType.None;
 
-        if (!IsMappableMove(candidate))
+        if (!IsOnlineMappableMove(candidate))
             return false;
 
         outMove = candidate;
@@ -294,11 +294,12 @@ public static class UnityDomainMapper
         }
 
         UIPlayerBoard targetBoard = FindOnlineBoard(inPlayerBoards, inDomainMove.TargetPlayerId);
-        UIElementZone targetZone = FindOnlineZone(targetBoard, inDomainMove.TargetZoneId);
-        if (targetZone == null)
+        UICardCell targetCell = inDomainMove.TargetZoneId < 0
+            ? FindOnlineHandTargetCell(targetBoard) : FindOnlineZone(targetBoard, inDomainMove.TargetZoneId)?.CardCell;
+        if (targetCell == null)
             return false;
 
-        outMove = Move.CreateMove(sourceCell, targetZone.CardCell, false, null, false,
+        outMove = Move.CreateMove(sourceCell, targetCell, false, null, false,
             sourceCell.TopCard.CardType, inDomainMove.PlayerId, inDomainMove.CardId);
         outMove.Data = inDomainMove.Clone();
         return true;
@@ -342,6 +343,17 @@ public static class UnityDomainMapper
             default:
                 return false;
         }
+    }
+
+    private static bool IsOnlineMappableMove(MoveData inMove)
+    {
+        return IsMappableMove(inMove)
+            || inMove != null
+            && inMove.Type == DomainMoveType.PlayCard
+            && !string.IsNullOrEmpty(inMove.CardId)
+            && inMove.SourceZoneId >= 0
+            && inMove.TargetPlayerId == inMove.PlayerId
+            && inMove.TargetZoneId < 0;
     }
 
     public static string CreateMoveKey(MoveData inMove)
@@ -508,6 +520,19 @@ public static class UnityDomainMapper
         foreach (var cell in inBoard.Hand.CardCells)
         {
             if (cell?.TopCard != null && cell.TopCard.Id == inCardId)
+                return cell;
+        }
+        return null;
+    }
+
+    private static UICardCell FindOnlineHandTargetCell(UIPlayerBoard inBoard)
+    {
+        if (inBoard?.Hand?.CardCells == null)
+            return null;
+
+        foreach (var cell in inBoard.Hand.CardCells)
+        {
+            if (cell != null && cell.TopCard == null)
                 return cell;
         }
         return null;
