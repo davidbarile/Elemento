@@ -49,29 +49,18 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.statusText.text = string.Empty;
         this.inviteCodeInput.text = string.Empty;
         RefreshText();
+        this.isProfileReady = false;
         SetBusy(true);
         try
         {
             this.auth ??= new SupabaseAuthClient(this);
             this.profiles ??= new SupabaseProfileClient(this.auth);
-            await this.auth.EnsureSessionAsync();
-            this.isProfileReady = !string.IsNullOrEmpty(await this.profiles.GetUsernameAsync());
-            if (!this.isProfileReady)
-            {
-                base.Hide();
-                UIUsernamePanel.IN.Configure(this.profiles, HandleProfileReady, HandleBackButtonPress);
-            }
+            await this.profiles.EnsureProfileAsync();
+            this.isProfileReady = true;
             this.statusText.text = string.Empty;
         }
         catch (Exception exception) { ShowError(exception); }
         finally { SetBusy(false); }
-    }
-
-    private void HandleProfileReady()
-    {
-        this.isProfileReady = true;
-        base.Show();
-        SetBusy(false);
     }
 
     public async void HandleCreateButtonPress()

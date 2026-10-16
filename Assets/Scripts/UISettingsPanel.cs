@@ -265,11 +265,16 @@ public class UISettingsPanel : UIPanelBase
             return;
         }
 
-        SettingsManager.IN.PlayMode = (EPlayMode)inValue;
-
-        RefreshAiDifficultyVisibility();
-
+        SetPlayMode((EPlayMode)inValue);
         this.IsDirty = true;
+    }
+
+    public void SetPlayMode(EPlayMode inPlayMode)
+    {
+        SettingsManager.IN.PlayMode = inPlayMode;
+        this.playModeDropdown.SetValueWithoutNotify((int)inPlayMode);
+        this.playModeDropdown.RefreshShownValue();
+        RefreshAiDifficultyVisibility();
     }
 
     public void RefreshPlayModeAvailability(bool inIsGameInProgress)

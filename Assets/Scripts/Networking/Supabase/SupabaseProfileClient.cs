@@ -41,6 +41,22 @@ namespace Elemento.Networking.Supabase
             return profiles.Length == 0 ? null : profiles[0].Username;
         }
 
+        public async Task<string> EnsureProfileAsync()
+        {
+            string username = await GetUsernameAsync();
+            if (!string.IsNullOrEmpty(username))
+                return username;
+
+            username = CreateRandomUsername();
+            await CreateProfileAsync(username);
+            return username;
+        }
+
+        public static string CreateRandomUsername()
+        {
+            return "Player_" + Guid.NewGuid().ToString("N").Substring(0, 13);
+        }
+
         private static bool IsValidUsername(string inUsername)
         {
             return inUsername != null && Regex.IsMatch(inUsername, "\\A[A-Za-z0-9_]{3,20}\\z");

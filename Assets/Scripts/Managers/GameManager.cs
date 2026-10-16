@@ -3207,10 +3207,39 @@ public class GameManager : MonoBehaviour
 
     public void HandlePlayModePlayButtonPress(int inPlayMode)
     {
+        if (!TryGetPlayModeForButton(inPlayMode, out EPlayMode playMode))
+        {
+            Debug.LogWarning($"Unknown splash screen play mode: {inPlayMode}.");
+            return;
+        }
+
+        UISettingsPanel.IN.SetPlayMode(playMode);
+        PlayerData.Data.IsDirty = true;
+        SaveManager.IN.SaveGame();
+
         UISplashScreen.IN.Hide();
         UIGameBoard.IN.Show();
 
         RestartGame();
+    }
+
+    public static bool TryGetPlayModeForButton(int inPlayMode, out EPlayMode outPlayMode)
+    {
+        switch (inPlayMode)
+        {
+            case 0:
+                outPlayMode = EPlayMode.AgainstAI;
+                return true;
+            case 1:
+                outPlayMode = EPlayMode.PassAndPlay;
+                return true;
+            case 3:
+                outPlayMode = EPlayMode.Multiplayer;
+                return true;
+            default:
+                outPlayMode = default;
+                return false;
+        }
     }
 
     public void HandleTutorialButtonPress()
