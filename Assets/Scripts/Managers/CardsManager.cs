@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using CardInstanceData = Elemento.Domain.CardInstanceData;
 using Lean.Pool;
@@ -316,6 +317,7 @@ public class CardsManager : MonoBehaviour
 
     public static Card SpawnCard(CardData inCardData, Transform inParent, bool inIsFaceDown, bool inIsDraggable = true, bool inShouldSnapToCenter = false, string inCardId = null)
     {
+        string cardId = CardsManager.IN.AllocateCardInstanceId(inCardId);
         var prefab = Resources.Load($"Card Prefabs/{inCardData.PrefabName}");
 
         var go = Instantiate(prefab, inParent) as GameObject;
@@ -323,12 +325,6 @@ public class CardsManager : MonoBehaviour
 
         var card = go.GetComponent<Card>();
 
-        string cardId = inCardId;
-        if (string.IsNullOrEmpty(cardId))
-        {
-            cardId = CardInstanceData.CreateId(CardsManager.IN.nextCardInstanceId);
-            ++CardsManager.IN.nextCardInstanceId;
-        }
         card.Configure(inCardData, cardId);
 
         card.transform.SetParent(inParent);
@@ -348,6 +344,28 @@ public class CardsManager : MonoBehaviour
         CardsManager.IN.SpawnedCards.Add(card);
 
         return card;
+    }
+
+    private string AllocateCardInstanceId(string inCardId)
+    {
+        foreach (var card in this.SpawnedCards)
+        {
+            if (card == null || card.IsDestroyed)
+                continue;
+            if (!string.IsNullOrEmpty(inCardId) && card.Id == inCardId)
+                throw new InvalidOperationException("Card instance id already exists: " + inCardId);
+            this.nextCardInstanceId = CardInstanceData.ReserveSequence(this.nextCardInstanceId, card.Id);
+        }
+
+        if (!string.IsNullOrEmpty(inCardId))
+        {
+            this.nextCardInstanceId = CardInstanceData.ReserveSequence(this.nextCardInstanceId, inCardId);
+            return inCardId;
+        }
+
+        string cardId = CardInstanceData.CreateId(this.nextCardInstanceId);
+        ++this.nextCardInstanceId;
+        return cardId;
     }
 
     public void SetCardFaceDown(Card inCard)

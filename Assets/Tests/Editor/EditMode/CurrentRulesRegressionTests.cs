@@ -90,6 +90,34 @@ public class CurrentRulesRegressionTests
         Assert.That(cardsManager.SpawnedCards, Is.Empty);
     }
 
+    [TestCase(SettingsManager.EPlayMode.AgainstAI)]
+    [TestCase(SettingsManager.EPlayMode.PassAndPlay)]
+    public void LocalPowerCardAllocation_SkipsExistingCardIds(SettingsManager.EPlayMode inPlayMode)
+    {
+        this.settings.PlayMode = inPlayMode;
+        var cardsManager = CreateComponent<CardsManager>("Cards Manager");
+        CardsManager.IN = cardsManager;
+        var existingCard = CreateComponent<Card>("Existing Card");
+        SetField(existingCard, "<Id>k__BackingField", "card-00000009");
+        cardsManager.SpawnedCards.Add(existingCard);
+
+        Assert.That(AllocateCardInstanceId(cardsManager, null), Is.EqualTo("card-00000010"));
+    }
+
+    [Test]
+    public void OnlinePowerCardAllocation_ReservesAuthoritativeCardId()
+    {
+        this.settings.PlayMode = SettingsManager.EPlayMode.Multiplayer;
+        var cardsManager = CreateComponent<CardsManager>("Cards Manager");
+        CardsManager.IN = cardsManager;
+        var existingCard = CreateComponent<Card>("Existing Card");
+        SetField(existingCard, "<Id>k__BackingField", "card-00000009");
+        cardsManager.SpawnedCards.Add(existingCard);
+
+        Assert.That(AllocateCardInstanceId(cardsManager, "card-00000010"), Is.EqualTo("card-00000010"));
+        Assert.That(AllocateCardInstanceId(cardsManager, null), Is.EqualTo("card-00000011"));
+    }
+
     [Test]
     public void RetireForDestruction_DetachesViewBeforeSameFrameHierarchyRefresh()
     {
@@ -498,6 +526,14 @@ public class CurrentRulesRegressionTests
 
         this.createdObjects.Add(gameObject);
         return gameObject;
+    }
+
+    private static string AllocateCardInstanceId(CardsManager inCardsManager, string inCardId)
+    {
+        var method = typeof(CardsManager).GetMethod("AllocateCardInstanceId",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null);
+        return (string)method.Invoke(inCardsManager, new object[] { inCardId });
     }
 
     private static void SetField(object target, string fieldName, object value)

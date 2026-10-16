@@ -157,7 +157,7 @@ export class GameSimulator {
       WinType: inState.WinCondition,
       DeckCount: inState.Deck.length + inState.ReserveDeck.length,
       PowerDeckCount: inState.PowerDeck.length,
-      NextCardInstanceId: inState.NextCardInstanceId,
+      NextCardInstanceId: inState.GetNextCardInstanceSequence(),
       Rules: cloneRules(inState.Rules),
       Player: clonePlayer(player),
     });
@@ -232,9 +232,7 @@ export class GameSimulator {
     for (let i = 0; i < count; ++i) {
       const template = state.ReserveDeck.shift()!;
       const card = cloneCard(template);
-      const sequence = state.NextCardInstanceId;
-      state.NextCardInstanceId = (state.NextCardInstanceId + 1) | 0;
-      card.Id = CardInstanceData.CreateId(sequence);
+      card.Id = state.TakeNextCardInstanceId();
       card.IsFaceUp = false;
       state.Deck.push(card);
     }
@@ -342,9 +340,7 @@ export class GameSimulator {
   private SpawnPowerCard(state: GameStateData, template: CardInstanceData | null): CardInstanceData | null {
     if (template == null) return null;
     const card = cloneCard(template);
-    const sequence = state.NextCardInstanceId;
-    state.NextCardInstanceId = (state.NextCardInstanceId + 1) | 0;
-    card.Id = CardInstanceData.CreateId(sequence);
+    card.Id = state.TakeNextCardInstanceId();
     card.IsFaceUp = true;
     if (card.WildZoneHeal > 0) card.WildZoneHeal = state.Rules.ElementZoneStartingHealth;
     if (card.WildFreeze > 0) card.WildFreeze = state.Rules.FrozenZoneHealth;

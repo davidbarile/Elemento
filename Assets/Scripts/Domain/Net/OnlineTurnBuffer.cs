@@ -19,7 +19,7 @@ namespace Elemento.Domain.Net
         public bool HasMoves => this.moves.Count > 0;
         public bool IsComplete => this.moves.Count > 0 && this.moves[this.moves.Count - 1].Type == EMoveType.EndTurn;
         public string NextCardId => this.mirror == null
-            ? null : CardInstanceData.CreateId(this.mirror.NextCardInstanceId);
+            ? null : CardInstanceData.CreateId(this.mirror.GetNextCardInstanceSequence());
 
         public void Begin(MatchSeatViewData inSeatView, string inClientNonce = null)
         {

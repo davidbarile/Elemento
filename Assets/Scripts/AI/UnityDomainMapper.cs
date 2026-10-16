@@ -87,6 +87,9 @@ public static class UnityDomainMapper
             state.Players.Add(board == inPlayerBoard ? playerState : CreatePlayerState(board, false));
         }
 
+        int nextCardInstanceId = GetNextCardInstanceSequence(inPlayerBoards);
+        state.NextCardInstanceId = nextCardInstanceId;
+
         var view = new PlayerViewData
         {
             Revision = state.Revision,
@@ -99,6 +102,7 @@ public static class UnityDomainMapper
             WinType = EWinCondition.None,
             DeckCount = inDeckCount,
             PowerDeckCount = inPowerDeckCount,
+            NextCardInstanceId = nextCardInstanceId,
             Rules = state.Rules.Clone(),
             Player = playerState.Clone()
         };
@@ -431,6 +435,28 @@ public static class UnityDomainMapper
             throw new InvalidOperationException("A live card is missing data, face state, or its instance ID.");
 
         return inCard.CreateInstanceData();
+    }
+
+    private static int GetNextCardInstanceSequence(IEnumerable<UIPlayerBoard> inPlayerBoards)
+    {
+        int nextSequence = 0;
+        foreach (var board in inPlayerBoards)
+        {
+            foreach (var cell in board.Hand.CardCells)
+            {
+                if (cell?.TopCard != null)
+                    nextSequence = CardInstanceData.ReserveSequence(nextSequence, cell.TopCard.Id);
+            }
+            foreach (var zone in board.ElementZones)
+            {
+                foreach (var card in zone.CardCell.Cards)
+                {
+                    if (card != null && !card.IsDestroyed)
+                        nextSequence = CardInstanceData.ReserveSequence(nextSequence, card.Id);
+                }
+            }
+        }
+        return nextSequence;
     }
 
     private static PlayerStateData FindPlayer(GameStateData inState, int inPlayerId)

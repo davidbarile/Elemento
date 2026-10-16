@@ -231,7 +231,7 @@ namespace Elemento.Domain
                 WinType = inState.WinCondition,
                 DeckCount = inState.Deck.Count + inState.ReserveDeck.Count,
                 PowerDeckCount = inState.PowerDeck.Count,
-                NextCardInstanceId = inState.NextCardInstanceId,
+                NextCardInstanceId = inState.GetNextCardInstanceSequence(),
                 Rules = inState.Rules.Clone(),
                 Player = player.Clone()
             };
@@ -382,7 +382,7 @@ namespace Elemento.Domain
                 var template = inState.ReserveDeck[0];
                 inState.ReserveDeck.RemoveAt(0);
                 var card = template.Clone();
-                card.Id = CardInstanceData.CreateId(inState.NextCardInstanceId++);
+                card.Id = inState.TakeNextCardInstanceId();
                 card.IsFaceUp = false;
                 inState.Deck.Add(card);
             }
@@ -628,7 +628,7 @@ namespace Elemento.Domain
                 return null;
 
             var card = inTemplate.Clone();
-            card.Id = CardInstanceData.CreateId(inState.NextCardInstanceId++);
+            card.Id = inState.TakeNextCardInstanceId();
             card.IsFaceUp = true;
             if (card.WildZoneHeal > 0)
                 card.WildZoneHeal = inState.Rules.ElementZoneStartingHealth;

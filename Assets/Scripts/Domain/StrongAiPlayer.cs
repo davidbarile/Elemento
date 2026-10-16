@@ -604,7 +604,7 @@ namespace Elemento.Domain
                 WinnerPlayerId = -1,
                 Rules = rules,
                 Random = new RandomStateData { State = 1 },
-                NextCardInstanceId = 1000000
+                NextCardInstanceId = inView.NextCardInstanceId
             };
 
             state.Players.Add(inView.Player.Clone());

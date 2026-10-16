@@ -32,6 +32,21 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public void ActivateDeckCheckpoint_AllowsLaterUndoThenReportsActivationBarrier()
+        {
+            var history = new TurnUndoHistory<string>();
+            history.BeginTurn(ETurnUndoCheckpoint.Draw);
+            history.Record("before activation");
+            history.SetCheckpoint(ETurnUndoCheckpoint.ActivateDeck);
+            history.Record("after activation");
+
+            Assert.That(history.TryPop(out string snapshot, out _), Is.True);
+            Assert.That(snapshot, Is.EqualTo("after activation"));
+            Assert.That(history.TryPop(out _, out ETurnUndoCheckpoint blockedBy), Is.False);
+            Assert.That(blockedBy, Is.EqualTo(ETurnUndoCheckpoint.ActivateDeck));
+        }
+
+        [Test]
         public void LockedTurn_CannotRecordOrUndo()
         {
             var history = new TurnUndoHistory<int>();

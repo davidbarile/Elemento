@@ -210,7 +210,7 @@ public class UnityDomainMapperTests
         AddCard(aiBoard.Hand.CardCells[1], "ai-power", 8, inHeal: 5, inIsPowerCard: true);
         AddCard(aiBoard.ElementZones[0].CardCell, "ai-pile-bottom", 9, inPoints: 1, inShield: 3);
         AddCard(aiBoard.ElementZones[0].CardCell, "ai-pile-top", 9, inMultiplier: 2);
-        AddCard(opponentBoard.Hand.CardCells[0], "opponent-secret", 10, inPoints: 3);
+        AddCard(opponentBoard.Hand.CardCells[0], "card-00000009", 10, inPoints: 3);
         AddCard(opponentBoard.ElementZones[0].CardCell, "opponent-visible", 11, inPoints: 4);
         aiBoard.ElementZones[0].Points = 6;
         aiBoard.ElementZones[0].FaceUpPoints = 4;
@@ -246,11 +246,12 @@ public class UnityDomainMapperTests
         Assert.That(view.Opponents[0].Zones[0].Cards[0].Id, Is.EqualTo("opponent-visible"));
         Assert.That(view.DeckCount, Is.EqualTo(23));
         Assert.That(view.PowerDeckCount, Is.EqualTo(5));
+        Assert.That(view.NextCardInstanceId, Is.EqualTo(10));
 
         MoveData playMove = null;
         foreach (var legalMove in view.LegalMoves)
         {
-            Assert.That(legalMove.CardId, Is.Not.EqualTo("opponent-secret"));
+            Assert.That(legalMove.CardId, Is.Not.EqualTo("card-00000009"));
             if (legalMove.Type == DomainMoveType.PlayCard && legalMove.CardId == "ai-hand"
                 && legalMove.TargetPlayerId == (int)aiBoard.PlayerType
                 && legalMove.TargetZoneId == (int)CardData.EElementType.Air)

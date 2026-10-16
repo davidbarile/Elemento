@@ -301,6 +301,13 @@ namespace Elemento.Domain.Tests
             }
 
             state.Players[0].Zones[0].IsActivated = true;
+            state.Players[0].Hand.Add(new CardInstanceData
+            {
+                Id = CardInstanceData.CreateId(state.NextCardInstanceId),
+                DefinitionName = "Existing card at stale next id",
+                IsFaceUp = true,
+                Points = new[] { 1, 0, 0, 0 }
+            });
             var targetZone = state.Players[inTargetPlayerId].Zones[1];
             if (inPowerCardType == EPowerCardType.Heal)
                 targetZone.Health = 1;
