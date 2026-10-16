@@ -4,6 +4,7 @@ using Elemento.Networking.Supabase;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using static UIAlertPanel;
 
 public sealed class UIOnlineLobbyPanel : UIPanelBase
 {
@@ -126,8 +127,12 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         string[] message = isGoingFirst
             ? LocalizationManager.IN.OnlineYouGoFirst
             : LocalizationManager.IN.OnlineOpponentGoesFirst;
-        UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(message), 2f,
-            UIAlertPanel.EAlertMode.Notification, isGoingFirst ? (Color?)null : Color.red);
+
+        if (isGoingFirst)
+        {
+            this.statusText.text = LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineYouGoFirst);
+            UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(message), 2f, EAlertMode.Notification);
+        }  
     }
 
     public void HandleBackButtonPress()
