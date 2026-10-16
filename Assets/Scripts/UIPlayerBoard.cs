@@ -476,9 +476,7 @@ public class UIPlayerBoard : MonoBehaviour
         {
             CardsManager.IN.PowerCardOverride = inMove.CardType;
             inMove.ActivatePowerZone.SetActiveState(true, false);
-            inMove.ActivatePowerZone.UseActivatePower();
-            while (GameManager.IsDoingActivateSequence || GameManager.IsDealingHand)
-                yield return new WaitForSeconds(.1f);
+            yield return inMove.ActivatePowerZone.UseActivationPowerCo();
             yield break;
         }
 

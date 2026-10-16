@@ -176,6 +176,52 @@ public class UnityDomainMapperTests
     }
 
     [Test]
+    public void TryCreateOnlineReplayMove_MissingIceIdDoesNotUseAnotherHandCard()
+    {
+        var sourceBoard = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
+        var targetBoard = CreateBoard("Opponent", UIPlayerBoard.EPlayerType.PlayerB);
+        AddCard(sourceBoard.Hand.CardCells[0], "card-00000009", 9, inPoints: 2);
+        var iceMove = new MoveData
+        {
+            PlayerId = 0,
+            Type = DomainMoveType.PlayCard,
+            CardId = "card-00000010",
+            SourceZoneId = -1,
+            TargetPlayerId = 1,
+            TargetZoneId = 1
+        };
+
+        Assert.That(UnityDomainMapper.TryCreateOnlineReplayMove(iceMove,
+            new[] { sourceBoard, targetBoard }, out Move replayMove), Is.False);
+        Assert.That(replayMove, Is.Null);
+    }
+
+    [Test]
+    public void TryCreateOnlineReplayMove_MapsIceByExactGeneratedCardId()
+    {
+        var sourceBoard = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
+        var targetBoard = CreateBoard("Opponent", UIPlayerBoard.EPlayerType.PlayerB);
+        AddCard(sourceBoard.Hand.CardCells[0], "other-card", 9, inPoints: 2);
+        AddCard(sourceBoard.Hand.CardCells[1], "card-00000010", 10, inFreeze: 5,
+            inIsPowerCard: true);
+        var iceMove = new MoveData
+        {
+            PlayerId = 0,
+            Type = DomainMoveType.PlayCard,
+            CardId = "card-00000010",
+            SourceZoneId = -1,
+            TargetPlayerId = 1,
+            TargetZoneId = 1
+        };
+
+        Assert.That(UnityDomainMapper.TryCreateOnlineReplayMove(iceMove,
+            new[] { sourceBoard, targetBoard }, out Move replayMove), Is.True);
+        Assert.That(replayMove.SourceCell, Is.SameAs(sourceBoard.Hand.CardCells[1]));
+        Assert.That(replayMove.TargetCell, Is.SameAs(targetBoard.ElementZones[1].CardCell));
+        Assert.That(replayMove.Data.CardId, Is.EqualTo("card-00000010"));
+    }
+
+    [Test]
     public void TryCreateMove_Discard_UsesLegacyDiscardPath()
     {
         var board = CreateBoard("AI", UIPlayerBoard.EPlayerType.PlayerB);
@@ -323,7 +369,7 @@ public class UnityDomainMapperTests
 
     private void AddCard(UICardCell inCell, string inId, int inDefinitionId,
         int inPoints = 0, int inMultiplier = 0, int inShield = 0, int inHeal = 0,
-        bool inIsPowerCard = false)
+        int inFreeze = 0, bool inIsPowerCard = false)
     {
         var card = CreateComponent<Card>(inId, inCell.transform);
         var flip = card.gameObject.AddComponent<UICardFlip>();
@@ -348,6 +394,7 @@ public class UnityDomainMapperTests
             data.WildShield = inShield;
         }
         data.WildZoneHeal = inHeal;
+        data.WildFreeze = inFreeze;
         data.IsPowerCard = inIsPowerCard;
 
         card.Data = data;

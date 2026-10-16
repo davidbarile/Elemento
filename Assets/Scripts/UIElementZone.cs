@@ -307,58 +307,68 @@ public class UIElementZone : MonoBehaviour
 
     public void UseActivatePower()
     {
-        UITutorialPanel.OnActivatedZoneUse?.Invoke();
         StartCoroutine(UseActivationPowerCo());
     }
 
-    private IEnumerator UseActivationPowerCo()
+    public IEnumerator UseActivationPowerCo()
     {
+        UITutorialPanel.OnActivatedZoneUse?.Invoke();
         GameManager.IN.SetUndoCheckpoint(Elemento.Domain.ETurnUndoCheckpoint.ActivateDeck);
         GameManager.IsDoingActivateSequence = true;
-
-        foreach (var item in this.activeDisplays)
+        try
         {
-            item.SetActive(false);
+            foreach (var item in this.activeDisplays)
+                item.SetActive(false);
+
+            yield return null;
+
+            var tweenDuration = GameManager.IN.ActivateDiscardTweenDuration;
+            var destPosition = GameManager.IN.DiscardZoneTransform.position;
+            var delayAtTweenEnd = .1f;
+
+            GameManager.IN.DiscardZone.SetActive(true);
+
+            Move.ShouldRecordMoves = false;
+
+            while (this.CardCell.Cards.Count > 0)
+            {
+                var sourceTopCard = this.CardCell.TopCard;
+                var pitch = 1 + (this.CardCell.Cards.Count * .1f);
+
+                AudioManager.IN.PlayCardSwooshSound(0, pitch);
+
+                sourceTopCard.Draggable.AnimateTo(destPosition, tweenDuration, delayAtTweenEnd);
+                sourceTopCard.transform.DOScale(Vector3.one * .001f, tweenDuration)
+                    .SetDelay(tweenDuration + .05f);
+
+                yield return new WaitForSeconds(tweenDuration + delayAtTweenEnd + .05f);
+
+                AudioManager.IN.PlayClip(AudioManager.IN.RemoveCardClip, .2f, pitch);
+
+                yield return new WaitForSeconds(.1f);
+            }
+
+            CalculatePoints();
+            GameManager.IN.DiscardZone.SetActive(
+                SettingsManager.IN.DiscardMode == EDiscardMode.AllowDiscard);
+
+            yield return new WaitForSeconds(.7f);
+
+            IEnumerator dealPower = GameManager.IN.DealPowerCardCo(this);
+            try
+            {
+                while (dealPower.MoveNext())
+                    yield return dealPower.Current;
+            }
+            finally
+            {
+                (dealPower as IDisposable)?.Dispose();
+            }
         }
-
-        yield return null;
-
-        var tweenDuration = GameManager.IN.ActivateDiscardTweenDuration;
-        var destPosition = GameManager.IN.DiscardZoneTransform.position;
-        var delayAtTweenEnd = .1f;
-
-        GameManager.IN.DiscardZone.SetActive(true);
-
-        Move.ShouldRecordMoves = false;
-
-        while (this.CardCell.Cards.Count > 0)
+        finally
         {
-            var sourceTopCard = this.CardCell.TopCard;
-
-            var pitch = 1 + (this.CardCell.Cards.Count * .1f);
-
-            AudioManager.IN.PlayCardSwooshSound(0, pitch);
-
-            sourceTopCard.Draggable.AnimateTo(destPosition, tweenDuration, delayAtTweenEnd);
-            sourceTopCard.transform.DOScale(Vector3.one * .001f, tweenDuration).SetDelay(tweenDuration + .05f);
-
-            yield return new WaitForSeconds(tweenDuration + delayAtTweenEnd + .05f);
-
-            AudioManager.IN.PlayClip(AudioManager.IN.RemoveCardClip, .2f, pitch);
-
-            yield return new WaitForSeconds(.1f);
+            Move.ShouldRecordMoves = true;
+            GameManager.IsDoingActivateSequence = false;
         }
-
-        Move.ShouldRecordMoves = true;
-
-        CalculatePoints();
-
-        GameManager.IN.DiscardZone.SetActive(SettingsManager.IN.DiscardMode == EDiscardMode.AllowDiscard);
-
-        yield return new WaitForSeconds(.7f);
-
-        GameManager.IN.StartCoroutine(GameManager.IN.DealPowerCardCo(this));
-
-        GameManager.IsDoingActivateSequence = false;
     }
 }

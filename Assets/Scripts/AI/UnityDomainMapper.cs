@@ -496,20 +496,21 @@ public static class UnityDomainMapper
 
     private static UICardCell FindOnlineSourceCell(UIPlayerBoard inBoard, string inCardId, int inSourceZoneId)
     {
-        if (inSourceZoneId >= 0)
-            return FindOnlineZone(inBoard, inSourceZoneId)?.CardCell;
+        if (inBoard == null || string.IsNullOrEmpty(inCardId))
+            return null;
 
-        UICardCell fallback = null;
+        if (inSourceZoneId >= 0)
+        {
+            UICardCell zoneCell = FindOnlineZone(inBoard, inSourceZoneId)?.CardCell;
+            return zoneCell?.TopCard != null && zoneCell.TopCard.Id == inCardId ? zoneCell : null;
+        }
+
         foreach (var cell in inBoard.Hand.CardCells)
         {
-            if (cell?.TopCard == null)
-                continue;
-            if (cell.TopCard.Id == inCardId)
+            if (cell?.TopCard != null && cell.TopCard.Id == inCardId)
                 return cell;
-            if (fallback == null)
-                fallback = cell;
         }
-        return fallback;
+        return null;
     }
 
     private static UIElementZone FindZone(UIPlayerBoard inBoard, int inZoneId)

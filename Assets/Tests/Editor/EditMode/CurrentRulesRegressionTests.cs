@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using Elemento.Domain;
@@ -54,6 +55,7 @@ public class CurrentRulesRegressionTests
     {
         UIWinLosePanel.IN = null;
         AudioManager.IN = null;
+        BoardStateManager.IN = null;
         CardsManager.IN = null;
         GameManager.IN = null;
         SettingsManager.IN = null;
@@ -116,6 +118,21 @@ public class CurrentRulesRegressionTests
 
         Assert.That(AllocateCardInstanceId(cardsManager, "card-00000010"), Is.EqualTo("card-00000010"));
         Assert.That(AllocateCardInstanceId(cardsManager, null), Is.EqualTo("card-00000011"));
+    }
+
+    [Test]
+    public void OnlineIceReplay_UsesOverrideWithoutLocalReplayBoardState()
+    {
+        var cardsManager = CreateComponent<CardsManager>("Cards Manager");
+        CardsManager.IN = cardsManager;
+        cardsManager.PowerCardOverride = Card.ECardType.Freeze;
+        BoardStateManager.IN = null;
+        GameManager.IsDoingReplay = true;
+
+        var method = typeof(GameManager).GetMethod("GetPowerCardTypeForDeal",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method.Invoke(null, null), Is.EqualTo(Card.ECardType.Freeze));
     }
 
     [Test]
@@ -254,6 +271,44 @@ public class CurrentRulesRegressionTests
 
         GameManager.IsApplyingRemoteUpdate = false;
         Assert.That(GameManager.ShouldBlockInput, Is.False);
+    }
+
+    [Test]
+    public void ReplayFailure_CatchesNestedExceptionAndReleasesEveryInputLock()
+    {
+        var cardsManager = CreateComponent<CardsManager>("Cards Manager");
+        CardsManager.IN = cardsManager;
+        cardsManager.PowerCardOverride = Card.ECardType.Freeze;
+        GameManager.IsDealingHand = true;
+        GameManager.IsDoingActivateSequence = true;
+        GameManager.IsDoingReplay = true;
+        GameManager.IsApplyingRemoteUpdate = true;
+        BoardStateManager.IsDoingReplay = true;
+        BoardStateManager.IsSettingState = true;
+        Move.ShouldRecordMoves = false;
+        UIDraggable.ShouldBlockInput = true;
+        UIDraggable.IsDragPointerDown = true;
+        Exception replayException = null;
+
+        var runner = typeof(GameManager).GetMethod("RunReplayStepCo",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.That(runner, Is.Not.Null);
+        var replay = (IEnumerator)runner.Invoke(null, new object[]
+        {
+            ThrowingReplayStep(),
+            new Action<Exception>(inException => replayException = inException)
+        });
+        Drain(replay);
+        InvokeReleaseReplayInputLocks();
+
+        Assert.That(replayException, Is.TypeOf<InvalidOperationException>());
+        Assert.That(GameManager.ShouldBlockInput, Is.False);
+        Assert.That(UIDraggable.ShouldBlockInput, Is.False);
+        Assert.That(UIDraggable.IsDragPointerDown, Is.False);
+        Assert.That(BoardStateManager.IsDoingReplay, Is.False);
+        Assert.That(BoardStateManager.IsSettingState, Is.False);
+        Assert.That(Move.ShouldRecordMoves, Is.True);
+        Assert.That(cardsManager.PowerCardOverride, Is.EqualTo(Card.ECardType.None));
     }
 
     [TestCase(false, true, false)]
@@ -571,6 +626,29 @@ public class CurrentRulesRegressionTests
             BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.That(method, Is.Not.Null);
         return (string)method.Invoke(inCardsManager, new object[] { inCardId });
+    }
+
+    private static IEnumerator ThrowingReplayStep()
+    {
+        yield return null;
+        throw new InvalidOperationException("Ice replay failed.");
+    }
+
+    private static void Drain(IEnumerator inRoutine)
+    {
+        while (inRoutine.MoveNext())
+        {
+            if (inRoutine.Current is IEnumerator nestedRoutine)
+                Drain(nestedRoutine);
+        }
+    }
+
+    private static void InvokeReleaseReplayInputLocks()
+    {
+        var method = typeof(GameManager).GetMethod("ReleaseReplayInputLocks",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null);
+        method.Invoke(null, null);
     }
 
     private static void SetField(object target, string fieldName, object value)
