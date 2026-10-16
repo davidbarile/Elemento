@@ -319,6 +319,40 @@ public class CurrentRulesRegressionTests
         Assert.That(zone.IsActivated, Is.EqualTo(expectedActivation));
     }
 
+    [Test]
+    public void SetFrozenHealth_AfterOnlineRebuildKeepsOverlayAbovePile()
+    {
+        this.settings.FrozenZoneHealth = 5;
+        var zone = CreateZone("Rebuilt Zone", CardData.EElementType.Air);
+        var frozenOverlay = GetField<GameObject>(zone, "frozenOverlay");
+        CreateGameObject("Rebuilt Pile Card", zone.CardCell.CardHolder);
+
+        zone.SetFrozenHealth(this.settings.FrozenZoneHealth, false);
+
+        Assert.That(zone.FrozenHealth, Is.EqualTo(this.settings.FrozenZoneHealth));
+        Assert.That(frozenOverlay.activeSelf, Is.True);
+        Assert.That(frozenOverlay.transform.GetSiblingIndex(), Is.EqualTo(zone.CardCell.CardHolder.childCount - 1));
+    }
+
+    [Test]
+    public void SwapPlayerState_PreservesFrozenHealthAndOverlay()
+    {
+        this.settings.FrozenZoneHealth = 5;
+        var first = CreateZone("First Zone", CardData.EElementType.Air);
+        var second = CreateZone("Second Zone", CardData.EElementType.Air);
+        var firstOverlay = GetField<GameObject>(first, "frozenOverlay");
+        var secondOverlay = GetField<GameObject>(second, "frozenOverlay");
+        first.SetFrozenHealth(this.settings.FrozenZoneHealth, false);
+
+        first.SwapPlayerState(second);
+
+        Assert.That(first.FrozenHealth, Is.Zero);
+        Assert.That(firstOverlay.activeSelf, Is.False);
+        Assert.That(second.FrozenHealth, Is.EqualTo(this.settings.FrozenZoneHealth));
+        Assert.That(secondOverlay.activeSelf, Is.True);
+        Assert.That(secondOverlay.transform.GetSiblingIndex(), Is.EqualTo(second.CardCell.CardHolder.childCount - 1));
+    }
+
     [TestCase(49, false)]
     [TestCase(50, true)]
     public void CheckWinLoseState_UsesInclusivePointsTarget(int totalPoints, bool expectedWin)
@@ -372,7 +406,10 @@ public class CurrentRulesRegressionTests
 
         SetField(zone, "pointsCount", CreatePoints(name + " Points", zoneObject.transform));
         SetField(zone, "zoneFrozenHealth", CreatePoints(name + " Frozen Health", zoneObject.transform));
+        SetField(zone, "zoneHealth", CreatePoints(name + " Health", zoneObject.transform));
         SetField(zone, "pointsCountDisplay", CreateGameObject(name + " Points Display", zoneObject.transform));
+        SetField(zone, "zoneHealthDisplay", CreateGameObject(name + " Health Display", zoneObject.transform));
+        SetField(zone, "zoneDestroyedOverlay", CreateGameObject(name + " Destroyed Overlay", zoneObject.transform));
         SetField(zone, "activeDisplays", Array.Empty<GameObject>());
         SetField(zone, "frozenOverlay", CreateGameObject(name + " Frozen Overlay", zoneObject.transform));
 

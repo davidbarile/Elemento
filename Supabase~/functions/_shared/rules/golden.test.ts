@@ -211,10 +211,35 @@ export function runPowerCardTests(): void {
   console.log("PASS power cards");
 }
 
+export function runFrozenViewTests(): void {
+  const rules = Object.assign(new RulesConfigData(), { NumCardsToDeal: 0 });
+  const state = new GameSimulator().CreateGame(73, rules, []);
+  const expectedFrozenHealth = rules.FrozenZoneHealth - rules.FrozenZonesMeltAmountPerTurn;
+  state.Players[1].Zones[0].FrozenHealth = expectedFrozenHealth;
+
+  const opponentView = JSON.parse(JSON.stringify(FairView.BuildSeatView(state, 0)));
+  const ownView = JSON.parse(JSON.stringify(FairView.BuildSeatView(state, 1)));
+  const snapshot = JSON.parse(JSON.stringify(FairView.BuildSnapshot(state)));
+
+  if (opponentView.View.Opponents[0].Zones[0].FrozenHealth !== expectedFrozenHealth) {
+    throw new Error("frozen view: opponent zone lost frozen health");
+  }
+  if (ownView.View.Player.Zones[0].FrozenHealth !== expectedFrozenHealth) {
+    throw new Error("frozen view: own zone lost frozen health");
+  }
+  if (snapshot.Seats[1].Zones[0].FrozenHealth !== expectedFrozenHealth) {
+    throw new Error("frozen view: snapshot lost frozen health");
+  }
+
+  console.log("PASS frozen views");
+}
+
 if (typeof Deno !== "undefined") {
   Deno.test("C# golden fixtures", runGoldenTests);
   Deno.test("power cards", runPowerCardTests);
+  Deno.test("frozen views", runFrozenViewTests);
 } else {
   await runGoldenTests();
   runPowerCardTests();
+  runFrozenViewTests();
 }
