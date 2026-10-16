@@ -328,6 +328,8 @@ public class UIElementZone : MonoBehaviour
 
             GameManager.IN.DiscardZone.SetActive(true);
 
+            // Restore before dealing: the deal's SaveBoardState must buffer the activation in live play.
+            bool wasRecordingMoves = Move.ShouldRecordMoves;
             Move.ShouldRecordMoves = false;
 
             while (this.CardCell.Cards.Count > 0)
@@ -348,6 +350,7 @@ public class UIElementZone : MonoBehaviour
                 yield return new WaitForSeconds(.1f);
             }
 
+            Move.ShouldRecordMoves = wasRecordingMoves;
             CalculatePoints();
             GameManager.IN.DiscardZone.SetActive(
                 SettingsManager.IN.DiscardMode == EDiscardMode.AllowDiscard);
