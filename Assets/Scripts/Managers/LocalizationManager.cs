@@ -136,6 +136,7 @@ public class LocalizationManager : MonoBehaviour
     public string[] PlayGame;
     public string[] Replay;
     public string[] Undo = { "Undo", "Deshacer" };
+    public string[] AllowUndo = { "Allow Undo", "Permitir Deshacer" };
     [TextArea] public string[] Rename;
     public string[] Save;
     public string[] SavedDecks;
@@ -276,7 +277,6 @@ public class LocalizationManager : MonoBehaviour
     public string[] OnlineMatchSettings = { "The creator's gameplay settings apply to both players.", "Los ajustes de juego del creador se aplican a ambos jugadores." };
     public string[] OnlineYouGoFirst = { "You go first!", "¡Empiezas tú!" };
     public string[] OnlineOpponentGoesFirst = { "Opponent goes first", "Empieza el rival" };
-    public string[] AllowUndo = { "Allow Undo", "Permitir deshacer" };
     public string[] UndoPastDraw = { "Can't undo past a draw.", "No puedes deshacer más allá de un robo." };
     public string[] UndoPastReveal = { "Can't undo past revealing a hidden card.", "No puedes deshacer más allá de revelar una carta oculta." };
     public string[] UndoPastActivateDeck = { "Can't undo past Activate Deck.", "No puedes deshacer más allá de Activar Mazo." };
