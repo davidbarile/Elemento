@@ -57,6 +57,47 @@ namespace Elemento.Domain.Tests
             Assert.That(error, Does.Contain("duplicate card id 'a'"));
         }
 
+        [Test]
+        public void IcePlaySnapshot_AfterActivation_HasNoDuplicateIds()
+        {
+            var simulator = new GameSimulator();
+            var state = simulator.CreateGame(73, new RulesConfigData
+            {
+                NumCardsToDeal = 0,
+                MovesPerTurn = 5,
+                AllowSelectPowerCardType = true,
+                TotalPointsRequiredToWin = 10000
+            }, new List<CardInstanceData>());
+            state.NextCardInstanceId = 9;
+            state.Players[1].Zones[0].Cards.Add(CreateCard("card-00000009", points: 1));
+            state.Players[0].Zones[0].IsActivated = true;
+
+            MoveData activation = null;
+            foreach (var move in simulator.GetLegalMoves(state, 0))
+            {
+                if (move.Type == EMoveType.ActivateZone && move.SourceZoneId == 0
+                    && move.PowerCardType == EPowerCardType.Freeze)
+                {
+                    activation = move;
+                    break;
+                }
+            }
+            Assert.That(activation, Is.Not.Null);
+            simulator.ApplyMove(state, activation);
+
+            string iceCardId = state.Players[0].Hand[0].Id;
+            Assert.That(iceCardId, Is.Not.EqualTo("card-00000009"));
+            var history = new TurnUndoHistory<GameStateData>();
+            history.BeginTurn(ETurnUndoCheckpoint.ActivateDeck);
+            history.Record(state.Clone());
+            simulator.ApplyMove(state, FindPlay(simulator, state, iceCardId, 1, 0));
+
+            Assert.That(history.TryPop(out GameStateData snapshot, out _), Is.True);
+            CardIdentityState identity = CaptureIdentity(snapshot);
+            Assert.That(CardIdentityValidator.TryValidate(identity.Ids, identity.AnonymousCount,
+                identity.Ids, identity.AnonymousCount, out string error), Is.True, error);
+        }
+
         private static void RecordAndApply(TurnUndoHistory<GameStateData> inHistory,
             List<CardIdentityState> inExpectedUndos, GameSimulator inSimulator,
             ref GameStateData inState, MoveData inMove)

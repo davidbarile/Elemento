@@ -87,6 +87,14 @@ export class CardInstanceData {
     return `card-${formatDecimal8(inSequence)}`;
   }
 
+  static ReserveSequence(inNextSequence: number, inCardId: string | null): number {
+    const nextSequence = Math.max(0, inNextSequence | 0);
+    const match = /^card-(\d+)$/.exec(inCardId ?? "");
+    if (match == null) return nextSequence;
+    const sequence = Number.parseInt(match[1], 10);
+    return sequence >= nextSequence ? sequence + 1 : nextSequence;
+  }
+
   Clone(): CardInstanceData {
     return cloneCard(this);
   }
@@ -166,6 +174,29 @@ export class GameStateData {
   PowerDeck: CardInstanceData[] = [];
   DiscardPile: CardInstanceData[] = [];
   Moves: MoveData[] = [];
+
+  GetNextCardInstanceSequence(): number {
+    let nextSequence = Math.max(0, this.NextCardInstanceId | 0);
+    const reserveCards = (cards: CardInstanceData[]): void => {
+      for (const card of cards) nextSequence = CardInstanceData.ReserveSequence(nextSequence, card?.Id ?? null);
+    };
+    reserveCards(this.Deck);
+    reserveCards(this.ReserveDeck);
+    reserveCards(this.PowerDeck);
+    reserveCards(this.DiscardPile);
+    for (const player of this.Players) {
+      reserveCards(player.Hand);
+      for (const zone of player.Zones) reserveCards(zone.Cards);
+    }
+    return nextSequence;
+  }
+
+  TakeNextCardInstanceId(): string {
+    this.NextCardInstanceId = this.GetNextCardInstanceSequence();
+    const cardId = CardInstanceData.CreateId(this.NextCardInstanceId);
+    this.NextCardInstanceId = (this.NextCardInstanceId + 1) | 0;
+    return cardId;
+  }
 
   Clone(): GameStateData {
     const clone = Object.assign(new GameStateData(), {

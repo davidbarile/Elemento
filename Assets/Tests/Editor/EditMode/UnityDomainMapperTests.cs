@@ -176,6 +176,52 @@ public class UnityDomainMapperTests
     }
 
     [Test]
+    public void TryCreateOnlineReplayMove_MissingIceIdDoesNotUseAnotherHandCard()
+    {
+        var sourceBoard = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
+        var targetBoard = CreateBoard("Opponent", UIPlayerBoard.EPlayerType.PlayerB);
+        AddCard(sourceBoard.Hand.CardCells[0], "card-00000009", 9, inPoints: 2);
+        var iceMove = new MoveData
+        {
+            PlayerId = 0,
+            Type = DomainMoveType.PlayCard,
+            CardId = "card-00000010",
+            SourceZoneId = -1,
+            TargetPlayerId = 1,
+            TargetZoneId = 1
+        };
+
+        Assert.That(UnityDomainMapper.TryCreateOnlineReplayMove(iceMove,
+            new[] { sourceBoard, targetBoard }, out Move replayMove), Is.False);
+        Assert.That(replayMove, Is.Null);
+    }
+
+    [Test]
+    public void TryCreateOnlineReplayMove_MapsIceByExactGeneratedCardId()
+    {
+        var sourceBoard = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
+        var targetBoard = CreateBoard("Opponent", UIPlayerBoard.EPlayerType.PlayerB);
+        AddCard(sourceBoard.Hand.CardCells[0], "other-card", 9, inPoints: 2);
+        AddCard(sourceBoard.Hand.CardCells[1], "card-00000010", 10, inFreeze: 5,
+            inIsPowerCard: true);
+        var iceMove = new MoveData
+        {
+            PlayerId = 0,
+            Type = DomainMoveType.PlayCard,
+            CardId = "card-00000010",
+            SourceZoneId = -1,
+            TargetPlayerId = 1,
+            TargetZoneId = 1
+        };
+
+        Assert.That(UnityDomainMapper.TryCreateOnlineReplayMove(iceMove,
+            new[] { sourceBoard, targetBoard }, out Move replayMove), Is.True);
+        Assert.That(replayMove.SourceCell, Is.SameAs(sourceBoard.Hand.CardCells[1]));
+        Assert.That(replayMove.TargetCell, Is.SameAs(targetBoard.ElementZones[1].CardCell));
+        Assert.That(replayMove.Data.CardId, Is.EqualTo("card-00000010"));
+    }
+
+    [Test]
     public void TryCreateMove_Discard_UsesLegacyDiscardPath()
     {
         var board = CreateBoard("AI", UIPlayerBoard.EPlayerType.PlayerB);
@@ -210,7 +256,7 @@ public class UnityDomainMapperTests
         AddCard(aiBoard.Hand.CardCells[1], "ai-power", 8, inHeal: 5, inIsPowerCard: true);
         AddCard(aiBoard.ElementZones[0].CardCell, "ai-pile-bottom", 9, inPoints: 1, inShield: 3);
         AddCard(aiBoard.ElementZones[0].CardCell, "ai-pile-top", 9, inMultiplier: 2);
-        AddCard(opponentBoard.Hand.CardCells[0], "opponent-secret", 10, inPoints: 3);
+        AddCard(opponentBoard.Hand.CardCells[0], "card-00000009", 10, inPoints: 3);
         AddCard(opponentBoard.ElementZones[0].CardCell, "opponent-visible", 11, inPoints: 4);
         aiBoard.ElementZones[0].Points = 6;
         aiBoard.ElementZones[0].FaceUpPoints = 4;
@@ -246,11 +292,12 @@ public class UnityDomainMapperTests
         Assert.That(view.Opponents[0].Zones[0].Cards[0].Id, Is.EqualTo("opponent-visible"));
         Assert.That(view.DeckCount, Is.EqualTo(23));
         Assert.That(view.PowerDeckCount, Is.EqualTo(5));
+        Assert.That(view.NextCardInstanceId, Is.EqualTo(10));
 
         MoveData playMove = null;
         foreach (var legalMove in view.LegalMoves)
         {
-            Assert.That(legalMove.CardId, Is.Not.EqualTo("opponent-secret"));
+            Assert.That(legalMove.CardId, Is.Not.EqualTo("card-00000009"));
             if (legalMove.Type == DomainMoveType.PlayCard && legalMove.CardId == "ai-hand"
                 && legalMove.TargetPlayerId == (int)aiBoard.PlayerType
                 && legalMove.TargetZoneId == (int)CardData.EElementType.Air)
@@ -322,7 +369,7 @@ public class UnityDomainMapperTests
 
     private void AddCard(UICardCell inCell, string inId, int inDefinitionId,
         int inPoints = 0, int inMultiplier = 0, int inShield = 0, int inHeal = 0,
-        bool inIsPowerCard = false)
+        int inFreeze = 0, bool inIsPowerCard = false)
     {
         var card = CreateComponent<Card>(inId, inCell.transform);
         var flip = card.gameObject.AddComponent<UICardFlip>();
@@ -347,6 +394,7 @@ public class UnityDomainMapperTests
             data.WildShield = inShield;
         }
         data.WildZoneHeal = inHeal;
+        data.WildFreeze = inFreeze;
         data.IsPowerCard = inIsPowerCard;
 
         card.Data = data;

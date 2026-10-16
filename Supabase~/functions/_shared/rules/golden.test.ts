@@ -1,7 +1,7 @@
 import { CardDefinitionData, DeckDefinitionData } from "./deck_definition_data.ts";
 import { FairView } from "./fair_view.ts";
 import { GameSimulator } from "./game_simulator.ts";
-import { EMoveType, EPowerCardType, RulesConfigData } from "./game_state_data.ts";
+import { CardInstanceData, EMoveType, EPowerCardType, RulesConfigData } from "./game_state_data.ts";
 import { MatchAuthority } from "./match_authority.ts";
 import { MatchFactory } from "./match_factory.ts";
 
@@ -173,13 +173,73 @@ export function runPowerCardTests(): void {
     }
   }
 
+  const collisionSimulator = new GameSimulator();
+  const collisionRules = Object.assign(new RulesConfigData(), {
+    NumCardsToDeal: 0,
+    MovesPerTurn: 5,
+    AllowSelectPowerCardType: true,
+    TotalPointsRequiredToWin: 10000,
+  });
+  const collisionState = collisionSimulator.CreateGame(72, collisionRules, []);
+  collisionState.NextCardInstanceId = 9;
+  const existingCard = new CardInstanceData();
+  existingCard.Id = CardInstanceData.CreateId(9);
+  existingCard.IsFaceUp = true;
+  existingCard.Points = [1, 0, 0, 0];
+  collisionState.Players[1].Zones[0].Cards.push(existingCard);
+  collisionState.Players[0].Zones[0].IsActivated = true;
+  const activation = collisionSimulator.GetLegalMoves(collisionState, 0).find((candidate) =>
+    candidate.Type === EMoveType.ActivateZone
+    && candidate.SourceZoneId === 0
+    && candidate.PowerCardType === EPowerCardType.Freeze);
+  if (activation == null) throw new Error("freeze collision: expected activation move");
+  collisionSimulator.ApplyMove(collisionState, activation);
+  const iceCard = collisionState.Players[0].Hand[0];
+  if (iceCard.Id === existingCard.Id) throw new Error("freeze collision: reused an existing card id");
+  const ownershipIds = [
+    ...collisionState.Deck,
+    ...collisionState.DiscardPile,
+    ...collisionState.Players.flatMap((player) => [
+      ...player.Hand,
+      ...player.Zones.flatMap((zone) => zone.Cards),
+    ]),
+  ].map((card) => card.Id).filter((id): id is string => id != null);
+  if (new Set(ownershipIds).size !== ownershipIds.length) {
+    throw new Error("freeze collision: activation snapshot contains duplicate card ids");
+  }
+
   console.log("PASS power cards");
+}
+
+export function runFrozenViewTests(): void {
+  const rules = Object.assign(new RulesConfigData(), { NumCardsToDeal: 0 });
+  const state = new GameSimulator().CreateGame(73, rules, []);
+  const expectedFrozenHealth = rules.FrozenZoneHealth - rules.FrozenZonesMeltAmountPerTurn;
+  state.Players[1].Zones[0].FrozenHealth = expectedFrozenHealth;
+
+  const opponentView = JSON.parse(JSON.stringify(FairView.BuildSeatView(state, 0)));
+  const ownView = JSON.parse(JSON.stringify(FairView.BuildSeatView(state, 1)));
+  const snapshot = JSON.parse(JSON.stringify(FairView.BuildSnapshot(state)));
+
+  if (opponentView.View.Opponents[0].Zones[0].FrozenHealth !== expectedFrozenHealth) {
+    throw new Error("frozen view: opponent zone lost frozen health");
+  }
+  if (ownView.View.Player.Zones[0].FrozenHealth !== expectedFrozenHealth) {
+    throw new Error("frozen view: own zone lost frozen health");
+  }
+  if (snapshot.Seats[1].Zones[0].FrozenHealth !== expectedFrozenHealth) {
+    throw new Error("frozen view: snapshot lost frozen health");
+  }
+
+  console.log("PASS frozen views");
 }
 
 if (typeof Deno !== "undefined") {
   Deno.test("C# golden fixtures", runGoldenTests);
   Deno.test("power cards", runPowerCardTests);
+  Deno.test("frozen views", runFrozenViewTests);
 } else {
   await runGoldenTests();
   runPowerCardTests();
+  runFrozenViewTests();
 }

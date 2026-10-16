@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using Elemento.Domain;
@@ -54,6 +55,7 @@ public class CurrentRulesRegressionTests
     {
         UIWinLosePanel.IN = null;
         AudioManager.IN = null;
+        BoardStateManager.IN = null;
         CardsManager.IN = null;
         GameManager.IN = null;
         SettingsManager.IN = null;
@@ -88,6 +90,49 @@ public class CurrentRulesRegressionTests
         cardsManager.DestroyAllCards();
 
         Assert.That(cardsManager.SpawnedCards, Is.Empty);
+    }
+
+    [TestCase(SettingsManager.EPlayMode.AgainstAI)]
+    [TestCase(SettingsManager.EPlayMode.PassAndPlay)]
+    public void LocalPowerCardAllocation_SkipsExistingCardIds(SettingsManager.EPlayMode inPlayMode)
+    {
+        this.settings.PlayMode = inPlayMode;
+        var cardsManager = CreateComponent<CardsManager>("Cards Manager");
+        CardsManager.IN = cardsManager;
+        var existingCard = CreateComponent<Card>("Existing Card");
+        SetField(existingCard, "<Id>k__BackingField", "card-00000009");
+        cardsManager.SpawnedCards.Add(existingCard);
+
+        Assert.That(AllocateCardInstanceId(cardsManager, null), Is.EqualTo("card-00000010"));
+    }
+
+    [Test]
+    public void OnlinePowerCardAllocation_ReservesAuthoritativeCardId()
+    {
+        this.settings.PlayMode = SettingsManager.EPlayMode.Multiplayer;
+        var cardsManager = CreateComponent<CardsManager>("Cards Manager");
+        CardsManager.IN = cardsManager;
+        var existingCard = CreateComponent<Card>("Existing Card");
+        SetField(existingCard, "<Id>k__BackingField", "card-00000009");
+        cardsManager.SpawnedCards.Add(existingCard);
+
+        Assert.That(AllocateCardInstanceId(cardsManager, "card-00000010"), Is.EqualTo("card-00000010"));
+        Assert.That(AllocateCardInstanceId(cardsManager, null), Is.EqualTo("card-00000011"));
+    }
+
+    [Test]
+    public void OnlineIceReplay_UsesOverrideWithoutLocalReplayBoardState()
+    {
+        var cardsManager = CreateComponent<CardsManager>("Cards Manager");
+        CardsManager.IN = cardsManager;
+        cardsManager.PowerCardOverride = Card.ECardType.Freeze;
+        BoardStateManager.IN = null;
+        GameManager.IsDoingReplay = true;
+
+        var method = typeof(GameManager).GetMethod("GetPowerCardTypeForDeal",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null);
+        Assert.That(method.Invoke(null, null), Is.EqualTo(Card.ECardType.Freeze));
     }
 
     [Test]
@@ -228,6 +273,44 @@ public class CurrentRulesRegressionTests
         Assert.That(GameManager.ShouldBlockInput, Is.False);
     }
 
+    [Test]
+    public void ReplayFailure_CatchesNestedExceptionAndReleasesEveryInputLock()
+    {
+        var cardsManager = CreateComponent<CardsManager>("Cards Manager");
+        CardsManager.IN = cardsManager;
+        cardsManager.PowerCardOverride = Card.ECardType.Freeze;
+        GameManager.IsDealingHand = true;
+        GameManager.IsDoingActivateSequence = true;
+        GameManager.IsDoingReplay = true;
+        GameManager.IsApplyingRemoteUpdate = true;
+        BoardStateManager.IsDoingReplay = true;
+        BoardStateManager.IsSettingState = true;
+        Move.ShouldRecordMoves = false;
+        UIDraggable.ShouldBlockInput = true;
+        UIDraggable.IsDragPointerDown = true;
+        Exception replayException = null;
+
+        var runner = typeof(GameManager).GetMethod("RunReplayStepCo",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.That(runner, Is.Not.Null);
+        var replay = (IEnumerator)runner.Invoke(null, new object[]
+        {
+            ThrowingReplayStep(),
+            new Action<Exception>(inException => replayException = inException)
+        });
+        Drain(replay);
+        InvokeReleaseReplayInputLocks();
+
+        Assert.That(replayException, Is.TypeOf<InvalidOperationException>());
+        Assert.That(GameManager.ShouldBlockInput, Is.False);
+        Assert.That(UIDraggable.ShouldBlockInput, Is.False);
+        Assert.That(UIDraggable.IsDragPointerDown, Is.False);
+        Assert.That(BoardStateManager.IsDoingReplay, Is.False);
+        Assert.That(BoardStateManager.IsSettingState, Is.False);
+        Assert.That(Move.ShouldRecordMoves, Is.True);
+        Assert.That(cardsManager.PowerCardOverride, Is.EqualTo(Card.ECardType.None));
+    }
+
     [TestCase(false, true, false)]
     [TestCase(true, false, true)]
     public void RefreshPlayModeAvailability_MatchesGameProgress(bool isGameInProgress,
@@ -291,6 +374,40 @@ public class CurrentRulesRegressionTests
         Assert.That(zone.IsActivated, Is.EqualTo(expectedActivation));
     }
 
+    [Test]
+    public void SetFrozenHealth_AfterOnlineRebuildKeepsOverlayAbovePile()
+    {
+        this.settings.FrozenZoneHealth = 5;
+        var zone = CreateZone("Rebuilt Zone", CardData.EElementType.Air);
+        var frozenOverlay = GetField<GameObject>(zone, "frozenOverlay");
+        CreateGameObject("Rebuilt Pile Card", zone.CardCell.CardHolder);
+
+        zone.SetFrozenHealth(this.settings.FrozenZoneHealth, false);
+
+        Assert.That(zone.FrozenHealth, Is.EqualTo(this.settings.FrozenZoneHealth));
+        Assert.That(frozenOverlay.activeSelf, Is.True);
+        Assert.That(frozenOverlay.transform.GetSiblingIndex(), Is.EqualTo(zone.CardCell.CardHolder.childCount - 1));
+    }
+
+    [Test]
+    public void SwapPlayerState_PreservesFrozenHealthAndOverlay()
+    {
+        this.settings.FrozenZoneHealth = 5;
+        var first = CreateZone("First Zone", CardData.EElementType.Air);
+        var second = CreateZone("Second Zone", CardData.EElementType.Air);
+        var firstOverlay = GetField<GameObject>(first, "frozenOverlay");
+        var secondOverlay = GetField<GameObject>(second, "frozenOverlay");
+        first.SetFrozenHealth(this.settings.FrozenZoneHealth, false);
+
+        first.SwapPlayerState(second);
+
+        Assert.That(first.FrozenHealth, Is.Zero);
+        Assert.That(firstOverlay.activeSelf, Is.False);
+        Assert.That(second.FrozenHealth, Is.EqualTo(this.settings.FrozenZoneHealth));
+        Assert.That(secondOverlay.activeSelf, Is.True);
+        Assert.That(secondOverlay.transform.GetSiblingIndex(), Is.EqualTo(second.CardCell.CardHolder.childCount - 1));
+    }
+
     [TestCase(49, false)]
     [TestCase(50, true)]
     public void CheckWinLoseState_UsesInclusivePointsTarget(int totalPoints, bool expectedWin)
@@ -344,7 +461,10 @@ public class CurrentRulesRegressionTests
 
         SetField(zone, "pointsCount", CreatePoints(name + " Points", zoneObject.transform));
         SetField(zone, "zoneFrozenHealth", CreatePoints(name + " Frozen Health", zoneObject.transform));
+        SetField(zone, "zoneHealth", CreatePoints(name + " Health", zoneObject.transform));
         SetField(zone, "pointsCountDisplay", CreateGameObject(name + " Points Display", zoneObject.transform));
+        SetField(zone, "zoneHealthDisplay", CreateGameObject(name + " Health Display", zoneObject.transform));
+        SetField(zone, "zoneDestroyedOverlay", CreateGameObject(name + " Destroyed Overlay", zoneObject.transform));
         SetField(zone, "activeDisplays", Array.Empty<GameObject>());
         SetField(zone, "frozenOverlay", CreateGameObject(name + " Frozen Overlay", zoneObject.transform));
 
@@ -498,6 +618,37 @@ public class CurrentRulesRegressionTests
 
         this.createdObjects.Add(gameObject);
         return gameObject;
+    }
+
+    private static string AllocateCardInstanceId(CardsManager inCardsManager, string inCardId)
+    {
+        var method = typeof(CardsManager).GetMethod("AllocateCardInstanceId",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null);
+        return (string)method.Invoke(inCardsManager, new object[] { inCardId });
+    }
+
+    private static IEnumerator ThrowingReplayStep()
+    {
+        yield return null;
+        throw new InvalidOperationException("Ice replay failed.");
+    }
+
+    private static void Drain(IEnumerator inRoutine)
+    {
+        while (inRoutine.MoveNext())
+        {
+            if (inRoutine.Current is IEnumerator nestedRoutine)
+                Drain(nestedRoutine);
+        }
+    }
+
+    private static void InvokeReleaseReplayInputLocks()
+    {
+        var method = typeof(GameManager).GetMethod("ReleaseReplayInputLocks",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null);
+        method.Invoke(null, null);
     }
 
     private static void SetField(object target, string fieldName, object value)

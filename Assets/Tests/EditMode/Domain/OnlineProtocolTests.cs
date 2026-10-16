@@ -98,6 +98,55 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public void MatchAuthority_ReplayPreservesFrozenZoneAfterEndTurn()
+        {
+            const int seed = 7332;
+            var decks = CreateDeckDefinitionsBySeat();
+            var rules = new RulesConfigData
+            {
+                AllowSelectPowerCardType = true,
+                ElementZonePointsRequiredToActivate = 1,
+                MovesPerTurn = 0,
+                NumCardsToDeal = 3,
+                TotalPointsRequiredToWin = 10000
+            };
+            var state = new MatchFactory().Create(seed, rules, decks);
+            var authority = new MatchAuthority();
+            var simulator = new GameSimulator();
+
+            var play = simulator.GetLegalMoves(state, 0).Find(inMove =>
+                inMove.Type == EMoveType.PlayCard && inMove.TargetPlayerId == 0);
+            Assert.That(play, Is.Not.Null);
+            Assert.That(authority.ValidateAndApply(state, CreateCommand(state, play, 0)).Accepted, Is.True);
+
+            var activate = simulator.GetLegalMoves(state, 0).Find(inMove =>
+                inMove.Type == EMoveType.ActivateZone && inMove.PowerCardType == EPowerCardType.Freeze);
+            Assert.That(activate, Is.Not.Null);
+            Assert.That(authority.ValidateAndApply(state, CreateCommand(state, activate, 1)).Accepted, Is.True);
+
+            var freezeCard = state.Players[0].Hand.Find(inCard => inCard.WildFreeze > 0);
+            Assert.That(freezeCard, Is.Not.Null);
+            var freeze = simulator.GetLegalMoves(state, 0).Find(inMove =>
+                inMove.Type == EMoveType.PlayCard && inMove.CardId == freezeCard.Id
+                && inMove.TargetPlayerId == 1);
+            Assert.That(freeze, Is.Not.Null);
+            Assert.That(authority.ValidateAndApply(state, CreateCommand(state, freeze, 2)).Accepted, Is.True);
+            int frozenZoneId = freeze.TargetZoneId;
+
+            var endTurn = simulator.GetLegalMoves(state, 0).Find(inMove => inMove.Type == EMoveType.EndTurn);
+            Assert.That(endTurn, Is.Not.Null);
+            Assert.That(authority.ValidateAndApply(state, CreateCommand(state, endTurn, 3)).Accepted, Is.True);
+
+            var replayed = new MatchAuthority().Replay(seed, rules, decks,
+                new List<MoveLogEntryData>(authority.MoveLog));
+            int expectedFrozenHealth = rules.FrozenZoneHealth - rules.FrozenZonesMeltAmountPerTurn;
+
+            Assert.That(state.Players[1].Zones[frozenZoneId].FrozenHealth, Is.EqualTo(expectedFrozenHealth));
+            Assert.That(replayed.Players[1].Zones[frozenZoneId].FrozenHealth, Is.EqualTo(expectedFrozenHealth));
+            Assert.That(NetJson.Serialize(replayed), Is.EqualTo(NetJson.Serialize(state)));
+        }
+
+        [Test]
         public void MatchAuthority_RejectsWrongSeatStaleRevisionAndIllegalMove()
         {
             var state = new MatchFactory().Create(81, CreateFastRules(), CreateDeckDefinitionsBySeat());

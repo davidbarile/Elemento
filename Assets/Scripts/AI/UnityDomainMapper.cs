@@ -87,6 +87,9 @@ public static class UnityDomainMapper
             state.Players.Add(board == inPlayerBoard ? playerState : CreatePlayerState(board, false));
         }
 
+        int nextCardInstanceId = GetNextCardInstanceSequence(inPlayerBoards);
+        state.NextCardInstanceId = nextCardInstanceId;
+
         var view = new PlayerViewData
         {
             Revision = state.Revision,
@@ -99,6 +102,7 @@ public static class UnityDomainMapper
             WinType = EWinCondition.None,
             DeckCount = inDeckCount,
             PowerDeckCount = inPowerDeckCount,
+            NextCardInstanceId = nextCardInstanceId,
             Rules = state.Rules.Clone(),
             Player = playerState.Clone()
         };
@@ -433,6 +437,28 @@ public static class UnityDomainMapper
         return inCard.CreateInstanceData();
     }
 
+    private static int GetNextCardInstanceSequence(IEnumerable<UIPlayerBoard> inPlayerBoards)
+    {
+        int nextSequence = 0;
+        foreach (var board in inPlayerBoards)
+        {
+            foreach (var cell in board.Hand.CardCells)
+            {
+                if (cell?.TopCard != null)
+                    nextSequence = CardInstanceData.ReserveSequence(nextSequence, cell.TopCard.Id);
+            }
+            foreach (var zone in board.ElementZones)
+            {
+                foreach (var card in zone.CardCell.Cards)
+                {
+                    if (card != null && !card.IsDestroyed)
+                        nextSequence = CardInstanceData.ReserveSequence(nextSequence, card.Id);
+                }
+            }
+        }
+        return nextSequence;
+    }
+
     private static PlayerStateData FindPlayer(GameStateData inState, int inPlayerId)
     {
         foreach (var player in inState.Players)
@@ -470,20 +496,21 @@ public static class UnityDomainMapper
 
     private static UICardCell FindOnlineSourceCell(UIPlayerBoard inBoard, string inCardId, int inSourceZoneId)
     {
-        if (inSourceZoneId >= 0)
-            return FindOnlineZone(inBoard, inSourceZoneId)?.CardCell;
+        if (inBoard == null || string.IsNullOrEmpty(inCardId))
+            return null;
 
-        UICardCell fallback = null;
+        if (inSourceZoneId >= 0)
+        {
+            UICardCell zoneCell = FindOnlineZone(inBoard, inSourceZoneId)?.CardCell;
+            return zoneCell?.TopCard != null && zoneCell.TopCard.Id == inCardId ? zoneCell : null;
+        }
+
         foreach (var cell in inBoard.Hand.CardCells)
         {
-            if (cell?.TopCard == null)
-                continue;
-            if (cell.TopCard.Id == inCardId)
+            if (cell?.TopCard != null && cell.TopCard.Id == inCardId)
                 return cell;
-            if (fallback == null)
-                fallback = cell;
         }
-        return fallback;
+        return null;
     }
 
     private static UIElementZone FindZone(UIPlayerBoard inBoard, int inZoneId)

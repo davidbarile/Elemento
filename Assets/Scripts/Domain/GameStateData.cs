@@ -136,6 +136,20 @@ namespace Elemento.Domain
             return "card-" + inSequence.ToString("D8", CultureInfo.InvariantCulture);
         }
 
+        public static int ReserveSequence(int inNextSequence, string inCardId)
+        {
+            int nextSequence = Math.Max(0, inNextSequence);
+            const string prefix = "card-";
+            if (string.IsNullOrEmpty(inCardId) || !inCardId.StartsWith(prefix, StringComparison.Ordinal)
+                || !int.TryParse(inCardId.Substring(prefix.Length), NumberStyles.None,
+                    CultureInfo.InvariantCulture, out int sequence))
+            {
+                return nextSequence;
+            }
+
+            return sequence >= nextSequence ? sequence + 1 : nextSequence;
+        }
+
         public CardInstanceData Clone()
         {
             return new CardInstanceData
@@ -295,6 +309,30 @@ namespace Elemento.Domain
         public List<CardInstanceData> DiscardPile = new();
         public List<MoveData> Moves = new();
 
+        public int GetNextCardInstanceSequence()
+        {
+            int nextSequence = Math.Max(0, this.NextCardInstanceId);
+            ReserveCards(this.Deck, ref nextSequence);
+            ReserveCards(this.ReserveDeck, ref nextSequence);
+            ReserveCards(this.PowerDeck, ref nextSequence);
+            ReserveCards(this.DiscardPile, ref nextSequence);
+            foreach (var player in this.Players)
+            {
+                ReserveCards(player.Hand, ref nextSequence);
+                foreach (var zone in player.Zones)
+                    ReserveCards(zone.Cards, ref nextSequence);
+            }
+            return nextSequence;
+        }
+
+        public string TakeNextCardInstanceId()
+        {
+            this.NextCardInstanceId = GetNextCardInstanceSequence();
+            string cardId = CardInstanceData.CreateId(this.NextCardInstanceId);
+            ++this.NextCardInstanceId;
+            return cardId;
+        }
+
         public GameStateData Clone()
         {
             var clone = new GameStateData
@@ -334,6 +372,15 @@ namespace Elemento.Domain
         {
             foreach (var card in inSource)
                 inTarget.Add(card.Clone());
+        }
+
+        private static void ReserveCards(IEnumerable<CardInstanceData> inCards, ref int inNextSequence)
+        {
+            foreach (var card in inCards)
+            {
+                if (card != null)
+                    inNextSequence = CardInstanceData.ReserveSequence(inNextSequence, card.Id);
+            }
         }
     }
 }

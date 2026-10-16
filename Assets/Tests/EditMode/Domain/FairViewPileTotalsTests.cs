@@ -25,5 +25,23 @@ namespace Elemento.Domain.Tests
             Assert.That(masked.Id, Is.EqualTo("hidden-1"));
             Assert.That(masked.DefinitionName, Is.Null);
         }
+
+        [Test]
+        public void SeatViewsAndSnapshot_PreserveFrozenHealth()
+        {
+            var state = new MatchFactory().Create(78, new RulesConfigData(),
+                OnlineProtocolTests.CreateDeckDefinitionsBySeat(), "frozen-view");
+            state.Players[1].Zones[0].FrozenHealth = 4;
+
+            var opponentView = FairView.BuildSeatView(state, 0);
+            var ownView = FairView.BuildSeatView(state, 1);
+            var snapshot = FairView.BuildSnapshot(state);
+            var roundTrip = NetJson.Deserialize<MatchSeatViewData>(NetJson.Serialize(opponentView));
+
+            Assert.That(opponentView.View.Opponents[0].Zones[0].FrozenHealth, Is.EqualTo(4));
+            Assert.That(ownView.View.Player.Zones[0].FrozenHealth, Is.EqualTo(4));
+            Assert.That(snapshot.Seats[1].Zones[0].FrozenHealth, Is.EqualTo(4));
+            Assert.That(roundTrip.View.Opponents[0].Zones[0].FrozenHealth, Is.EqualTo(4));
+        }
     }
 }

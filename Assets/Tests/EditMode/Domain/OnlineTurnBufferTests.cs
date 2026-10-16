@@ -255,6 +255,73 @@ namespace Elemento.Domain.Tests
             }
         }
 
+        [Test]
+        public void Buffer_IceTurnWithStaleNextId_ReplaysThroughEndTurn()
+        {
+            var state = CreatePowerCardTurnState(EPowerCardType.Freeze, 1, false);
+            state.NextCardInstanceId = 9;
+            state.Players[0].Hand[0].Id = "card-00000009";
+            var initialState = state.Clone();
+            var view = FairView.BuildSeatView(state, 0);
+            var activation = view.View.LegalMoves.First(inMove => inMove.Type == EMoveType.ActivateZone
+                && inMove.PowerCardType == EPowerCardType.Freeze).Clone();
+            string iceCardId = CardInstanceData.CreateId(view.View.NextCardInstanceId);
+            Assert.That(iceCardId, Is.EqualTo("card-00000010"));
+            activation.CardId = iceCardId;
+            var buffer = new OnlineTurnBuffer();
+            buffer.Begin(view, "ice-turn");
+
+            Assert.That(buffer.TryAppend(activation, out string activationReason), Is.True,
+                activationReason);
+            Assert.That(buffer.TryAppend(new MoveData
+            {
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = iceCardId,
+                SourceZoneId = -1,
+                TargetPlayerId = 1,
+                TargetZoneId = 1
+            }, out string iceReason), Is.True, iceReason);
+            Assert.That(buffer.TryAppend(CreateTerminalMarker(0), out string endReason), Is.True,
+                endReason);
+            Assert.That(buffer.IsComplete, Is.True);
+
+            var authority = new MatchAuthority();
+            for (int i = 0; i < buffer.Moves.Count; ++i)
+            {
+                var result = authority.ValidateAndApply(state, new MoveCommandData
+                {
+                    MatchId = state.MatchId,
+                    Seat = 0,
+                    ClientMoveSequence = i + 1,
+                    ClientNonce = buffer.ClientNonce,
+                    ExpectedRevision = state.Revision,
+                    Move = buffer.Moves[i].Clone()
+                });
+                Assert.That(result.Accepted, Is.True, result.Reason);
+            }
+
+            var replayed = initialState.Clone();
+            var replayAuthority = new MatchAuthority();
+            foreach (var entry in authority.MoveLog)
+            {
+                var result = replayAuthority.ValidateAndApply(replayed, new MoveCommandData
+                {
+                    MatchId = replayed.MatchId,
+                    Seat = entry.Seat,
+                    ClientMoveSequence = entry.ClientMoveSequence,
+                    ClientNonce = entry.ClientNonce,
+                    ExpectedRevision = replayed.Revision,
+                    Move = entry.Move.Clone()
+                });
+                Assert.That(result.Accepted, Is.True, result.Reason);
+            }
+
+            Assert.That(replayed.Players[1].Zones[1].FrozenHealth,
+                Is.EqualTo(state.Players[1].Zones[1].FrozenHealth));
+            Assert.That(NetJson.Serialize(replayed), Is.EqualTo(NetJson.Serialize(state)));
+        }
+
         private static GameStateData CreatePowerCardTurnState(EPowerCardType inPowerCardType,
             int inTargetPlayerId, bool inTargetIsFrozen)
         {
@@ -301,6 +368,13 @@ namespace Elemento.Domain.Tests
             }
 
             state.Players[0].Zones[0].IsActivated = true;
+            state.Players[0].Hand.Add(new CardInstanceData
+            {
+                Id = CardInstanceData.CreateId(state.NextCardInstanceId),
+                DefinitionName = "Existing card at stale next id",
+                IsFaceUp = true,
+                Points = new[] { 1, 0, 0, 0 }
+            });
             var targetZone = state.Players[inTargetPlayerId].Zones[1];
             if (inPowerCardType == EPowerCardType.Heal)
                 targetZone.Health = 1;
