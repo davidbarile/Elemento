@@ -823,6 +823,10 @@ public class UICardCell : MonoBehaviour
         inCard.transform.localScale = Vector3.one;
         inCard.transform.localRotation = Quaternion.identity;
 
+        // FrozenOverlay shares CardHolder with the cards, so every card parented here must re-sort it on top.
+        if (this.ElementZone != null)
+            this.ElementZone.RefreshSiblingIndices();
+
         if (this.CellType == ECellType.Hand)
         {
             var grid = this.GetComponentInParent<HorizontalLayoutGroup>();

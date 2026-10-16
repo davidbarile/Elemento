@@ -3,7 +3,8 @@
 	"ShouldShowSplashScreen": true,
 	"ShouldAutoDealHand": true,
 	"AllowSelectPowerCardType": true,
-	"LanguageIndex": 0,
+	"AllowUndo": true,
+	"LanguageIndex": 1,
 	"SkinTypeIndex": 0,
 	"CardBackIndex": 0,
 	"MusicVolume": 0.25,
@@ -17,7 +18,7 @@
 	"ElementZonePointsRequiredToActivate": 10,
 	"TotalPointsRequiredToWin": 50,
 	"DiscardMode": 1,
-	"PlayMode": 0,
+	"PlayMode": 2,
 	"AiDifficulty": 2,
 	"ActiveDeckId": "ChoiceDeckID",
 	"DecksDict": {

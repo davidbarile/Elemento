@@ -138,6 +138,7 @@ public class UIElementZone : MonoBehaviour
 
         //TODO: change to anim, add particles
         this.frozenOverlay.SetActive(this.IsFrozen);
+        RefreshSiblingIndices();
 
         if (inShouldPlaySound)
         {

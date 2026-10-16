@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class UIAlertPanel : UIPanelBase
 {
@@ -17,9 +18,20 @@ public class UIAlertPanel : UIPanelBase
     [SerializeField] private GameObject warningDisplay;
     [SerializeField] private GameObject notificationDisplay;
 
-    public void Show(string inMessage, float inDuration = 2f, EAlertMode inAlertMode = EAlertMode.Warning)
+    private Image notificationBackground;
+    private Color defaultNotificationColor;
+
+    public void Show(string inMessage, float inDuration = 2f, EAlertMode inAlertMode = EAlertMode.Warning,
+        Color? inNotificationColor = null)
     {
         base.Show();
+
+        if (this.notificationBackground == null)
+        {
+            this.notificationBackground = this.notificationDisplay.GetComponent<Image>();
+            this.defaultNotificationColor = this.notificationBackground.color;
+        }
+        this.notificationBackground.color = inNotificationColor ?? this.defaultNotificationColor;
 
         this.warningDisplay.SetActive(inAlertMode == EAlertMode.Warning);
         this.notificationDisplay.SetActive(inAlertMode == EAlertMode.Notification);

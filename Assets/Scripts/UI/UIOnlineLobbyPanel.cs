@@ -133,11 +133,12 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         OnlineMatchContext.Set(this.client);
         Hide();
         GameManager.IN.RestartGame();
-        string[] message = inView.View.StartingPlayerId == inView.Seat
+        bool isGoingFirst = inView.View.StartingPlayerId == inView.Seat;
+        string[] message = isGoingFirst
             ? LocalizationManager.IN.OnlineYouGoFirst
             : LocalizationManager.IN.OnlineOpponentGoesFirst;
         UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(message), 2f,
-            UIAlertPanel.EAlertMode.Notification);
+            UIAlertPanel.EAlertMode.Notification, isGoingFirst ? (Color?)null : Color.red);
     }
 
     public void HandleBackButtonPress()

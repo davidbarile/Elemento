@@ -141,7 +141,7 @@ export function buildSeatViews(state: GameStateData): MatchSeatViewData[] {
 }
 
 export function randomInviteCode(): string {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ23456789";
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1: they look alike in the Match ID font
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   return Array.from(bytes, (value) => alphabet[value % alphabet.length]).join("");
 }

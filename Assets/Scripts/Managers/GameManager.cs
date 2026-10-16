@@ -591,7 +591,9 @@ public class GameManager : MonoBehaviour
 
         var cardType = ECardType.None;
 
-        if (GameManager.IsDoingReplay)
+        // Online replays also set IsDoingReplay but feed the type through PowerCardOverride; their
+        // CurrentReplayBoardState is stale (an undo leaves it with Move == null).
+        if (GameManager.IsDoingReplay && !this.IsOnline)
         {
             cardType = BoardStateManager.IN.CurrentReplayBoardState.Move.CardType;
         }
@@ -599,7 +601,13 @@ public class GameManager : MonoBehaviour
         if (CardsManager.IN.PowerCardOverride != ECardType.None)
             cardType = CardsManager.IN.PowerCardOverride;
 
-        string powerCardId = this.IsOnline ? this.onlineClient?.GetNextBufferedCardId() : null;
+        // Replays must not touch the turn buffer: Begin() throws off-turn, which kills this coroutine
+        // with IsDealingHand still set and hangs PlayOnlineMoveCo. The replayed card's id is reconciled
+        // by MaterializeOnlineReplayCard and the post-replay rebuild.
+        string powerCardId = null;
+        if (this.IsOnline)
+            powerCardId = GameManager.IsDoingReplay ? "replay-" + Guid.NewGuid().ToString("N")
+                : this.onlineClient?.GetNextBufferedCardId();
         var powerCard = CardsManager.IN.SpawnPowerCardOfType(cardType, powerCardId);
 
         if (powerCard == null) yield break;
@@ -2168,7 +2176,35 @@ public class GameManager : MonoBehaviour
             boardState.Players.Add(playerData);
         }
 
+        ValidateBoardStateIds(boardState);
         return boardState;
+    }
+
+    // Catches a duplicate at capture time; the stack trace names the caller that recorded it.
+    [System.Diagnostics.Conditional("UNITY_EDITOR")]
+    [System.Diagnostics.Conditional("DEVELOPMENT_BUILD")]
+    private static void ValidateBoardStateIds(BoardState inBoardState)
+    {
+        Dictionary<string, string> locations = new();
+        CheckIds(inBoardState.Deck.CardIds, "Deck");
+        for (int i = 0; i < inBoardState.Players.Count; i++)
+        {
+            var player = inBoardState.Players[i];
+            CheckIds(player.Hand.CardIds, $"P{i} hand");
+            for (int k = 0; k < player.ElementZones.Length; k++)
+                CheckIds(player.ElementZones[k].CardIds, $"P{i} zone {k}");
+        }
+
+        void CheckIds(List<string> inIds, string inLocation)
+        {
+            foreach (string id in inIds)
+            {
+                if (locations.TryGetValue(id, out string firstLocation))
+                    Debug.LogError($"Board snapshot has card id '{id}' in {firstLocation} and {inLocation}.");
+                else
+                    locations[id] = inLocation;
+            }
+        }
     }
 
     public void SetGameToBoardState(BoardState inBoardState, bool inShouldPlay = false)
