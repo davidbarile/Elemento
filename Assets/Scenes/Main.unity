@@ -11003,6 +11003,9 @@ MonoBehaviour:
   Undo:
   - Undo
   - Deshacer
+  AllowUndo:
+  - Allow Undo
+  - Permitir Deshacer
   Rename:
   - 'Re-
 
@@ -11404,9 +11407,6 @@ MonoBehaviour:
   OnlineOpponentGoesFirst:
   - Opponent goes first
   - Empieza el rival
-  AllowUndo:
-  - Allow Undo
-  - Permitir Deshacer
   UndoPastDraw:
   - Can't undo past a draw.
   - "No puedes deshacer m\xE1s all\xE1 de un robo."
@@ -48678,7 +48678,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7400000000000000011, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
       propertyPath: m_SizeDelta.x
-      value: 485.19
+      value: 667.04
       objectReference: {fileID: 0}
     - target: {fileID: 7400000000000000021, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
       propertyPath: m_AnchorMax.y
@@ -48690,11 +48690,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7400000000000000021, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
       propertyPath: m_SizeDelta.x
-      value: 40
+      value: 50
       objectReference: {fileID: 0}
     - target: {fileID: 7400000000000000021, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 50
+      value: 55
       objectReference: {fileID: 0}
     - target: {fileID: 7400000000000000021, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -48710,11 +48710,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7400000000000000031, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
       propertyPath: m_SizeDelta.x
-      value: 365.19
+      value: 537.04
       objectReference: {fileID: 0}
     - target: {fileID: 7400000000000000031, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
       propertyPath: m_AnchoredPosition.x
-      value: 272.595
+      value: 368.52
       objectReference: {fileID: 0}
     - target: {fileID: 7400000000000000031, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
       propertyPath: m_AnchoredPosition.y
