@@ -152,6 +152,7 @@ public class GameManager : MonoBehaviour
     private bool isOnlineMovePending;
     private bool isOnlineLeavePending;
     private bool isOnlineReplayActive;
+    private bool isSubmittingOnlineWin;
     private bool hasOnlineRenderedView;
     private bool skipOnlineReplay;
     private int onlineAppliedRevision = -1;
@@ -1181,6 +1182,8 @@ public class GameManager : MonoBehaviour
                 SaveLastSeenOnlineView(inSeatView);
             }
             RefreshOnlineControls();
+            if (!inIsReplayPreview)
+                TryShowOnlineGameOver();
         }
         finally
         {
@@ -1293,6 +1296,8 @@ public class GameManager : MonoBehaviour
             this.pendingOnlineUpdate = null;
             HandleOnlineViewUpdate(pending);
         }
+        else
+            TryShowOnlineGameOver();
     }
 
     private IEnumerator PlayOnlineMoveLogCo(IReadOnlyList<MoveLogEntryData> inMoves,
@@ -1431,6 +1436,8 @@ public class GameManager : MonoBehaviour
             this.pendingOnlineUpdate = null;
             HandleOnlineViewUpdate(pending);
         }
+        else
+            TryShowOnlineGameOver();
     }
 
     private int StageOnlineHandCardsForDeal(int inSeat, IReadOnlyList<DomainCardInstanceData> inCards)
@@ -1978,6 +1985,7 @@ public class GameManager : MonoBehaviour
         }
 
         RefreshOnlineControls();
+        TryShowOnlineGameOver();
     }
 
     private void HandleOnlineTurnFailed(Exception inException)
@@ -2181,6 +2189,62 @@ public class GameManager : MonoBehaviour
 
         //Debug.Log($"CheckWinLoseState({inPlayerBoard.Name}, inIsFromDestroyedZone)   inPlayerBoard.TotalPoints = {inPlayerBoard.TotalPoints}");
 
+        // Online the server decides the result: send the winning turn, then both clients show the
+        // panel from the confirmed view (TryShowOnlineGameOver). Replays/renders only re-show state.
+        if (this.IsOnline)
+        {
+            if (this.IsPlayersTurn && !GameManager.IsApplyingRemoteUpdate && !this.isOnlineReplayActive
+                && !this.isSubmittingOnlineWin)
+                StartCoroutine(SubmitOnlineWinningTurnCo());
+            return;
+        }
+
+        ShowWinLosePanel(playerWon, message);
+    }
+
+    private IEnumerator SubmitOnlineWinningTurnCo()
+    {
+        this.isSubmittingOnlineWin = true;
+        try
+        {
+            // The winning move is buffered after the zone/points check fires, so let the drop finish.
+            yield return null;
+            while (GameManager.ShouldBlockInput || UIDraggable.ShouldBlockInput
+                || GameManager.IsDealingHand || GameManager.IsDoingActivateSequence)
+                yield return null;
+
+            EndTurn();
+        }
+        finally
+        {
+            this.isSubmittingOnlineWin = false;
+        }
+    }
+
+    private void TryShowOnlineGameOver()
+    {
+        var view = this.onlineClient?.CurrentView?.View;
+        // A running replay calls this again when it finishes.
+        if (!this.IsOnline || view == null || view.WinnerPlayerId < 0 || UIWinLosePanel.IN.IsShowing
+            || this.isOnlineReplayActive)
+            return;
+
+        bool playerWon = view.WinnerPlayerId == this.onlineClient.LocalSeat;
+        string message;
+        if (view.WinType == Elemento.Domain.EWinCondition.AllZonesDestroyed)
+            message = LOC.IN.AllZonesDestroyedTitle[LOC.LI];
+        else
+        {
+            var winnerBoard = this.PlayerBoards[view.WinnerPlayerId];
+            message = string.Format(LOC.IN.TotalPointsTitle[LOC.LI], winnerBoard.TotalPoints,
+                SettingsManager.IN.TotalPointsRequiredToWin);
+        }
+
+        ShowWinLosePanel(playerWon, message);
+    }
+
+    private void ShowWinLosePanel(bool playerWon, string message)
+    {
         SetGameInProgress(false);
         BoardStateManager.IsDoingReplay = false;
 
