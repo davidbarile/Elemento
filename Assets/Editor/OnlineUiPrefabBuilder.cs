@@ -290,8 +290,8 @@ public static class OnlineUiPrefabBuilder
         RectTransform statusRect = (RectTransform)statusText.transform;
         RectTransform backRect = (RectTransform)buttonSource.transform;
         RectTransform cancelGameRect = (RectTransform)cancelGameObject.transform;
-        Vector2 statusAnchor = Vector2.Lerp(statusRect.anchorMin, statusRect.anchorMax,
-            statusRect.pivot);
+        Vector2 statusAnchor = new(Mathf.Lerp(statusRect.anchorMin.x, statusRect.anchorMax.x, statusRect.pivot.x),
+            Mathf.Lerp(statusRect.anchorMin.y, statusRect.anchorMax.y, statusRect.pivot.y));
         cancelGameRect.anchorMin = statusAnchor;
         cancelGameRect.anchorMax = statusAnchor;
         cancelGameRect.pivot = new Vector2(0.5f, 1f);
