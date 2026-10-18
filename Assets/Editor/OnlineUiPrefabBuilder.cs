@@ -181,7 +181,8 @@ public static class OnlineUiPrefabBuilder
             dim.SetAsFirstSibling();
 
             RectTransform banner = FindRect(root.transform, "Banner");
-            banner.anchoredPosition = new Vector2(0f, -91f);
+            // Main.unity stretches the panel root full-screen, so the prefab offset is already the on-screen position.
+            banner.anchoredPosition = new Vector2(0f, -45f);
             banner.SetSiblingIndex(1);
 
             GameObject leaveObject = GetOrCreateButton(rootRect, buttonSource, "Leave Button");
