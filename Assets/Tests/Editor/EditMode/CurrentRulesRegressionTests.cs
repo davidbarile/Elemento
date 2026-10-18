@@ -136,6 +136,31 @@ public class CurrentRulesRegressionTests
         Assert.That(method.Invoke(null, null), Is.EqualTo(Card.ECardType.Freeze));
     }
 
+    [TestCase(UICardCell.ECellType.Hand, true)]
+    [TestCase(UICardCell.ECellType.ElementZone, false)]
+    public void SetMovingCardFromHand_ReparentsOnlyHandCards(
+        UICardCell.ECellType inCellType, bool inShouldReparent)
+    {
+        var overlay = CreateComponent<UIDragOverlay>("Drag Overlay");
+        overlay.transform.localScale = new Vector3(2, 2, 2);
+
+        var sourceCell = CreateComponent<UICardCell>("Source Cell");
+        sourceCell.CellType = inCellType;
+        sourceCell.transform.localScale = new Vector3(.5f, .5f, .5f);
+
+        var card = CreateComponent<Card>("Card", sourceCell.transform);
+        card.transform.position = new Vector3(10, 20, 30);
+        Vector3 worldPosition = card.transform.position;
+        Vector3 worldScale = card.transform.lossyScale;
+
+        overlay.SetMovingCardFromHand(card, sourceCell);
+
+        Transform expectedParent = inShouldReparent ? overlay.transform : sourceCell.transform;
+        Assert.That(card.transform.parent, Is.EqualTo(expectedParent));
+        Assert.That(card.transform.position, Is.EqualTo(worldPosition));
+        Assert.That(card.transform.lossyScale, Is.EqualTo(worldScale));
+    }
+
     [Test]
     public void RetireForDestruction_DetachesViewBeforeSameFrameHierarchyRefresh()
     {

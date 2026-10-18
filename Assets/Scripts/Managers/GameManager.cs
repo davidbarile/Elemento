@@ -1372,9 +1372,10 @@ public class GameManager : MonoBehaviour
                 destination = this.PlayerBoards[inMove.TargetPlayerId].Hand.transform.position;
         }
 
-        card.transform.DOMove(destination, this.OpponentMoveTweenDuration)
+        UIDragOverlay.IN.SetMovingCardFromHand(card, source);
+        Tween moveTween = card.transform.DOMove(destination, this.OpponentMoveTweenDuration)
             .SetEase(Ease.InOutSine);
-        yield return new WaitForSeconds(this.OpponentMoveTweenDuration);
+        yield return moveTween.WaitForCompletion(true);
     }
 
     private static Card FindOnlineCardInCell(UICardCell inCell, string inCardId)

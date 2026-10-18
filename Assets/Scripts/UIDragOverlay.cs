@@ -30,8 +30,21 @@ public class UIDragOverlay : MonoBehaviour
 
     public void SetDraggingItem(Transform inDragItem)
     {
-        inDragItem.SetParent(this.transform);
-        inDragItem.SetAsLastSibling();
+        SetMovingItem(inDragItem);
         SetVisible(true);
+    }
+
+    public void SetMovingCardFromHand(Card inCard, UICardCell inSourceCell)
+    {
+        if (inSourceCell.CellType != UICardCell.ECellType.Hand)
+            return;
+
+        SetMovingItem(inCard.transform);
+    }
+
+    private void SetMovingItem(Transform inItem)
+    {
+        inItem.SetParent(this.transform, true);
+        inItem.SetAsLastSibling();
     }
 }

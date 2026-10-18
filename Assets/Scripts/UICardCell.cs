@@ -112,6 +112,7 @@ public class UICardCell : MonoBehaviour
             AudioManager.IN.PlayRejectSound(inRejectReason);
 
         var target = this.AnimTarget != null ? this.AnimTarget : this.CardHolder;
+        UIDragOverlay.IN.SetMovingCardFromHand(this.TopCard, this);
 
         this.TopCard.transform.DOMove(target.position, GameManager.IN.CardSnapBackTweenSpeed).OnComplete(() =>
         {
