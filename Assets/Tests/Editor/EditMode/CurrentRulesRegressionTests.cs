@@ -162,6 +162,64 @@ public class CurrentRulesRegressionTests
     }
 
     [Test]
+    public void GetCardLandingPosition_MatchesGridLayoutAfterParenting()
+    {
+        var cell = CreateUiComponent<UICardCell>("Cell", null);
+        cell.gameObject.SetActive(true);
+        cell.CellType = UICardCell.ECellType.ElementZone;
+        cell.MaxVisibleCardsInDeck = 2;
+        cell.transform.localScale = new Vector3(1.25f, 1.25f, 1.25f);
+
+        var grid = CreateUiComponent<GridLayoutGroup>("Cards Grid", cell.transform);
+        grid.gameObject.SetActive(true);
+        grid.cellSize = new Vector2(450, 600);
+        grid.padding = new RectOffset(40, 0, 40, 0);
+        grid.spacing = new Vector2(0, -570);
+        grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+        grid.constraintCount = 1;
+        var fitter = grid.gameObject.AddComponent<ContentSizeFitter>();
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        var gridRect = (RectTransform)grid.transform;
+        gridRect.pivot = new Vector2(.5f, 1);
+        gridRect.sizeDelta = new Vector2(530, 600);
+        cell.CardHolder = gridRect;
+
+        var firstCard = CreateUiComponent<Card>("First Card", gridRect);
+        var secondCard = CreateUiComponent<Card>("Second Card", gridRect);
+        firstCard.gameObject.SetActive(true);
+        secondCard.gameObject.SetActive(true);
+        ((RectTransform)firstCard.transform).sizeDelta = grid.cellSize;
+        ((RectTransform)secondCard.transform).sizeDelta = grid.cellSize;
+        cell.Cards.Add(firstCard);
+        cell.Cards.Add(secondCard);
+
+        var dragCanvas = CreateUiComponent<Image>("Drag Canvas", cell.transform.parent).rectTransform;
+        dragCanvas.gameObject.SetActive(true);
+        dragCanvas.localScale = new Vector3(2, 2, 2);
+        var movingCard = CreateUiComponent<Card>("Moving Card", dragCanvas);
+        movingCard.gameObject.SetActive(true);
+        var movingCardRect = (RectTransform)movingCard.transform;
+        movingCardRect.pivot = new Vector2(.5f, .5f);
+        movingCardRect.sizeDelta = grid.cellSize;
+
+        Vector3 landingPosition = cell.GetCardLandingPosition(movingCard);
+        Vector3 landingScale = cell.GetCardLandingLocalScale(dragCanvas);
+
+        Assert.That(cell.Cards, Has.Count.EqualTo(2));
+        Assert.That(firstCard.gameObject.activeSelf, Is.True);
+        movingCard.transform.localScale = landingScale;
+        Assert.That(Vector3.Distance(movingCard.transform.lossyScale, gridRect.lossyScale),
+            Is.LessThan(.01f));
+
+        cell.Cards.Add(movingCard);
+        cell.SetParentCell(movingCard);
+        LayoutRebuilder.ForceRebuildLayoutImmediate(gridRect);
+
+        Assert.That(Vector3.Distance(movingCard.transform.position, landingPosition),
+            Is.LessThan(.01f));
+    }
+
+    [Test]
     public void RetireForDestruction_DetachesViewBeforeSameFrameHierarchyRefresh()
     {
         var cardsManager = CreateComponent<CardsManager>("Cards Manager");

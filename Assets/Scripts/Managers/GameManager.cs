@@ -1312,15 +1312,7 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        UICardCell target = null;
-        if (inMove.TargetZoneId >= 0)
-            target = FindOnlineZone(inMove.TargetPlayerId, inMove.TargetZoneId)?.CardCell;
-        else if (inMove.TargetPlayerId >= 0
-            && inMove.TargetPlayerId < this.PlayerBoards.Length)
-        {
-            target = this.PlayerBoards[inMove.TargetPlayerId].Hand.CardCells.Find(
-                inCell => inCell != null && inCell.TopCard == null);
-        }
+        UICardCell target = FindOnlineCardMoveTarget(inMove);
 
         if (target == null)
         {
@@ -1348,6 +1340,21 @@ public class GameManager : MonoBehaviour
         this.PlayerBoards[inMove.PlayerId].Hand.RefreshPlayerHandText();
         if (inMove.TargetPlayerId >= 0 && inMove.TargetPlayerId < this.PlayerBoards.Length)
             this.PlayerBoards[inMove.TargetPlayerId].Hand.RefreshPlayerHandText();
+    }
+
+    private UICardCell FindOnlineCardMoveTarget(DomainMoveData inMove, Card inMovingCard = null)
+    {
+        if (inMove.TargetZoneId >= 0)
+            return FindOnlineZone(inMove.TargetPlayerId, inMove.TargetZoneId)?.CardCell;
+
+        if (inMove.TargetPlayerId >= 0 && inMove.TargetPlayerId < this.PlayerBoards.Length)
+        {
+            return this.PlayerBoards[inMove.TargetPlayerId].Hand.CardCells.Find(
+                inCell => inCell != null && (inCell.TopCard == null
+                    || ReferenceEquals(inCell.TopCard, inMovingCard)));
+        }
+
+        return null;
     }
 
     private void AddOnlineReplayDraws(TurnActionData inAction,
@@ -1431,17 +1438,22 @@ public class GameManager : MonoBehaviour
             yield break;
         }
 
+        UICardCell target = inMove.Type == Elemento.Domain.EMoveType.PlayCard
+            ? FindOnlineCardMoveTarget(inMove, card)
+            : null;
+        UIDragOverlay.IN.SetMovingCardFromHand(card, source);
         Vector3 destination = this.DiscardZoneTransform.position;
-        if (inMove.Type == Elemento.Domain.EMoveType.PlayCard)
+        if (target != null)
         {
-            UIElementZone targetZone = FindOnlineZone(inMove.TargetPlayerId, inMove.TargetZoneId);
-            if (targetZone != null)
-                destination = targetZone.CardCell.CardHolder.position;
-            else if (inMove.TargetPlayerId >= 0 && inMove.TargetPlayerId < this.PlayerBoards.Length)
-                destination = this.PlayerBoards[inMove.TargetPlayerId].Hand.transform.position;
+            if (target.CellType == UICardCell.ECellType.Hand)
+                target.gameObject.SetActive(true);
+
+            destination = target.GetCardLandingPosition(card);
+            Vector3 destinationScale = target.GetCardLandingLocalScale(card.transform.parent);
+            card.transform.DOScale(destinationScale, this.OpponentMoveTweenDuration)
+                .SetEase(Ease.InOutSine);
         }
 
-        UIDragOverlay.IN.SetMovingCardFromHand(card, source);
         Tween moveTween = card.transform.DOMove(destination, this.OpponentMoveTweenDuration)
             .SetEase(Ease.InOutSine);
         yield return moveTween.WaitForCompletion(true);
@@ -3004,18 +3016,19 @@ public class GameManager : MonoBehaviour
 
             //Debug.Log($">>>>> ID = {move.ID}   move.TargetCell = {move.TargetCell}  move.SourceCell = {move.SourceCell}   move.discard = {move.IsDiscard}   move.power = {move.ActivatePowerZone}");
 
-            var animTarget = move.TargetCell.AnimTarget != null ? move.TargetCell.AnimTarget : move.TargetCell.CardHolder;//need when CardHolder pivot changed from .5 to 1
-            var targetObj = move.TargetCell.TopCard != null ? move.TargetCell.TopCard.Center : animTarget;
-            var destPosition = move.IsDiscard ? discardPile.position : targetObj.position;
             var delayAtTweenEnd = move.IsDiscard ? .35f : 0;
+            var sourceCard = move.SourceCell.TopCard;
 
-            move.SourceCell.TopCard.Draggable.AnimateTo(destPosition, tweenDuration, delayAtTweenEnd);
-            move.SourceCell.TopCard.transform.DORotate(Vector3.zero, tweenDuration);
+            if (move.IsDiscard)
+                sourceCard.Draggable.AnimateTo(discardPile.position, tweenDuration, delayAtTweenEnd);
+            else
+                sourceCard.Draggable.AnimateTo(move.TargetCell, tweenDuration, delayAtTweenEnd);
+            sourceCard.transform.DORotate(Vector3.zero, tweenDuration);
 
             if (move.IsDiscard)
             {
                 //move.SourceCell.TopCard.transform.DOScale(Vector3.one * .4f, tweenDuration);
-                move.SourceCell.TopCard.transform.DOScale(Vector3.one * .001f, tweenDuration).SetDelay(tweenDuration + .1f);
+                sourceCard.transform.DOScale(Vector3.one * .001f, tweenDuration).SetDelay(tweenDuration + .1f);
             }
 
             yield return new WaitForSeconds(tweenDuration + delayAtTweenEnd + .05f);

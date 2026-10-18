@@ -46,6 +46,8 @@ public class UICardCell : MonoBehaviour
     [ShowIf("@CellType == ECellType.ElementZone")]
     public UIElementZone ElementZone;
 
+    private RectTransform cardLandingPlaceholder;
+
     public Card TopCard
     {
         get
@@ -111,13 +113,16 @@ public class UICardCell : MonoBehaviour
         if (inRejectReason != ERejectReason.None)
             AudioManager.IN.PlayRejectSound(inRejectReason);
 
-        var target = this.AnimTarget != null ? this.AnimTarget : this.CardHolder;
-        UIDragOverlay.IN.SetMovingCardFromHand(this.TopCard, this);
+        var card = this.TopCard;
+        UIDragOverlay.IN.SetMovingCardFromHand(card, this);
+        Vector3 destination = GetCardLandingPosition(card);
+        Vector3 destinationScale = GetCardLandingLocalScale(card.transform.parent);
 
-        this.TopCard.transform.DOMove(target.position, GameManager.IN.CardSnapBackTweenSpeed).OnComplete(() =>
+        card.transform.DOScale(destinationScale, GameManager.IN.CardSnapBackTweenSpeed);
+        card.transform.DOMove(destination, GameManager.IN.CardSnapBackTweenSpeed).OnComplete(() =>
         {
-            SetParentCell(this.TopCard);
-            this.TopCard.SetDimmedDecorations(this.ElementType);
+            SetParentCell(card);
+            card.SetDimmedDecorations(this.ElementType);
 
             if (this.ElementZone != null)
                 this.ElementZone.RefreshSiblingIndices();
@@ -812,6 +817,74 @@ public class UICardCell : MonoBehaviour
         sourceTopCard.DestroySelf();
 
         inSourceCell.OnCardRemoved?.Invoke(inSourceCell);
+    }
+
+    public Vector3 GetCardLandingPosition(Card inCard)
+    {
+        var parentGrid = this.CellType == ECellType.Hand
+            ? this.GetComponentInParent<HorizontalLayoutGroup>()
+            : null;
+        if (parentGrid != null)
+            LayoutRebuilder.ForceRebuildLayoutImmediate(parentGrid.GetComponent<RectTransform>());
+
+        var cardHolderRect = this.CardHolder as RectTransform;
+        if (cardHolderRect == null || this.CardHolder.GetComponent<LayoutGroup>() == null)
+            return this.CardHolder.TransformPoint(Vector3.zero);
+
+        if (this.cardLandingPlaceholder == null)
+        {
+            var placeholderObject = new GameObject("Card Landing Placeholder", typeof(RectTransform));
+            placeholderObject.SetActive(false);
+            this.cardLandingPlaceholder = placeholderObject.GetComponent<RectTransform>();
+        }
+
+        var cardRect = (RectTransform)inCard.transform;
+        this.cardLandingPlaceholder.SetParent(this.CardHolder, false);
+        this.cardLandingPlaceholder.pivot = cardRect.pivot;
+        this.cardLandingPlaceholder.sizeDelta = cardRect.sizeDelta;
+        this.cardLandingPlaceholder.localScale = Vector3.one;
+
+        Card hiddenCard = null;
+        bool wasHiddenCardActive = false;
+        if (!this.Cards.Contains(inCard) && this.MaxVisibleCardsInDeck > 0
+            && this.Cards.Count >= this.MaxVisibleCardsInDeck)
+        {
+            hiddenCard = this.Cards[this.Cards.Count - this.MaxVisibleCardsInDeck];
+            wasHiddenCardActive = hiddenCard.gameObject.activeSelf;
+            hiddenCard.gameObject.SetActive(false);
+        }
+
+        try
+        {
+            this.cardLandingPlaceholder.gameObject.SetActive(true);
+            this.cardLandingPlaceholder.SetAsLastSibling();
+            if (this.ElementZone != null)
+                this.ElementZone.RefreshSiblingIndices();
+
+            LayoutRebuilder.ForceRebuildLayoutImmediate(cardHolderRect);
+            if (parentGrid != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(parentGrid.GetComponent<RectTransform>());
+
+            return this.cardLandingPlaceholder.position;
+        }
+        finally
+        {
+            this.cardLandingPlaceholder.gameObject.SetActive(false);
+            if (hiddenCard != null)
+                hiddenCard.gameObject.SetActive(wasHiddenCardActive);
+
+            LayoutRebuilder.ForceRebuildLayoutImmediate(cardHolderRect);
+            if (parentGrid != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(parentGrid.GetComponent<RectTransform>());
+        }
+    }
+
+    public Vector3 GetCardLandingLocalScale(Transform inParent)
+    {
+        Vector3 parentScale = inParent.lossyScale;
+        Vector3 cardHolderScale = this.CardHolder.lossyScale;
+        return new Vector3(cardHolderScale.x / parentScale.x,
+            cardHolderScale.y / parentScale.y, cardHolderScale.z / parentScale.z);
     }
 
     public void SetParentCell(Card inCard, bool shouldRefreshGrid = true)

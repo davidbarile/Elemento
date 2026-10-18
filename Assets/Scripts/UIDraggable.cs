@@ -38,6 +38,7 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     private bool isClickDraggingFlag;
 
     private UICardCell originalParentCell;
+    private UICardCell animatedTargetCell;
 
     private List<UIHighlightableObject> highlightedObjects = new List<UIHighlightableObject>();
 
@@ -324,9 +325,12 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
 
     protected virtual void StopDraggingItem(PointerEventData eventData)
     {
+        var animatedTargetCell = this.animatedTargetCell;
         UIDraggable.ResetInputState();
 
-        var cell = UICardCell.GetCellAtPosition(this.transform.position);
+        var cell = animatedTargetCell != null
+            ? animatedTargetCell
+            : UICardCell.GetCellAtPosition(this.transform.position);
 
         if (cell != null)
         {
@@ -350,6 +354,8 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     public virtual void CancelDraggingItem()
     {
         //Debug.Log($"CancelDraggingItem");
+
+        this.animatedTargetCell = null;
 
         try
         {
@@ -400,6 +406,7 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
         if (draggedItem != null)
         {
             draggedItem.IsDragging = false;
+            draggedItem.animatedTargetCell = null;
             draggedItem.pointerClickFlag = false;
             draggedItem.isClickDraggingFlag = false;
             draggedItem.wasDraggedOutsideOfBuffer = false;
@@ -441,11 +448,31 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
 
     public void AnimateTo(Vector3 inDestPosition, float inTweenDuration = .5f, float inDelayAtEnd = 0)
     {
+        AnimateTo(inDestPosition, null, inTweenDuration, inDelayAtEnd);
+    }
+
+    public void AnimateTo(UICardCell inTargetCell, float inTweenDuration = .5f, float inDelayAtEnd = 0)
+    {
+        AnimateTo(Vector3.zero, inTargetCell, inTweenDuration, inDelayAtEnd);
+    }
+
+    private void AnimateTo(Vector3 inDestPosition, UICardCell inTargetCell,
+        float inTweenDuration, float inDelayAtEnd)
+    {
         this.IsAnimateDragging = true;
 
         SetOriginalParentCell();
         BeginDraggingItem();
         UIDragOverlay.IN.SetDraggingItem(this.transform);
+
+        this.animatedTargetCell = inTargetCell;
+        if (this.animatedTargetCell != null)
+        {
+            var card = this.GetComponent<Card>();
+            inDestPosition = this.animatedTargetCell.GetCardLandingPosition(card);
+            Vector3 destinationScale = this.animatedTargetCell.GetCardLandingLocalScale(this.transform.parent);
+            this.transform.DOScale(destinationScale, inTweenDuration).SetEase(Ease.InOutSine);
+        }
 
         UIDraggable.ShouldBlockInput = true;
 

@@ -566,19 +566,18 @@ public class UIPlayerBoard : MonoBehaviour
                     if (SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn)
                         discardPile = isPlayer ? GameManager.IN.DiscardToEndTurnZoneTransform : GameManager.IN.DiscardZoneTransform;
 
-                    var animTarget = move.TargetCell.AnimTarget != null ? move.TargetCell.AnimTarget : move.TargetCell.CardHolder;//need when CardHolder pivot changed from .5 to 1
-                    var targetObj = move.TargetCell.TopCard != null ? move.TargetCell.TopCard.Center : animTarget;
-
-                    var destPosition = move.IsDiscard ? discardPile.position : targetObj.position;
                     var delayAtTweenEnd = move.IsDiscard ? .35f : 0;
 
-                    move.SourceCell.TopCard.Draggable.AnimateTo(destPosition, tweenDuration, delayAtTweenEnd);
-                    move.SourceCell.TopCard.transform.DORotate(Vector3.zero, tweenDuration);
+                    if (move.IsDiscard)
+                        sourceCard.Draggable.AnimateTo(discardPile.position, tweenDuration, delayAtTweenEnd);
+                    else
+                        sourceCard.Draggable.AnimateTo(move.TargetCell, tweenDuration, delayAtTweenEnd);
+                    sourceCard.transform.DORotate(Vector3.zero, tweenDuration);
 
                     if (move.IsDiscard)
                     {
                         //move.SourceCell.TopCard.transform.DOScale(Vector3.one * .4f, tweenDuration);
-                        move.SourceCell.TopCard.transform.DOScale(Vector3.one * .001f, tweenDuration).SetDelay(tweenDuration + .1f);
+                        sourceCard.transform.DOScale(Vector3.one * .001f, tweenDuration).SetDelay(tweenDuration + .1f);
                     }
 
                     yield return new WaitForSeconds(tweenDuration + delayAtTweenEnd + .05f);
