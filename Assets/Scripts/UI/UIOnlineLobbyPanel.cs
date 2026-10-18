@@ -36,6 +36,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     private bool isBusy;
     private bool isProfileReady;
     private bool isResuming;
+    private bool isResumeLoading;
     private bool isRecoveryPending;
     private GameObject resumeList;
     private readonly List<Button> resumeButtons = new();
@@ -56,7 +57,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
 
     private async void OnApplicationFocus(bool inHasFocus)
     {
-        if (!inHasFocus || this.client == null)
+        if (!inHasFocus || this.isBusy || this.client == null)
             return;
         try
         {
@@ -72,14 +73,30 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     {
         if (this.isBusy) return;
         ReleaseMatch();
-        base.Show();
+        string automaticResumeMatchId = PlayerPrefs.GetString(activeMatchIdKey, string.Empty);
+        if (!string.IsNullOrEmpty(automaticResumeMatchId))
+            Hide();
         this.inviteCode = null;
         this.statusText.text = string.Empty;
         this.inviteCodeInput.text = string.Empty;
+        SetResumeLoading(false);
         RefreshText();
         this.isProfileReady = false;
+
+        if (!string.IsNullOrEmpty(automaticResumeMatchId))
+        {
+            await ResumeMatchAsync(automaticResumeMatchId, true);
+            return;
+        }
+
+        await LoadLobbyAsync();
+    }
+
+    private async Task LoadLobbyAsync()
+    {
+        base.Show();
+        SetResumeLoading(false);
         SetBusy(true);
-        string automaticResumeMatchId = null;
         try
         {
             this.auth ??= new SupabaseAuthClient(this);
@@ -87,13 +104,10 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             await this.profiles.EnsureProfileAsync();
             this.isProfileReady = true;
             this.statusText.text = string.Empty;
-            automaticResumeMatchId = await LoadResumableMatches();
+            await LoadResumableMatches();
         }
         catch (Exception exception) { ShowError(exception); }
         finally { SetBusy(false); }
-
-        if (!string.IsNullOrEmpty(automaticResumeMatchId))
-            ResumeMatch(automaticResumeMatchId);
     }
 
     public async void HandleCreateButtonPress()
@@ -153,7 +167,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             this.transport.StartListening(this.client);
         if (inMatch.Status == "waiting")
         {
-            this.statusText.text = GetWaitingText();
+            if (!this.isResumeLoading)
+                this.statusText.text = GetWaitingText();
             return;
         }
         HandleInitialView(inMatch);
@@ -252,7 +267,29 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.backButton.interactable = !inIsBusy;
         foreach (var button in this.resumeButtons)
             button.interactable = !inIsBusy && this.isProfileReady && this.client == null;
-        if (inIsBusy) this.statusText.text = LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineWorking);
+        if (inIsBusy)
+        {
+            string[] status = this.isResumeLoading
+                ? LocalizationManager.IN.OnlineResuming
+                : LocalizationManager.IN.OnlineWorking;
+            this.statusText.text = LocalizationManager.GetOnlineText(status);
+        }
+    }
+
+    private void SetResumeLoading(bool inIsLoading)
+    {
+        this.isResumeLoading = inIsLoading;
+        this.titleText.gameObject.SetActive(!inIsLoading);
+        this.hintText.gameObject.SetActive(!inIsLoading);
+        this.inviteCodeInput.gameObject.SetActive(!inIsLoading);
+        this.createButton.gameObject.SetActive(!inIsLoading);
+        this.joinButton.gameObject.SetActive(!inIsLoading);
+        this.backButton.gameObject.SetActive(!inIsLoading);
+        if (this.resumeList != null)
+            this.resumeList.SetActive(!inIsLoading);
+        this.statusText.gameObject.SetActive(true);
+        if (inIsLoading)
+            this.statusText.text = LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineResuming);
     }
 
     private void HandleLanguageChanged(int inLanguageIndex)
@@ -270,7 +307,9 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.createText.text = LocalizationManager.GetOnlineText(loc.OnlineCreateMatch);
         this.joinText.text = LocalizationManager.GetOnlineText(loc.OnlineJoinMatch);
         this.backText.text = LocalizationManager.GetOnlineText(loc.OnlineBack);
-        if (!string.IsNullOrEmpty(this.inviteCode))
+        if (this.isResumeLoading)
+            this.statusText.text = LocalizationManager.GetOnlineText(loc.OnlineResuming);
+        else if (!string.IsNullOrEmpty(this.inviteCode))
             this.statusText.text = GetWaitingText();
     }
 
@@ -283,20 +322,14 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             + LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineWaiting) + "</size>";
     }
 
-    private async Task<string> LoadResumableMatches()
+    private async Task LoadResumableMatches()
     {
         if (this.resumeList != null) Destroy(this.resumeList);
         this.resumeButtons.Clear();
         using var lookup = new SupabaseMatchTransport(this, this.auth);
         var result = await lookup.ListMyMatches(new ListMyMatchesRequestData());
-        string savedMatchId = PlayerPrefs.GetString(activeMatchIdKey, string.Empty);
-        string automaticResumeMatchId = null;
         if (result.Matches.Count == 0)
-        {
-            if (!string.IsNullOrEmpty(savedMatchId))
-                ForgetPersistedMatch(savedMatchId);
-            return null;
-        }
+            return;
 
         this.resumeList = new GameObject("Resume matches", typeof(RectTransform), typeof(RectMask2D), typeof(ScrollRect));
         var viewport = (RectTransform)this.resumeList.transform;
@@ -322,8 +355,6 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         scroll.horizontal = false;
         foreach (var match in result.Matches)
         {
-            if (match.MatchId == savedMatchId)
-                automaticResumeMatchId = match.MatchId;
             // Reuse the lobby button's complete visual hierarchy and clear its serialized action.
             var row = Instantiate(this.createButton.transform.parent.gameObject, contentRect);
             ((RectTransform)row.transform).sizeDelta = new Vector2(500f, 75f);
@@ -337,24 +368,48 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
                     ? LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineWaiting) : match.OpponentName);
             this.resumeButtons.Add(button);
         }
-        if (!string.IsNullOrEmpty(savedMatchId) && automaticResumeMatchId == null)
-            ForgetPersistedMatch(savedMatchId);
-        return automaticResumeMatchId;
     }
 
     private async void ResumeMatch(string inMatchId)
     {
-        if (this.isBusy || !this.isProfileReady || this.client != null) return;
+        await ResumeMatchAsync(inMatchId, false);
+    }
+
+    private async Task ResumeMatchAsync(string inMatchId, bool inIsAutomatic)
+    {
+        if (this.isBusy || this.client != null || (!inIsAutomatic && !this.isProfileReady)) return;
         SetBusy(true);
         try
         {
             this.isResuming = true;
+            if (inIsAutomatic)
+            {
+                this.auth ??= new SupabaseAuthClient(this);
+                this.profiles ??= new SupabaseProfileClient(this.auth);
+            }
+
+            MatchStateUpdateData checkpoint = inIsAutomatic ? LoadCheckpoint(inMatchId) : null;
+            bool restoreCheckpoint = checkpoint?.State != null && checkpoint.Status != "waiting";
+            if (!restoreCheckpoint)
+            {
+                checkpoint = null;
+                base.Show();
+                SetResumeLoading(true);
+            }
+
             CreateClient();
-            MatchStateUpdateData checkpoint = LoadCheckpoint(inMatchId);
-            if (checkpoint != null)
+            if (restoreCheckpoint)
             {
                 this.isRecoveryPending = true;
                 this.client.RestoreState(checkpoint);
+                StartMatch(checkpoint, false);
+                Hide();
+            }
+
+            if (inIsAutomatic)
+            {
+                await this.profiles.EnsureProfileAsync();
+                this.isProfileReady = true;
             }
 
             SubmitTurnRequestData pending = LoadPendingSubmission(inMatchId);
@@ -375,14 +430,20 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
                 }
             }
 
-            if (checkpoint != null)
-                StartMatch(checkpoint, false);
             MatchStateUpdateData match = await this.client.ResumeAsync(inMatchId);
-            if (checkpoint == null)
+            if (!restoreCheckpoint)
+            {
                 StartMatch(match, false);
+                if (match.Status == "waiting")
+                {
+                    SetResumeLoading(false);
+                    this.statusText.text = GetWaitingText();
+                }
+            }
             else
             {
                 this.isRecoveryPending = false;
+                GameManager.IN.HandleOnlineRecoveryCompleted();
                 if (match.Status != "waiting")
                     Hide();
             }
@@ -396,6 +457,16 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
                 GameManager.IN.AbortOnlineRecovery();
             else
                 ReleaseMatch();
+            if (inIsAutomatic && exception is SupabaseHttpException http
+                && (http.ResponseCode == 403 || http.ResponseCode == 404 || http.ResponseCode == 410))
+                ForgetPersistedMatch(inMatchId);
+            if (inIsAutomatic)
+                await LoadLobbyAsync();
+            else
+            {
+                base.Show();
+                SetResumeLoading(false);
+            }
             ShowError(exception);
         }
         finally { SetBusy(false); }

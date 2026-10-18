@@ -990,6 +990,14 @@ public class GameManager : MonoBehaviour
         ReleaseOnlineSession();
     }
 
+    public void HandleOnlineRecoveryCompleted()
+    {
+        if (!this.IsOnline)
+            return;
+        RefreshTurnAndMoveCountDisplay();
+        RefreshOnlineControls();
+    }
+
     private void StartOnlineSession()
     {
         StopAllCoroutines();
@@ -1889,6 +1897,7 @@ public class GameManager : MonoBehaviour
     private void RefreshOnlineControls()
     {
         RefreshWaitingForOpponentPanel();
+        bool isRecoveryPending = UIOnlineLobbyPanel.IN?.IsRecoveryPending == true;
 
         DomainGameStateData state = this.onlineTurnRecorder?.State
             ?? this.onlineClient?.CurrentState?.State;
@@ -1903,10 +1912,10 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        bool canMove = this.IsPlayersTurn && IsHumanPlayingPhase()
+        bool canMove = !isRecoveryPending && this.IsPlayersTurn && IsHumanPlayingPhase()
             && !this.isOnlineMovePending && this.onlineTurnRecorder != null
             && !this.onlineTurnRecorder.IsComplete && !this.isMoveBudgetEndPending;
-        bool canEndTurn = this.IsPlayersTurn && IsHumanPlayingPhase()
+        bool canEndTurn = !isRecoveryPending && this.IsPlayersTurn && IsHumanPlayingPhase()
             && !this.isOnlineMovePending && this.onlineTurnRecorder != null
             && (this.onlineTurnRecorder.IsComplete
                 || SettingsManager.IN.DiscardMode != EDiscardMode.DiscardEndsTurn);
@@ -1916,10 +1925,13 @@ public class GameManager : MonoBehaviour
             && SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn);
         this.DiscardZone.SetActive(canMove
             && SettingsManager.IN.DiscardMode == EDiscardMode.AllowDiscard);
-        SetReplayButtonVisibility(this.IsPlayersTurn && !this.isOnlineMovePending
+        SetReplayButtonVisibility(!isRecoveryPending && this.IsPlayersTurn && !this.isOnlineMovePending
             && !this.isOnlineReplayActive && HasOnlineReplayMoves());
         SetOnlineReplayButton(this.isOnlineReplayActive);
-        if (this.isOnlineMovePending)
+        if (isRecoveryPending)
+            this.playerTurnText.text =
+                LocalizationManager.GetOnlineText(LOC.IN.OnlineResuming);
+        else if (this.isOnlineMovePending)
             this.playerTurnText.text =
                 LocalizationManager.GetOnlineText(LOC.IN.OnlineSendingTurn);
         RefreshUndoControls();
