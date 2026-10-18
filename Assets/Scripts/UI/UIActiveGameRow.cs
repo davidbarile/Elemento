@@ -21,6 +21,7 @@ public sealed class UIActiveGameRow : MonoBehaviour
 
     private void Awake()
     {
+        LocalizationManager.OnLanguageChanged -= HandleLanguageChanged;
         LocalizationManager.OnLanguageChanged += HandleLanguageChanged;
         RefreshListeners();
     }
@@ -37,6 +38,8 @@ public sealed class UIActiveGameRow : MonoBehaviour
         this.match = inMatch;
         this.onRejoin = inOnRejoin;
         this.onForfeit = inOnForfeit;
+        LocalizationManager.OnLanguageChanged -= HandleLanguageChanged;
+        LocalizationManager.OnLanguageChanged += HandleLanguageChanged;
         RefreshListeners();
         RefreshText();
     }
