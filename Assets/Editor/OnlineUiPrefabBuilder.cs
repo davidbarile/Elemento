@@ -43,7 +43,7 @@ public static class OnlineUiPrefabBuilder
 
             UIActiveGameRow rowPrefab = BuildActiveGameRowPrefab(backButton.gameObject, buttonText);
             ConfigureWaitingPrefab(backButton.gameObject);
-            ConfigureLobbyPrefab(lobbyRoot, rowPrefab, buttonText);
+            ConfigureLobbyPrefab(lobbyRoot, rowPrefab, backButton.gameObject, buttonText);
         }
         finally
         {
@@ -214,7 +214,7 @@ public static class OnlineUiPrefabBuilder
     }
 
     private static void ConfigureLobbyPrefab(GameObject root, UIActiveGameRow rowPrefab,
-        TextMeshProUGUI textSource)
+        GameObject buttonSource, TextMeshProUGUI textSource)
     {
         RectTransform rootRect = (RectTransform)root.transform;
         RectTransform activeGames = GetOrCreateRect(rootRect, "Active Games");
@@ -278,13 +278,37 @@ public static class OnlineUiPrefabBuilder
         if (panel == null)
             throw new InvalidOperationException("[OnlineUiPrefabBuilder] UIOnlineLobbyPanel was not found.");
         SerializedObject serializedPanel = new(panel);
+        TextMeshProUGUI statusText = serializedPanel.FindProperty("statusText").objectReferenceValue
+            as TextMeshProUGUI;
+        if (statusText == null)
+            throw new InvalidOperationException("[OnlineUiPrefabBuilder] Lobby Status Text was not found.");
+
+        GameObject cancelGameObject = GetOrCreateButton(rootRect, buttonSource, "Cancel Game Button");
+        Button cancelGameButton = RequireButton(cancelGameObject, "Cancel Game Button");
+        TextMeshProUGUI cancelGameText = RequireButtonText(cancelGameObject, "Cancel Game Button");
+        cancelGameText.text = "Cancel game";
+        RectTransform statusRect = (RectTransform)statusText.transform;
+        RectTransform backRect = (RectTransform)buttonSource.transform;
+        RectTransform cancelGameRect = (RectTransform)cancelGameObject.transform;
+        Vector2 statusAnchor = Vector2.Lerp(statusRect.anchorMin, statusRect.anchorMax,
+            statusRect.pivot);
+        cancelGameRect.anchorMin = statusAnchor;
+        cancelGameRect.anchorMax = statusAnchor;
+        cancelGameRect.pivot = new Vector2(0.5f, 1f);
+        cancelGameRect.anchoredPosition = new Vector2(statusRect.anchoredPosition.x,
+            statusRect.anchoredPosition.y - statusRect.rect.height * statusRect.pivot.y - 20f);
+        cancelGameRect.sizeDelta = backRect.sizeDelta;
+
         Assign(serializedPanel, "activeGamesRoot", activeGames.gameObject);
         Assign(serializedPanel, "activeGamesHeaderText", header);
         Assign(serializedPanel, "activeGamesContent", content);
         Assign(serializedPanel, "activeGameRowPrefab", rowPrefab);
+        Assign(serializedPanel, "cancelGameButton", cancelGameButton);
+        Assign(serializedPanel, "cancelGameText", cancelGameText);
         serializedPanel.ApplyModifiedPropertiesWithoutUndo();
 
         activeGames.gameObject.SetActive(false);
+        cancelGameObject.SetActive(false);
         SavePrefab(root, lobbyPrefabPath);
         Debug.Log("[OnlineUiPrefabBuilder] Updated Online Lobby Panel prefab.");
     }
