@@ -69,9 +69,9 @@ namespace Elemento.Domain.Tests
             Assert.That(request.Turn.Actions, Is.Not.Null);
             Assert.That(request.Turn.FinalState, Is.Not.Null);
             Assert.That(request.Turn.FinalStateHash, Is.Not.Null);
-            Assert.That(request.Turn.Status, Is.AnyOf("active", "finished"));
-            Assert.That(request.Turn.NextSeat, Is.AnyOf(0, 1));
-            Assert.That(request.Turn.WinnerSeat, Is.AnyOf(-1, 0, 1));
+            Assert.That(request.Turn.Status, Is.EqualTo("active").Or.EqualTo("finished"));
+            Assert.That(request.Turn.NextSeat, Is.InRange(0, 1));
+            Assert.That(request.Turn.WinnerSeat, Is.InRange(-1, 1));
             Assert.That(json, Does.Contain("\"WinnerSeat\":-1"));
         }
 
