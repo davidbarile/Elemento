@@ -37,6 +37,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
 
     private void Awake()
     {
+        this.inviteCodeInput.gameObject.AddComponent<UIInputPlaceholderToggle>().Initialize(this.inviteCodeInput);
         LocalizationManager.OnLanguageChanged += HandleLanguageChanged;
     }
 
