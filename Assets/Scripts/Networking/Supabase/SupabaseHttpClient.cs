@@ -58,8 +58,11 @@ namespace Elemento.Networking.Supabase
                 request.SetRequestHeader("Authorization", "Bearer " + (inAccessToken ?? SupabaseConfig.AnonKey));
                 yield return request.SendWebRequest();
                 if (request.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogWarning("Supabase request rejected (" + inPath + ", " + request.responseCode + "): " + request.downloadHandler.text);
                     inCompletion.TrySetException(new SupabaseHttpException(request.responseCode,
                         "Supabase HTTP " + request.responseCode + ": " + request.downloadHandler.text));
+                }
                 else
                     inCompletion.TrySetResult(request.downloadHandler.text);
             }

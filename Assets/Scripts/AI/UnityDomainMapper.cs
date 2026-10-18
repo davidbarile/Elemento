@@ -238,74 +238,8 @@ public static class UnityDomainMapper
         return true;
     }
 
-    public static bool TryGetOnlineEndTurnMove(PlayerViewData inView, out MoveData outMove)
-    {
-        outMove = null;
-        if (inView?.LegalMoves == null)
-            return false;
-
-        foreach (var legalMove in inView.LegalMoves)
-        {
-            if (legalMove.Type == DomainMoveType.EndTurn)
-            {
-                outMove = legalMove.Clone();
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    public static bool TryCreateOnlineReplayMove(MoveData inDomainMove, UIPlayerBoard[] inPlayerBoards,
-        out Move outMove)
-    {
-        outMove = null;
-        if (inDomainMove == null || inPlayerBoards == null
-            || inDomainMove.Type == DomainMoveType.None || inDomainMove.Type == DomainMoveType.EndTurn
-            || inDomainMove.Type == DomainMoveType.DrawCard)
-            return false;
-
-        UIPlayerBoard sourceBoard = FindOnlineBoard(inPlayerBoards, inDomainMove.PlayerId);
-        if (sourceBoard == null)
-            return false;
-
-        if (inDomainMove.Type == DomainMoveType.ActivateZone)
-        {
-            UIElementZone zone = FindOnlineZone(sourceBoard, inDomainMove.SourceZoneId);
-            if (zone == null)
-                return false;
-            outMove = Move.CreateMove(zone.CardCell, zone.CardCell, false, zone, false,
-                MapPowerCardType(inDomainMove.PowerCardType), inDomainMove.PlayerId);
-            outMove.Data = inDomainMove.Clone();
-            return true;
-        }
-
-        UICardCell sourceCell = FindOnlineSourceCell(sourceBoard, inDomainMove.CardId,
-            inDomainMove.SourceZoneId);
-        if (sourceCell?.TopCard == null)
-            return false;
-
-        if (inDomainMove.Type == DomainMoveType.DiscardCard)
-        {
-            outMove = Move.CreateMove(sourceCell, sourceCell, true, null, false,
-                sourceCell.TopCard.CardType, inDomainMove.PlayerId, inDomainMove.CardId);
-            outMove.Data = inDomainMove.Clone();
-            return true;
-        }
-
-        UIPlayerBoard targetBoard = FindOnlineBoard(inPlayerBoards, inDomainMove.TargetPlayerId);
-        UICardCell targetCell = inDomainMove.TargetZoneId < 0
-            ? FindOnlineHandTargetCell(targetBoard) : FindOnlineZone(targetBoard, inDomainMove.TargetZoneId)?.CardCell;
-        if (targetCell == null)
-            return false;
-
-        outMove = Move.CreateMove(sourceCell, targetCell, false, null, false,
-            sourceCell.TopCard.CardType, inDomainMove.PlayerId, inDomainMove.CardId);
-        outMove.Data = inDomainMove.Clone();
-        return true;
-    }
-
-    public static void FilterMappableMoves(PlayerViewData inView, HashSet<string> inRejectedMoveKeys = null)
+    public static void FilterMappableMoves(PlayerViewData inView,
+        HashSet<string> inRejectedMoveKeys = null)
     {
         if (inView == null || inView.LegalMoves == null)
             return;
@@ -314,7 +248,8 @@ public static class UnityDomainMapper
         {
             var move = inView.LegalMoves[i];
             if (!IsMappableMove(move)
-                || inRejectedMoveKeys != null && inRejectedMoveKeys.Contains(CreateMoveKey(move)))
+                || inRejectedMoveKeys != null
+                && inRejectedMoveKeys.Contains(CreateMoveKey(move)))
             {
                 inView.LegalMoves.RemoveAt(i);
             }
@@ -490,51 +425,6 @@ public static class UnityDomainMapper
                 return board;
         }
 
-        return null;
-    }
-
-    private static UIPlayerBoard FindOnlineBoard(UIPlayerBoard[] inBoards, int inSeat)
-    {
-        return inSeat >= 0 && inSeat < inBoards.Length ? inBoards[inSeat] : null;
-    }
-
-    private static UIElementZone FindOnlineZone(UIPlayerBoard inBoard, int inZoneId)
-    {
-        return inBoard != null && inBoard.ElementZones != null
-            && inZoneId >= 0 && inZoneId < inBoard.ElementZones.Length
-            ? inBoard.ElementZones[inZoneId]
-            : null;
-    }
-
-    private static UICardCell FindOnlineSourceCell(UIPlayerBoard inBoard, string inCardId, int inSourceZoneId)
-    {
-        if (inBoard == null || string.IsNullOrEmpty(inCardId))
-            return null;
-
-        if (inSourceZoneId >= 0)
-        {
-            UICardCell zoneCell = FindOnlineZone(inBoard, inSourceZoneId)?.CardCell;
-            return zoneCell?.TopCard != null && zoneCell.TopCard.Id == inCardId ? zoneCell : null;
-        }
-
-        foreach (var cell in inBoard.Hand.CardCells)
-        {
-            if (cell?.TopCard != null && cell.TopCard.Id == inCardId)
-                return cell;
-        }
-        return null;
-    }
-
-    private static UICardCell FindOnlineHandTargetCell(UIPlayerBoard inBoard)
-    {
-        if (inBoard?.Hand?.CardCells == null)
-            return null;
-
-        foreach (var cell in inBoard.Hand.CardCells)
-        {
-            if (cell != null && cell.TopCard == null)
-                return cell;
-        }
         return null;
     }
 

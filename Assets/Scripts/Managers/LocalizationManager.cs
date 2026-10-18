@@ -261,6 +261,8 @@ public class LocalizationManager : MonoBehaviour
     public string[] OnlineLobby = { "Online Match", "Partida en línea" };
     public string[] OnlineCreateMatch = { "Create Match", "Crear partida" };
     public string[] OnlineJoinMatch = { "Join Match", "Unirse a partida" };
+    public string[] OnlineResumeMatch = { "Resume", "Continuar" };
+    public string[] OnlineUpdateRequired = { "Please update Elemento to play online.", "Actualiza Elemento para jugar en línea." };
     public string[] OnlineInviteCode = { "Join with a code", "Unirse con un código" };
     public string[] OnlineInviteCodePlaceholder = { "Enter code", "Introduce el código" };
     public string[] OnlineInviteCodeLabel = { "Invite Code", "Código de invitación" };
@@ -272,7 +274,6 @@ public class LocalizationManager : MonoBehaviour
     public string[] OnlineInvalidInvite = { "Enter a six-character invite code", "Introduce un código de seis caracteres" };
     public string[] OnlineSendingTurn = { "Sending turn...", "Enviando turno..." };
     public string[] OnlineTurnRetry = { "Couldn't send turn. Press End Turn to retry.", "No se pudo enviar el turno. Pulsa Fin de turno para reintentar." };
-    public string[] OnlineTurnRejected = { "Turn rejected, resyncing", "Turno rechazado, resincronizando" };
     public string[] OnlineSkipReplay = { "Skip", "Omitir" };
     public string[] OnlineDiscardUnsent = { "Discard your unsent moves?", "¿Descartar tus movimientos no enviados?" };
     public string[] OnlineMoveIllegal = { "That move is not legal in the current online turn.", "Ese movimiento no es válido en el turno en línea actual." };

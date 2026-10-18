@@ -98,7 +98,8 @@ public class UnityDomainMapperTests
         UnityDomainMapper.FilterMappableMoves(view);
 
         Assert.That(view.LegalMoves, Has.Count.EqualTo(1));
-        Assert.That(view.LegalMoves[0].TargetZoneId, Is.EqualTo((int)CardData.EElementType.Earth));
+        Assert.That(view.LegalMoves[0].TargetZoneId,
+            Is.EqualTo((int)CardData.EElementType.Earth));
     }
 
     [Test]
@@ -115,7 +116,8 @@ public class UnityDomainMapperTests
         };
         var view = new PlayerViewData();
         view.LegalMoves.Add(move);
-        var rejectedMoveKeys = new HashSet<string> { UnityDomainMapper.CreateMoveKey(move) };
+        var rejectedMoveKeys = new HashSet<string>
+            { UnityDomainMapper.CreateMoveKey(move) };
 
         UnityDomainMapper.FilterMappableMoves(view, rejectedMoveKeys);
 
@@ -192,74 +194,6 @@ public class UnityDomainMapperTests
         Assert.That(mapped.SourceZoneId, Is.Zero);
         Assert.That(mapped.TargetPlayerId, Is.Zero);
         Assert.That(mapped.TargetZoneId, Is.EqualTo(-1));
-    }
-
-    [Test]
-    public void TryCreateOnlineReplayMove_MissingIceIdDoesNotUseAnotherHandCard()
-    {
-        var sourceBoard = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
-        var targetBoard = CreateBoard("Opponent", UIPlayerBoard.EPlayerType.PlayerB);
-        AddCard(sourceBoard.Hand.CardCells[0], "card-00000009", 9, inPoints: 2);
-        var iceMove = new MoveData
-        {
-            PlayerId = 0,
-            Type = DomainMoveType.PlayCard,
-            CardId = "card-00000010",
-            SourceZoneId = -1,
-            TargetPlayerId = 1,
-            TargetZoneId = 1
-        };
-
-        Assert.That(UnityDomainMapper.TryCreateOnlineReplayMove(iceMove,
-            new[] { sourceBoard, targetBoard }, out Move replayMove), Is.False);
-        Assert.That(replayMove, Is.Null);
-    }
-
-    [Test]
-    public void TryCreateOnlineReplayMove_MapsIceByExactGeneratedCardId()
-    {
-        var sourceBoard = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
-        var targetBoard = CreateBoard("Opponent", UIPlayerBoard.EPlayerType.PlayerB);
-        AddCard(sourceBoard.Hand.CardCells[0], "other-card", 9, inPoints: 2);
-        AddCard(sourceBoard.Hand.CardCells[1], "card-00000010", 10, inFreeze: 5,
-            inIsPowerCard: true);
-        var iceMove = new MoveData
-        {
-            PlayerId = 0,
-            Type = DomainMoveType.PlayCard,
-            CardId = "card-00000010",
-            SourceZoneId = -1,
-            TargetPlayerId = 1,
-            TargetZoneId = 1
-        };
-
-        Assert.That(UnityDomainMapper.TryCreateOnlineReplayMove(iceMove,
-            new[] { sourceBoard, targetBoard }, out Move replayMove), Is.True);
-        Assert.That(replayMove.SourceCell, Is.SameAs(sourceBoard.Hand.CardCells[1]));
-        Assert.That(replayMove.TargetCell, Is.SameAs(targetBoard.ElementZones[1].CardCell));
-        Assert.That(replayMove.Data.CardId, Is.EqualTo("card-00000010"));
-    }
-
-    [Test]
-    public void TryCreateOnlineReplayMove_MapsZoneCardReturnedToOwnHand()
-    {
-        var board = CreateBoard("Player", UIPlayerBoard.EPlayerType.PlayerA);
-        AddCard(board.ElementZones[0].CardCell, "return-me", 7, inPoints: 2);
-        var returnMove = new MoveData
-        {
-            PlayerId = 0,
-            Type = DomainMoveType.PlayCard,
-            CardId = "return-me",
-            SourceZoneId = 0,
-            TargetPlayerId = 0,
-            TargetZoneId = -1
-        };
-
-        Assert.That(UnityDomainMapper.TryCreateOnlineReplayMove(returnMove,
-            new[] { board }, out Move replayMove), Is.True);
-        Assert.That(replayMove.SourceCell, Is.SameAs(board.ElementZones[0].CardCell));
-        Assert.That(replayMove.TargetCell, Is.SameAs(board.Hand.CardCells[0]));
-        Assert.That(replayMove.Data.CardId, Is.EqualTo("return-me"));
     }
 
     [Test]

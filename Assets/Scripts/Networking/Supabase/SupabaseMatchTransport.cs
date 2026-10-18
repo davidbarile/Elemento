@@ -1,30 +1,21 @@
 using System;
 using System.Threading.Tasks;
-using Elemento.Domain;
 using Elemento.Domain.Net;
 using UnityEngine;
 
 namespace Elemento.Networking.Supabase
 {
-    public sealed class SupabaseMatchData
-    {
-        public string MatchId;
-        public string InviteCode;
-        public string Mode;
-        public string Status;
-        public RulesConfigData Rules;
-        public int Seat;
-        public MatchSeatViewData View;
-    }
-
     public sealed class SupabaseMatchTransport : IAsyncMatchTransport, IDisposable
     {
         public event Action<string, int> RevisionCommitted;
         public event Action<Exception> RequestFailed;
+        public string LastInviteCode { get; private set; }
 
         private readonly MonoBehaviour runner;
         private readonly SupabaseAuthClient auth;
         private SupabaseRealtimeClient realtime;
+        private OnlineMatchClient listeningClient;
+        private MatchStateUpdateData polledUpdate;
         private bool disposed;
 
         public SupabaseMatchTransport(MonoBehaviour inRunner, SupabaseAuthClient inAuth)
@@ -33,109 +24,128 @@ namespace Elemento.Networking.Supabase
             this.auth = inAuth ?? throw new ArgumentNullException(nameof(inAuth));
         }
 
-        public async Task<SupabaseMatchData> CreateMatch(string inMode, RulesConfigData inRules)
+        public async Task<MatchStateUpdateData> CreateMatch(CreateMatchRequestData inRequest)
         {
-            if (inMode != "live" && inMode != "async")
-                throw new ArgumentException("Match mode must be live or async.", nameof(inMode));
-            if (inRules == null)
-                throw new ArgumentNullException(nameof(inRules));
-            string body = "{\"mode\":" + NetJson.Serialize(inMode)
-                + ",\"rules\":" + NetJson.Serialize(inRules) + "}";
-            var response = SupabaseMatchResponseData.Parse(await PostAsync("create-match", body));
-            return ToMatchData(response);
+            if (inRequest == null) throw new ArgumentNullException(nameof(inRequest));
+            string json = await PostAsync("create-match", NetJson.Serialize(inRequest));
+            this.LastInviteCode = NetJson.Deserialize<InviteCodeData>(json).InviteCode;
+            return NetJson.Deserialize<MatchStateUpdateData>(json);
         }
 
-        public async Task<SupabaseMatchData> JoinMatch(string inCode)
+        public async Task<MatchStateUpdateData> JoinMatch(JoinMatchRequestData inRequest)
         {
-            if (string.IsNullOrWhiteSpace(inCode))
-                throw new ArgumentException("An invite code is required.", nameof(inCode));
-            var response = SupabaseMatchResponseData.Parse(await PostAsync("join-match", "{\"inviteCode\":" + NetJson.Serialize(inCode.Trim().ToUpperInvariant()) + "}"));
-            return ToMatchData(response);
+            if (string.IsNullOrWhiteSpace(inRequest?.MatchId))
+                throw new ArgumentException("A match id or invite code is required.", nameof(inRequest));
+            // The domain join entry point also opens a saved match. Only invite codes claim a seat.
+            if (Guid.TryParse(inRequest.MatchId, out _))
+                return await FetchView(new GetViewRequestData { MatchId = inRequest.MatchId });
+            string body = NetJson.Serialize(new JoinInviteData
+            {
+                ProtocolVersion = inRequest.ProtocolVersion,
+                InviteCode = inRequest.MatchId.Trim().ToUpperInvariant()
+            });
+            return NetJson.Deserialize<MatchStateUpdateData>(await PostAsync("join-match", body));
         }
 
         public async Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
         {
-            if (inTurn == null)
-                throw new ArgumentNullException(nameof(inTurn));
-            return SubmitTurnResponseData.Parse(await PostAsync("submit-turn", NetJson.Serialize(inTurn)));
+            if (inTurn == null) throw new ArgumentNullException(nameof(inTurn));
+            var result = NetJson.Deserialize<SubmitTurnResultData>(await PostAsync("submit-turn", NetJson.Serialize(inTurn)));
+            if (!result.Accepted)
+                Debug.LogWarning("Online turn rejected: " + result.Reason);
+            return result;
         }
 
         public async Task LeaveMatch(string inMatchId)
         {
-            if (string.IsNullOrEmpty(inMatchId))
-                throw new ArgumentException("A match id is required.", nameof(inMatchId));
-            await PostAsync("leave-match", "{\"matchId\":" + NetJson.Serialize(inMatchId) + "}");
+            if (string.IsNullOrEmpty(inMatchId)) throw new ArgumentException("A match id is required.", nameof(inMatchId));
+            await PostAsync("leave-match", NetJson.Serialize(new GetViewRequestData { MatchId = inMatchId }));
         }
 
-        public async Task<OnlineViewUpdateData> FetchView(string inMatchId, int? inSinceRevision = null)
+        public async Task<ListMyMatchesResultData> ListMyMatches(ListMyMatchesRequestData inRequest)
         {
-            SupabaseMatchResponseData response = null;
-            for (int attempt = 1; attempt <= 3; ++attempt)
+            return NetJson.Deserialize<ListMyMatchesResultData>(await PostAsync("list-my-matches", NetJson.Serialize(inRequest)));
+        }
+
+        public Task<MatchStateUpdateData> FetchView(GetViewRequestData inRequest)
+        {
+            if (this.polledUpdate != null && this.polledUpdate.MatchId == inRequest.MatchId
+                && this.polledUpdate.MatchRevision >= inRequest.SinceRevision)
+            {
+                var update = this.polledUpdate;
+                this.polledUpdate = null;
+                return Task.FromResult(update);
+            }
+            this.polledUpdate = null;
+            return FetchRemoteView(inRequest);
+        }
+
+        private async Task<MatchStateUpdateData> FetchRemoteView(GetViewRequestData inRequest)
+        {
+            for (int attempt = 1; ; ++attempt)
             {
                 try
                 {
-                    string body = "{\"matchId\":" + NetJson.Serialize(inMatchId)
-                        + (inSinceRevision.HasValue ? ",\"sinceRevision\":" + inSinceRevision.Value : string.Empty) + "}";
-                    response = SupabaseMatchResponseData.Parse(await PostAsync("get-view", body));
-                    break;
+                    var update = NetJson.Deserialize<MatchStateUpdateData>(await PostAsync("get-view", NetJson.Serialize(inRequest)));
+                    if (update?.State == null || update.MatchId != inRequest.MatchId)
+                        throw new FormatException("Missing or mismatched match state.");
+                    return update;
                 }
-                catch (SupabaseHttpException) when (attempt < 3)
+                catch (SupabaseHttpException exception) when (attempt < 3 && (exception.ResponseCode == 0 || exception.ResponseCode >= 500))
                 {
                     await Task.Delay(500 * attempt);
                 }
             }
-
-            if (response.View == null)
-                return null;
-            if (response.View.MatchId != inMatchId)
-                throw new FormatException("Mismatched seat view.");
-            return response.ToViewUpdate();
         }
 
-        public void StartListening(string inMatchId, string inMode)
+        public void StartListening(OnlineMatchClient inClient)
         {
-            if (this.disposed)
-                throw new ObjectDisposedException(nameof(SupabaseMatchTransport));
+            if (this.disposed) throw new ObjectDisposedException(nameof(SupabaseMatchTransport));
             this.realtime?.Dispose();
-            this.realtime = new SupabaseRealtimeClient(this.runner, this.auth, inMatchId,
-                () => FetchView(inMatchId));
+            this.listeningClient = inClient;
+            this.realtime = new SupabaseRealtimeClient(this.runner, this.auth, inClient.MatchId,
+                () => FetchRemoteView(new GetViewRequestData { MatchId = inClient.MatchId, SinceRevision = inClient.LastAppliedRevision }));
+            this.realtime.StateReceived += HandlePolledState;
             this.realtime.RevisionCommitted += HandleRevisionCommitted;
             this.realtime.RequestFailed += HandleRequestFailed;
-            this.realtime.Start(inMode == "live");
+            this.realtime.Start(true);
+        }
+
+        private async void HandlePolledState(MatchStateUpdateData inUpdate)
+        {
+            if (this.disposed || inUpdate.MatchRevision < this.listeningClient.LastAppliedRevision) return;
+            this.polledUpdate = inUpdate;
+            // Joining changes waiting -> active without advancing the turn revision.
+            // Apply this response even at the same revision; the client suppresses unchanged state.
+            try { await this.listeningClient.RefreshAsync(); }
+            catch (Exception exception) { HandleRequestFailed(exception); }
         }
 
         private void HandleRevisionCommitted(string inMatchId, int inRevision)
         {
-            if (!this.disposed)
-                this.RevisionCommitted?.Invoke(inMatchId, inRevision);
+            if (!this.disposed) this.RevisionCommitted?.Invoke(inMatchId, inRevision);
         }
 
         private void HandleRequestFailed(Exception inException)
         {
-            if (!this.disposed)
-                this.RequestFailed?.Invoke(inException);
+            if (!this.disposed) this.RequestFailed?.Invoke(inException);
         }
 
         private async Task<string> PostAsync(string inFunction, string inBody)
         {
-            if (this.disposed)
-                throw new ObjectDisposedException(nameof(SupabaseMatchTransport));
+            if (this.disposed) throw new ObjectDisposedException(nameof(SupabaseMatchTransport));
             var session = await this.auth.EnsureSessionAsync();
             return await this.auth.Http.SendAsync("/functions/v1/" + inFunction, inBody, session.AccessToken);
         }
 
-        private static SupabaseMatchData ToMatchData(SupabaseMatchResponseData inResponse)
+        [Serializable]
+        private sealed class InviteCodeData { public string InviteCode; }
+
+        [Serializable]
+        private sealed class JoinInviteData
         {
-            return new SupabaseMatchData
-            {
-                MatchId = inResponse.Match.Id,
-                InviteCode = inResponse.Match.InviteCode,
-                Mode = inResponse.Match.Mode,
-                Status = inResponse.Match.Status,
-                Rules = inResponse.Match.Rules ?? inResponse.View?.View?.Rules,
-                Seat = inResponse.Seat,
-                View = inResponse.View
-            };
+            public int ProtocolVersion;
+            public string InviteCode;
         }
 
         public void Dispose()
@@ -143,6 +153,8 @@ namespace Elemento.Networking.Supabase
             this.disposed = true;
             this.realtime?.Dispose();
             this.realtime = null;
+            this.polledUpdate = null;
+            this.listeningClient = null;
         }
     }
 }

@@ -11344,6 +11344,12 @@ MonoBehaviour:
   OnlineJoinMatch:
   - Join Match
   - Unirse a Partida
+  OnlineResumeMatch:
+  - Resume
+  - Continuar
+  OnlineUpdateRequired:
+  - Please update Elemento to play online.
+  - "Actualiza Elemento para jugar en l\xEDnea."
   OnlineInviteCode:
   - Join with a Code
   - "Unirse con un C\xF3digo"
@@ -11377,9 +11383,6 @@ MonoBehaviour:
   OnlineTurnRetry:
   - Couldn't send turn. Press End Turn to retry.
   - No se pudo enviar el turno. Pulsa Fin de turno para reintentar.
-  OnlineTurnRejected:
-  - Turn rejected, resyncing
-  - Turno rechazado, resincronizando
   OnlineSkipReplay:
   - Skip
   - Omitir

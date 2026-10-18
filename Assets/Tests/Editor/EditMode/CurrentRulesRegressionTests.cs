@@ -2,7 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Threading.Tasks;
 using Elemento.Domain;
 using Elemento.Domain.Net;
 using NUnit.Framework;
@@ -468,79 +467,6 @@ public class CurrentRulesRegressionTests
         Assert.That(items[1].PointsDisplays[0].Text.text, Is.EqualTo("4"));
     }
 
-    [Test]
-    public void OnlineUpdateDuringReplay_QueuesWithoutSkippingCurrentMoveLog()
-    {
-        var client = new OnlineMatchClient(new IdleTransport(), "match", 0);
-        try
-        {
-            SetField(this.gameManager, "gameSession", new OnlineSession(0, client));
-            SetField(this.gameManager, "onlineClient", client);
-            SetField(this.gameManager, "isOnlineReplayActive", true);
-            var update = new OnlineViewUpdateData
-            {
-                Status = "active",
-                View = new MatchSeatViewData
-                {
-                    MatchId = "match",
-                    Seat = 0,
-                    View = new PlayerViewData { Player = new PlayerStateData { Id = 0 } }
-                }
-            };
-
-            var method = typeof(GameManager).GetMethod("HandleOnlineViewUpdate",
-                BindingFlags.Instance | BindingFlags.NonPublic);
-            Assert.That(method, Is.Not.Null);
-            method.Invoke(this.gameManager, new object[] { update });
-
-            Assert.That(GetField<OnlineViewUpdateData>(this.gameManager, "pendingOnlineUpdate"),
-                Is.SameAs(update));
-            Assert.That(GetField<bool>(this.gameManager, "skipOnlineReplay"), Is.False);
-        }
-        finally
-        {
-            client.Dispose();
-        }
-    }
-
-    [Test]
-    public void OnlineReplayHistory_AppendsContinuousUpdatesFromSameTurn()
-    {
-        var firstView = new MatchSeatViewData
-        {
-            View = new PlayerViewData { Revision = 2 }
-        };
-        var secondView = new MatchSeatViewData
-        {
-            View = new PlayerViewData { Revision = 3 }
-        };
-        var firstMove = new MoveLogEntryData
-        {
-            Seat = 1,
-            ClientNonce = "opponent-turn",
-            RevisionBefore = 2,
-            RevisionAfter = 3,
-            Move = new MoveData()
-        };
-        var secondMove = new MoveLogEntryData
-        {
-            Seat = 1,
-            ClientNonce = "opponent-turn",
-            RevisionBefore = 3,
-            RevisionAfter = 4,
-            Move = new MoveData()
-        };
-
-        InvokeSetOnlineReplayHistory(firstView, new[] { firstMove }, 3);
-        InvokeSetOnlineReplayHistory(secondView, new[] { secondMove }, 4);
-
-        Assert.That(GetField<MatchSeatViewData>(this.gameManager, "onlineReplayStartView"),
-            Is.SameAs(firstView));
-        Assert.That(GetField<List<MoveLogEntryData>>(this.gameManager, "onlineReplayMoves"),
-            Is.EqualTo(new[] { firstMove, secondMove }));
-        Assert.That(GetField<int>(this.gameManager, "onlineReplayEndRevision"), Is.EqualTo(4));
-    }
-
     private UIElementZone CreateZone(string name, CardData.EElementType elementType, Transform parent = null)
     {
         var zoneObject = CreateGameObject(name, parent);
@@ -752,39 +678,6 @@ public class CurrentRulesRegressionTests
             BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.That(method, Is.Not.Null);
         method.Invoke(this.gameManager, new object[] { inPlayerWon, inMessage });
-    }
-
-    private void InvokeSetOnlineReplayHistory(MatchSeatViewData inStartView,
-        IReadOnlyList<MoveLogEntryData> inMoves, int inEndRevision)
-    {
-        var method = typeof(GameManager).GetMethod("SetOnlineReplayHistory",
-            BindingFlags.Instance | BindingFlags.NonPublic);
-        Assert.That(method, Is.Not.Null);
-        method.Invoke(this.gameManager, new object[] { inStartView, inMoves, inEndRevision });
-    }
-
-    private sealed class IdleTransport : IAsyncMatchTransport
-    {
-        public event Action<string, int> RevisionCommitted
-        {
-            add { }
-            remove { }
-        }
-
-        public Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task LeaveMatch(string inMatchId)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<OnlineViewUpdateData> FetchView(string inMatchId, int? inSinceRevision = null)
-        {
-            throw new NotSupportedException();
-        }
     }
 
     private static void SetField(object target, string fieldName, object value)

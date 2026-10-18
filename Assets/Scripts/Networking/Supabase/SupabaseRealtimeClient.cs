@@ -16,11 +16,12 @@ namespace Elemento.Networking.Supabase
     {
         public event Action<string, int> RevisionCommitted;
         public event Action<Exception> RequestFailed;
+        public event Action<MatchStateUpdateData> StateReceived;
 
         private readonly MonoBehaviour runner;
         private readonly SupabaseAuthClient auth;
         private readonly string matchId;
-        private readonly Func<Task<OnlineViewUpdateData>> fetchView;
+        private readonly Func<Task<MatchStateUpdateData>> fetchView;
         private Coroutine polling;
         private bool disposed;
         private string lastFailure;
@@ -31,7 +32,7 @@ namespace Elemento.Networking.Supabase
         private int messageReference;
 #endif
 
-        public SupabaseRealtimeClient(MonoBehaviour inRunner, SupabaseAuthClient inAuth, string inMatchId, Func<Task<OnlineViewUpdateData>> inFetchView)
+        public SupabaseRealtimeClient(MonoBehaviour inRunner, SupabaseAuthClient inAuth, string inMatchId, Func<Task<MatchStateUpdateData>> inFetchView)
         {
             this.runner = inRunner;
             this.auth = inAuth;
@@ -70,8 +71,8 @@ namespace Elemento.Networking.Supabase
             {
                 var update = await this.fetchView();
                 this.lastFailure = null;
-                if (update?.View?.View != null)
-                    NotifyRevision(Math.Max(update.MatchRevision, update.View.View.Revision));
+                if (!this.disposed && update?.State != null)
+                    this.StateReceived?.Invoke(update);
             }
             catch (SupabaseHttpException exception) { ReportFailure(exception); }
             catch (Exception exception) { LogRealtimeFailure("polling", exception); }
