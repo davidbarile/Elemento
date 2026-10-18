@@ -71,10 +71,8 @@ namespace Elemento.Domain.Net
             var result = NetJson.Deserialize<SubmitTurnResultData>(inJson);
             if (result == null)
                 throw new FormatException("Missing submit-turn response.");
-            if (result.NewRevision < 0 || result.MoveCount < 0)
+            if (result.NewRevision < 0)
                 throw new FormatException("Invalid submit-turn response counters.");
-            if (result.View == null || result.View.View == null)
-                throw new FormatException("Missing submit-turn seat view.");
             return result;
         }
     }

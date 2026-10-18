@@ -1,0 +1,258 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Elemento.Domain.Net;
+using NUnit.Framework;
+
+namespace Elemento.Domain.Tests
+{
+    public class ClientAuthoritativeProtocolTests
+    {
+        [Test]
+        public void ProtocolV2_UsesContractFieldsAndRoundTripsRandomOutcomes()
+        {
+            Assert.That(ProtocolVersions.Current, Is.EqualTo(2));
+            AssertFields<TurnActionData>("Index", "Move", "DrawnCards", "PowerCard", "Kind");
+            AssertFields<TurnPackageData>("MatchId", "Seat", "TurnNumber", "StartRevision", "Actions",
+                "FinalState", "FinalStateHash", "Status", "WinnerSeat", "WinCondition", "NextSeat");
+            AssertFields<SubmitTurnRequestData>("ProtocolVersion", "MatchId", "Seat", "ExpectedRevision", "ClientNonce", "Turn");
+            AssertFields<SubmitTurnResultData>("Accepted", "Reason", "NewRevision", "CurrentSeat", "Status");
+            AssertFields<CreateMatchRequestData>("ProtocolVersion", "Rules", "InitialState", "InitialStateHash");
+            AssertFields<MatchStateUpdateData>("MatchId", "Status", "MatchRevision", "CurrentSeat", "YourSeat",
+                "WinnerSeat", "Rules", "State", "Turns", "SeatNames");
+            AssertFields<MyMatchData>("MatchId", "Status", "MatchRevision", "CurrentSeat", "YourSeat", "OpponentName", "UpdatedAt");
+            var request = Request("match", 0, 0);
+            request.Turn.Actions.Add(new TurnActionData
+            {
+                Kind = "Move", Index = 0, Move = new MoveData { Type = EMoveType.ActivateZone },
+                DrawnCards = new() { new CardInstanceData { Id = "draw", Points = new[] { 1, 2, 3, 4 } } },
+                PowerCard = new CardInstanceData { Id = "power", IsPowerCard = true, WildFreeze = 5 }
+            });
+            string json = NetJson.Serialize(request);
+            var restored = NetJson.Deserialize<SubmitTurnRequestData>(json);
+            Assert.That(NetJson.Serialize(restored), Is.EqualTo(json));
+            Assert.That(restored.Turn.Actions[0].PowerCard.WildFreeze, Is.EqualTo(5));
+            Assert.That(restored.Turn.Actions[0].DrawnCards[0].Points, Is.EqualTo(new[] { 1, 2, 3, 4 }));
+            RoundTrip(new CreateMatchRequestData { InitialState = request.Turn.FinalState, InitialStateHash = "hash" });
+            RoundTrip(new SubmitTurnResultData { Accepted = true, NewRevision = 4, Status = "active" });
+            RoundTrip(new MatchStateUpdateData { Turns = new() { request.Turn }, SeatNames = new() { "A", "B" } });
+            RoundTrip(new ListMyMatchesResultData { Matches = new() { new MyMatchData { OpponentName = "B" } } });
+            RoundTrip(new ListMyMatchesRequestData());
+            RoundTrip(new GetViewRequestData { MatchId = "match", SinceRevision = 3 });
+            RoundTrip(new JoinMatchRequestData { MatchId = "match" });
+        }
+
+        [Test]
+        public async Task Transport_CommitsOpaqueTurnOnceAndNeverAliasesCallerState()
+        {
+            var host = new InMemoryMatchTransport("A");
+            var peer = host.CreatePeer("B");
+            var initial = Setup("opaque");
+            await host.CreateMatch(initial);
+            initial.InitialState.Seed = 999;
+            await peer.JoinMatch(new JoinMatchRequestData { MatchId = "opaque" });
+            var request = Request("opaque", 0, 0);
+            request.Turn.Actions.Add(new TurnActionData { Kind = "Move", Move = new MoveData { CardId = "not-a-legal-card" } });
+            request.Turn.FinalStateHash = "opaque-unverified-hash";
+            var accepted = await host.SubmitTurn(request);
+            Assert.That(accepted.Accepted, Is.True);
+            Assert.That(accepted.NewRevision, Is.EqualTo(1));
+            request.Turn.FinalState.Seed = 888;
+            accepted.NewRevision = 99;
+            var retry = await host.SubmitTurn(request);
+            Assert.That(retry.NewRevision, Is.EqualTo(1));
+            var view = await peer.FetchView(new GetViewRequestData { MatchId = "opaque", SinceRevision = 0 });
+            Assert.That(view.State.Seed, Is.EqualTo(42));
+            Assert.That(view.Turns, Has.Count.EqualTo(1));
+            view.State.Seed = 777;
+            view.Turns.Clear();
+            var again = await peer.FetchView(new GetViewRequestData { MatchId = "opaque", SinceRevision = 1 });
+            Assert.That(again.State.Seed, Is.EqualTo(42));
+            Assert.That(again.Turns, Is.Empty);
+        }
+
+        [Test]
+        public async Task Transport_ChecksSeatsRevisionsStatusAndNonceOwnership()
+        {
+            var host = new InMemoryMatchTransport();
+            var peer = host.CreatePeer();
+            await host.CreateMatch(Setup("checks"));
+            Assert.That((await host.SubmitTurn(Request("checks", 0, 0))).Reason, Is.EqualTo("match_not_active"));
+            await peer.JoinMatch(new JoinMatchRequestData { MatchId = "checks" });
+            Assert.That((await peer.SubmitTurn(Request("checks", 1, 0))).Reason, Is.EqualTo("not_your_turn"));
+            Assert.That((await host.SubmitTurn(Request("checks", 0, 5))).Reason, Is.EqualTo("stale_revision"));
+            Assert.ThrowsAsync<UnauthorizedAccessException>(async () => await peer.SubmitTurn(Request("checks", 0, 0)));
+            Assert.That((await host.SubmitTurn(Request("checks", 0, 0))).Accepted, Is.True);
+            var otherNonce = Request("checks", 1, 1);
+            otherNonce.ClientNonce = "0:0";
+            Assert.ThrowsAsync<UnauthorizedAccessException>(async () => await peer.SubmitTurn(otherNonce));
+            await host.LeaveMatch("checks");
+            Assert.That((await peer.SubmitTurn(Request("checks", 1, 1))).Reason, Is.EqualTo("match_not_active"));
+            Assert.That((await host.SubmitTurn(Request("checks", 0, 0))).Accepted, Is.True);
+        }
+
+        [Test]
+        public async Task Transport_ListAndResumeIncludeOnlyOwnedUnfinishedMatches()
+        {
+            var host = new InMemoryMatchTransport("A");
+            var peer = host.CreatePeer("B");
+            var stranger = host.CreatePeer("C");
+            await host.CreateMatch(Setup("list"));
+            Assert.That((await host.ListMyMatches(new ListMyMatchesRequestData())).Matches[0].Status, Is.EqualTo("waiting"));
+            await peer.JoinMatch(new JoinMatchRequestData { MatchId = "list" });
+            var resumed = await peer.JoinMatch(new JoinMatchRequestData { MatchId = "list" });
+            Assert.That(resumed.YourSeat, Is.EqualTo(1));
+            var matches = await peer.ListMyMatches(new ListMyMatchesRequestData());
+            Assert.That(matches.Matches[0].OpponentName, Is.EqualTo("A"));
+            Assert.That((await stranger.ListMyMatches(new ListMyMatchesRequestData())).Matches, Is.Empty);
+            Assert.ThrowsAsync<UnauthorizedAccessException>(async () =>
+                await stranger.FetchView(new GetViewRequestData { MatchId = "list" }));
+            var turn = Request("list", 0, 0);
+            turn.Turn.Status = "finished";
+            await host.SubmitTurn(turn);
+            Assert.That((await host.ListMyMatches(new ListMyMatchesRequestData())).Matches, Is.Empty);
+        }
+
+        [Test]
+        public void Transport_RejectsOldProtocol()
+        {
+            var transport = new InMemoryMatchTransport();
+            var request = Setup("version");
+            request.ProtocolVersion = 1;
+            Assert.ThrowsAsync<InvalidOperationException>(async () => await transport.CreateMatch(request));
+        }
+
+        [Test]
+        public async Task Client_AppliesOpponentTurnsExactlyOnceAcrossBroadcastAndPoll()
+        {
+            var host = new InMemoryMatchTransport();
+            using var a = new OnlineMatchClient(host);
+            using var b = new OnlineMatchClient(host.CreatePeer());
+            await a.CreateAsync(Setup("client"));
+            await b.JoinAsync("client");
+            await a.RefreshAsync();
+            int incoming = 0;
+            int own = 0;
+            b.OpponentTurnReceived += _ => ++incoming;
+            a.OpponentTurnReceived += _ => ++own;
+            var result = await a.SubmitTurnAsync(Request("client", 0, 0).Turn, "retry");
+            Assert.That(result.Accepted, Is.True);
+            await b.RefreshAsync(0);
+            await b.RefreshAsync();
+            Assert.That(incoming, Is.EqualTo(1));
+            Assert.That(own, Is.Zero);
+            Assert.That(a.LastAppliedRevision, Is.EqualTo(1));
+            Assert.That(b.LastAppliedRevision, Is.EqualTo(1));
+            Assert.That(b.IsLocalTurn, Is.True);
+            Assert.That((await a.ListMyMatchesAsync()).Matches, Has.Count.EqualTo(1));
+        }
+
+        [Test]
+        public async Task Client_DoesNotRegressOrNotifyForLateEqualRevisionUpdates()
+        {
+            var transport = new ReorderedTransport();
+            using var client = new OnlineMatchClient(transport);
+            int changes = 0;
+            client.StateChanged += _ => ++changes;
+            await client.CreateAsync(new CreateMatchRequestData());
+
+            Task<MatchStateUpdateData> older = client.RefreshAsync(0);
+            Task<MatchStateUpdateData> newer = client.RefreshAsync(0);
+            transport.Requests[1].SetResult(Update("active", "A", "B"));
+            await newer;
+            transport.Requests[0].SetResult(Update("waiting", "A"));
+            await older;
+
+            Task<MatchStateUpdateData> unchanged = client.RefreshAsync(0);
+            transport.Requests[2].SetResult(Update("active", "A", "B"));
+            await unchanged;
+            Assert.That(client.CurrentState.Status, Is.EqualTo("active"));
+            Assert.That(changes, Is.EqualTo(2));
+        }
+
+        private static CreateMatchRequestData Setup(string inId)
+        {
+            return new CreateMatchRequestData
+            {
+                Rules = new RulesConfigData(), InitialState = new GameStateData { MatchId = inId, Seed = 42 },
+                InitialStateHash = "opaque"
+            };
+        }
+
+        private static SubmitTurnRequestData Request(string inId, int inSeat, int inRevision)
+        {
+            return new SubmitTurnRequestData
+            {
+                MatchId = inId, Seat = inSeat, ExpectedRevision = inRevision, ClientNonce = inSeat + ":" + inRevision,
+                Turn = new TurnPackageData
+                {
+                    MatchId = inId, Seat = inSeat, StartRevision = inRevision, NextSeat = 1 - inSeat,
+                    Status = "active", FinalState = new GameStateData { MatchId = inId, Seed = 42 }
+                }
+            };
+        }
+
+        private static void AssertFields<T>(params string[] inNames)
+        {
+            Assert.That(typeof(T).GetFields().Select(inField => inField.Name), Is.EquivalentTo(inNames));
+        }
+
+        private static void RoundTrip<T>(T inValue)
+        {
+            string json = NetJson.Serialize(inValue);
+            Assert.That(NetJson.Serialize(NetJson.Deserialize<T>(json)), Is.EqualTo(json));
+        }
+
+        private static MatchStateUpdateData Update(string inStatus, params string[] inNames)
+        {
+            return new MatchStateUpdateData
+            {
+                MatchId = "race", Status = inStatus, MatchRevision = 0, YourSeat = 0,
+                State = new GameStateData { MatchId = "race" }, SeatNames = new(inNames)
+            };
+        }
+
+        private sealed class ReorderedTransport : IAsyncMatchTransport
+        {
+            public event Action<string, int> RevisionCommitted
+            {
+                add { }
+                remove { }
+            }
+            public List<TaskCompletionSource<MatchStateUpdateData>> Requests = new();
+
+            public Task<MatchStateUpdateData> CreateMatch(CreateMatchRequestData inRequest)
+            {
+                return Task.FromResult(Update("waiting", "A"));
+            }
+
+            public Task<MatchStateUpdateData> JoinMatch(JoinMatchRequestData inRequest)
+            {
+                throw new NotSupportedException();
+            }
+
+            public Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
+            {
+                throw new NotSupportedException();
+            }
+
+            public Task LeaveMatch(string inMatchId)
+            {
+                throw new NotSupportedException();
+            }
+
+            public Task<MatchStateUpdateData> FetchView(GetViewRequestData inRequest)
+            {
+                var request = new TaskCompletionSource<MatchStateUpdateData>();
+                this.Requests.Add(request);
+                return request.Task;
+            }
+
+            public Task<ListMyMatchesResultData> ListMyMatches(ListMyMatchesRequestData inRequest)
+            {
+                throw new NotSupportedException();
+            }
+        }
+    }
+}

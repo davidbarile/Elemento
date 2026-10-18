@@ -40,26 +40,26 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
-        public void SubmitMove_ParsesResultWithAdditionalServerView()
+        public void SubmitTurn_ParsesResultWithAdditionalServerFields()
         {
-            var result = NetJson.Deserialize<MoveResultData>("{\"ProtocolVersion\":1,\"Accepted\":false,\"Reason\":\"Revision mismatch.\",\"NewRevision\":4,\"LogEntry\":null,\"View\":{\"Seat\":1}}");
+            var result = NetJson.Deserialize<SubmitTurnResultData>("{\"Accepted\":false,\"Reason\":\"stale_revision\",\"NewRevision\":4,\"CurrentSeat\":1,\"Status\":\"active\",\"Extra\":null}");
             Assert.That(result.Accepted, Is.False);
             Assert.That(result.NewRevision, Is.EqualTo(4));
-            Assert.That(result.Reason, Is.EqualTo("Revision mismatch."));
+            Assert.That(result.Reason, Is.EqualTo("stale_revision"));
         }
 
         [Test]
         public void SubmitTurn_ParsesAcceptedAndRejectedResponses()
         {
-            const string view = "{\"MatchId\":\"match-1\",\"Seat\":1,\"View\":{\"Revision\":4}}";
-            var accepted = SubmitTurnResponseData.Parse("{\"Accepted\":true,\"NewRevision\":4,\"MoveCount\":3,\"View\":" + view + "}");
-            var rejected = SubmitTurnResponseData.Parse("{\"Accepted\":false,\"Reason\":\"illegal\",\"FailedIndex\":1,\"NewRevision\":4,\"MoveCount\":0,\"View\":" + view + "}");
-            var rejectedWithoutIndex = SubmitTurnResponseData.Parse("{\"Accepted\":false,\"FailedIndex\":null,\"NewRevision\":4,\"MoveCount\":0,\"View\":" + view + "}");
+            var accepted = SubmitTurnResponseData.Parse("{\"Accepted\":true,\"NewRevision\":4,\"CurrentSeat\":1,\"Status\":\"active\"}");
+            var rejected = SubmitTurnResponseData.Parse("{\"Accepted\":false,\"Reason\":\"stale_revision\",\"NewRevision\":4,\"CurrentSeat\":1,\"Status\":\"active\"}");
 
             Assert.That(accepted.Accepted, Is.True);
-            Assert.That(accepted.MoveCount, Is.EqualTo(3));
-            Assert.That(rejected.FailedIndex, Is.EqualTo(1));
-            Assert.That(rejectedWithoutIndex.FailedIndex, Is.Null);
+            Assert.That(accepted.NewRevision, Is.EqualTo(4));
+            Assert.That(rejected.Accepted, Is.False);
+            Assert.That(rejected.Reason, Is.EqualTo("stale_revision"));
+            Assert.That(accepted.CurrentSeat, Is.EqualTo(1));
+            Assert.That(accepted.Status, Is.EqualTo("active"));
         }
 
         [Test]

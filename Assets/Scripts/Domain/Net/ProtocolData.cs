@@ -5,7 +5,7 @@ namespace Elemento.Domain.Net
 {
     public static class ProtocolVersions
     {
-        public const int Current = 1;
+        public const int Current = 2;
     }
 
     [Serializable]
@@ -22,23 +22,14 @@ namespace Elemento.Domain.Net
     }
 
     [Serializable]
-    public sealed class MoveResultData
-    {
-        public int ProtocolVersion = ProtocolVersions.Current;
-        public bool Accepted;
-        public string Reason;
-        public int NewRevision;
-        public MoveLogEntryData LogEntry;
-    }
-
-    [Serializable]
     public sealed class SubmitTurnRequestData
     {
+        public int ProtocolVersion = ProtocolVersions.Current;
         public string MatchId;
         public int Seat;
         public int ExpectedRevision;
         public string ClientNonce;
-        public List<MoveData> Moves = new();
+        public TurnPackageData Turn;
     }
 
     [Serializable]
@@ -46,10 +37,98 @@ namespace Elemento.Domain.Net
     {
         public bool Accepted;
         public string Reason;
-        public int? FailedIndex;
         public int NewRevision;
-        public int MoveCount;
-        public MatchSeatViewData View;
+        public int CurrentSeat;
+        public string Status;
+    }
+
+    [Serializable]
+    public sealed class TurnActionData
+    {
+        public int Index;
+        public MoveData Move;
+        public List<CardInstanceData> DrawnCards = new();
+        public CardInstanceData PowerCard;
+        public string Kind;
+    }
+
+    [Serializable]
+    public sealed class TurnPackageData
+    {
+        public string MatchId;
+        public int Seat;
+        public int TurnNumber;
+        public int StartRevision;
+        public List<TurnActionData> Actions = new();
+        public GameStateData FinalState;
+        public string FinalStateHash;
+        public string Status;
+        public int WinnerSeat = -1;
+        public EWinCondition WinCondition;
+        public int NextSeat;
+    }
+
+    [Serializable]
+    public sealed class CreateMatchRequestData
+    {
+        public int ProtocolVersion = ProtocolVersions.Current;
+        public RulesConfigData Rules;
+        public GameStateData InitialState;
+        public string InitialStateHash;
+    }
+
+    [Serializable]
+    public sealed class MatchStateUpdateData
+    {
+        public string MatchId;
+        public string Status;
+        public int MatchRevision;
+        public int CurrentSeat;
+        public int YourSeat;
+        public int WinnerSeat = -1;
+        public RulesConfigData Rules;
+        public GameStateData State;
+        public List<TurnPackageData> Turns = new();
+        public List<string> SeatNames = new();
+    }
+
+    [Serializable]
+    public sealed class GetViewRequestData
+    {
+        public int ProtocolVersion = ProtocolVersions.Current;
+        public string MatchId;
+        public int SinceRevision = -1;
+    }
+
+    [Serializable]
+    public sealed class JoinMatchRequestData
+    {
+        public int ProtocolVersion = ProtocolVersions.Current;
+        public string MatchId;
+    }
+
+    [Serializable]
+    public sealed class ListMyMatchesRequestData
+    {
+        public int ProtocolVersion = ProtocolVersions.Current;
+    }
+
+    [Serializable]
+    public sealed class ListMyMatchesResultData
+    {
+        public List<MyMatchData> Matches = new();
+    }
+
+    [Serializable]
+    public sealed class MyMatchData
+    {
+        public string MatchId;
+        public string Status;
+        public int MatchRevision;
+        public int CurrentSeat;
+        public int YourSeat;
+        public string OpponentName;
+        public string UpdatedAt;
     }
 
     [Serializable]

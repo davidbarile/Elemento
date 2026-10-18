@@ -7,6 +7,9 @@ namespace Elemento.Domain
     {
         private const int NumPlayers = 2;
         private const int UnlimitedMoves = 99;
+        private bool isReplaying;
+        private IList<CardInstanceData> recordedDraws;
+        private CardInstanceData recordedPowerCard;
 
         public GameStateData CreateGame(int inSeed, RulesConfigData inRules = null, int inStartingPlayerId = 0)
         {
@@ -84,7 +87,7 @@ namespace Elemento.Domain
                 AddCardMoves(inState, player, card, sourceZone.Id, canPlayCard, moves, ref moveSequence);
             }
 
-            if (inState.Rules.DiscardMode != EDiscardMode.DiscardEndsTurn)
+            if (inState.Rules.DiscardMode != EDiscardMode.DiscardEndsTurn || moves.Count == 0)
                 moves.Add(CreateMove(inState, moveSequence, inPlayerId, EMoveType.EndTurn));
 
             return moves;
@@ -120,6 +123,31 @@ namespace Elemento.Domain
             if (legalMove == null)
                 throw new InvalidOperationException("The move is not legal in the current game state.");
 
+            ApplyResolvedMove(inState, legalMove);
+        }
+
+        // Replay trusts the active device's accepted action, bypassing move generation and RNG.
+        internal void ApplyRecordedMove(GameStateData inState, MoveData inMove,
+            IList<CardInstanceData> inDrawnCards, CardInstanceData inPowerCard)
+        {
+            this.isReplaying = true;
+            this.recordedDraws = inDrawnCards;
+            this.recordedPowerCard = inPowerCard;
+            try
+            {
+                ApplyResolvedMove(inState, inMove);
+            }
+            finally
+            {
+                this.isReplaying = false;
+                this.recordedDraws = null;
+                this.recordedPowerCard = null;
+            }
+        }
+
+        private void ApplyResolvedMove(GameStateData inState, MoveData legalMove)
+        {
+
             if (legalMove.Type == EMoveType.EndTurn)
             {
                 RecordMove(inState, legalMove);
@@ -139,7 +167,16 @@ namespace Elemento.Domain
             }
 
             ZoneStateData sourceZone;
-            var card = RemoveSourceCard(player, legalMove.CardId, legalMove.SourceZoneId, out sourceZone);
+            CardInstanceData card;
+            if (this.isReplaying)
+            {
+                sourceZone = legalMove.SourceZoneId < 0 ? null : GetZone(player, legalMove.SourceZoneId);
+                card = RemoveCard(sourceZone == null ? player.Hand : sourceZone.Cards, legalMove.CardId);
+            }
+            else
+            {
+                card = RemoveSourceCard(player, legalMove.CardId, legalMove.SourceZoneId, out sourceZone);
+            }
 
             if (legalMove.Type == EMoveType.DiscardCard)
             {
@@ -188,8 +225,12 @@ namespace Elemento.Domain
             ValidateState(inState);
             if (IsGameOver(inState))
                 throw new InvalidOperationException("The game is already over.");
-            if (inState.Rules.DiscardMode == EDiscardMode.DiscardEndsTurn)
+            if (inState.Rules.DiscardMode == EDiscardMode.DiscardEndsTurn
+                && GetLegalMoves(inState, inState.CurrentPlayerId)
+                    .Find(inMove => inMove.Type == EMoveType.EndTurn) == null)
+            {
                 throw new InvalidOperationException("This discard mode requires a discard to end the turn.");
+            }
 
             var move = CreateMove(inState, inState.Moves.Count + 1, inState.CurrentPlayerId, EMoveType.EndTurn);
             RecordMove(inState, move);
@@ -330,7 +371,7 @@ namespace Elemento.Domain
             throw new ArgumentOutOfRangeException(nameof(inZoneId));
         }
 
-        private static void BeginTurn(GameStateData inState, int inPlayerId)
+        private void BeginTurn(GameStateData inState, int inPlayerId)
         {
             inState.CurrentPlayerId = inPlayerId;
             if (inPlayerId == inState.StartingPlayerId)
@@ -346,15 +387,28 @@ namespace Elemento.Domain
             inState.MovesRemaining = inState.Rules.MovesPerTurn > 0 ? inState.Rules.MovesPerTurn : UnlimitedMoves;
         }
 
-        private static void EndTurnInternal(GameStateData inState)
+        private void EndTurnInternal(GameStateData inState)
         {
             int currentIndex = inState.Players.FindIndex(inPlayer => inPlayer.Id == inState.CurrentPlayerId);
             int nextIndex = TurnRules.GetNextPlayerIndex(currentIndex, inState.Players.Count);
             BeginTurn(inState, inState.Players[nextIndex].Id);
         }
 
-        private static void DrawCards(GameStateData inState, PlayerStateData inPlayer, int inCount)
+        private void DrawCards(GameStateData inState, PlayerStateData inPlayer, int inCount)
         {
+            if (this.isReplaying)
+            {
+                if (this.recordedDraws != null)
+                {
+                    foreach (var card in this.recordedDraws)
+                    {
+                        ConsumeRecordedDraw(inState, card);
+                        inPlayer.Hand.Add(card.Clone());
+                    }
+                }
+                return;
+            }
+
             int cardsToDraw = Math.Min(inCount, inState.Rules.MaxCardsInHand - inPlayer.Hand.Count);
             for (int i = 0; i < cardsToDraw; ++i)
             {
@@ -371,6 +425,28 @@ namespace Elemento.Domain
                 inPlayer.Hand.Add(card);
                 AddBatchOfCardsToGameDeck(inState);
             }
+        }
+
+        private static void ConsumeRecordedDraw(GameStateData inState, CardInstanceData inCard)
+        {
+            for (int i = 0; i < inState.Deck.Count; ++i)
+            {
+                if (inState.Deck[i].Id != inCard.Id)
+                    continue;
+                inState.Deck.RemoveAt(i);
+                return;
+            }
+
+            for (int i = 0; i < inState.ReserveDeck.Count; ++i)
+            {
+                var template = inState.ReserveDeck[i];
+                if (template.IsPowerCard != inCard.IsPowerCard || template.DefinitionId != inCard.DefinitionId)
+                    continue;
+                inState.ReserveDeck.RemoveAt(i);
+                return;
+            }
+
+            throw new InvalidOperationException("Recorded draw is not present in the replay reservoirs.");
         }
 
         private static void AddBatchOfCardsToGameDeck(GameStateData inState)
@@ -575,7 +651,7 @@ namespace Elemento.Domain
                 && inFirst.PowerCardType == inSecond.PowerCardType;
         }
 
-        private static void ApplyActivation(GameStateData inState, PlayerStateData inPlayer, MoveData inMove)
+        private void ApplyActivation(GameStateData inState, PlayerStateData inPlayer, MoveData inMove)
         {
             var zone = GetZone(inPlayer, inMove.SourceZoneId);
             while (zone.Cards.Count > 0)
@@ -589,7 +665,13 @@ namespace Elemento.Domain
             RefreshZone(zone, inState.Rules, inPlayer);
             CardInstanceData powerCard;
 
-            if (inMove.PowerCardType == EPowerCardType.None)
+            if (this.isReplaying)
+            {
+                if (inMove.PowerCardType == EPowerCardType.None && this.recordedPowerCard != null)
+                    ConsumeRecordedPowerCard(inState, this.recordedPowerCard);
+                powerCard = this.recordedPowerCard?.Clone();
+            }
+            else if (inMove.PowerCardType == EPowerCardType.None)
                 powerCard = DrawRandomPowerCard(inState);
             else
                 powerCard = SpawnPowerCard(inState, DeckDefinitionData.CreatePowerCard(inMove.PowerCardType));
@@ -613,6 +695,24 @@ namespace Elemento.Domain
                 RebuildPowerDeck(inState);
 
             return card;
+        }
+
+        private static void ConsumeRecordedPowerCard(GameStateData inState, CardInstanceData inCard)
+        {
+            if (inState.PowerDeck.Count == 0)
+                inState.PowerDeck.AddRange(DeckDefinitionData.CreatePowerDeck());
+
+            int index = inState.PowerDeck.FindIndex(inTemplate =>
+                inTemplate.DefinitionId == inCard.DefinitionId);
+            if (index < 0)
+                throw new InvalidOperationException("Recorded power card is not present in the replay reservoir.");
+            inState.PowerDeck.RemoveAt(index);
+
+            if (inState.PowerDeck.Count < 2)
+            {
+                inState.PowerDeck.Clear();
+                inState.PowerDeck.AddRange(DeckDefinitionData.CreatePowerDeck());
+            }
         }
 
         private static void RebuildPowerDeck(GameStateData inState)

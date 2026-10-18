@@ -403,6 +403,23 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public void DiscardEndsTurn_AllowsEndTurnWhenNoOtherActionExists()
+        {
+            var simulator = new GameSimulator();
+            var state = simulator.CreateGame(2468, new RulesConfigData
+            {
+                DiscardMode = EDiscardMode.DiscardEndsTurn
+            });
+            state.Players[state.CurrentPlayerId].Hand.Clear();
+
+            var moves = simulator.GetLegalMoves(state, state.CurrentPlayerId);
+            Assert.That(moves, Has.Count.EqualTo(1));
+            Assert.That(moves[0].Type, Is.EqualTo(EMoveType.EndTurn));
+            simulator.ApplyMove(state, moves[0]);
+            Assert.That(state.CurrentPlayerId, Is.Not.EqualTo(state.StartingPlayerId));
+        }
+
+        [Test]
         public void PlayerView_HidesOpponentHandAndDeckOrder()
         {
             var simulator = new GameSimulator();

@@ -1,51 +1,218 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace Elemento.Domain.Net
 {
-    //Loopback "server": owns the authoritative state and never hands it to clients.
-    public sealed class InMemoryMatchTransport : IMatchTransport
+    // Each endpoint represents an authenticated device; peers share the opaque storage.
+    public sealed class InMemoryMatchTransport : IAsyncMatchTransport
     {
+        private readonly Dictionary<string, StoredMatch> matches;
+        private readonly List<InMemoryMatchTransport> endpoints;
+        private readonly string name;
+
         public event Action<string, int> RevisionCommitted;
 
-        private readonly GameStateData state;
-        private readonly MatchAuthority authority = new();
-        private readonly Dictionary<string, MoveResultData> resultsByNonce = new();
-
-        public string MatchId => this.state.MatchId;
-        public int Revision => this.state.Revision;
-
-        public InMemoryMatchTransport(GameStateData inAuthoritativeState)
+        public InMemoryMatchTransport(string inName = "Player")
         {
-            this.state = inAuthoritativeState ?? throw new ArgumentNullException(nameof(inAuthoritativeState));
+            this.name = inName;
+            this.matches = new();
+            this.endpoints = new() { this };
         }
 
-        public MoveResultData Submit(MoveCommandData inCommand)
+        private InMemoryMatchTransport(InMemoryMatchTransport inServer, string inName)
         {
-            if (inCommand == null)
-                throw new ArgumentNullException(nameof(inCommand));
-
-            string nonceKey = inCommand.Seat + ":" + inCommand.ClientNonce;
-            if (!string.IsNullOrEmpty(inCommand.ClientNonce) && this.resultsByNonce.TryGetValue(nonceKey, out var previous))
-                return previous;//idempotent retry
-
-            var result = this.authority.ValidateAndApply(this.state, inCommand);
-
-            if (!string.IsNullOrEmpty(inCommand.ClientNonce))
-                this.resultsByNonce[nonceKey] = result;
-
-            if (result.Accepted)
-                RevisionCommitted?.Invoke(this.state.MatchId, result.NewRevision);
-
-            return result;
+            this.name = inName;
+            this.matches = inServer.matches;
+            this.endpoints = inServer.endpoints;
+            this.endpoints.Add(this);
         }
 
-        public MatchSeatViewData FetchSeatView(string inMatchId, int inSeat)
+        public InMemoryMatchTransport CreatePeer(string inName = "Opponent")
         {
-            if (inMatchId != this.state.MatchId)
-                throw new ArgumentException("Unknown match.", nameof(inMatchId));
+            return new InMemoryMatchTransport(this, inName);
+        }
 
-            return FairView.BuildSeatView(this.state, inSeat);
+        public Task<MatchStateUpdateData> CreateMatch(CreateMatchRequestData inRequest)
+        {
+            var request = Copy(inRequest);
+            CheckVersion(request.ProtocolVersion);
+            if (request.InitialState == null || request.Rules == null)
+                throw new ArgumentException("Initial state and rules are required.");
+            lock (this.matches)
+            {
+                string id = request.InitialState.MatchId;
+                if (string.IsNullOrEmpty(id))
+                    id = Guid.NewGuid().ToString("N");
+                var match = new StoredMatch
+                {
+                    State = request.InitialState,
+                    Rules = request.Rules,
+                    CurrentSeat = request.InitialState.CurrentPlayerId
+                };
+                match.State.MatchId = id;
+                match.Seats.Add(this);
+                this.matches.Add(id, match);
+                return Task.FromResult(BuildView(id, match, -1));
+            }
+        }
+
+        public Task<MatchStateUpdateData> JoinMatch(JoinMatchRequestData inRequest)
+        {
+            var request = Copy(inRequest);
+            CheckVersion(request.ProtocolVersion);
+            lock (this.matches)
+            {
+                var match = this.matches[request.MatchId];
+                if (!match.Seats.Contains(this))
+                {
+                    if (match.Seats.Count != 1 || match.Status != "waiting")
+                        throw new InvalidOperationException("Match is unavailable.");
+                    match.Seats.Add(this);
+                    match.Status = "active";
+                    match.UpdatedAt = DateTime.UtcNow.ToString("O");
+                }
+                return Task.FromResult(BuildView(request.MatchId, match, -1));
+            }
+        }
+
+        public Task<MatchStateUpdateData> FetchView(GetViewRequestData inRequest)
+        {
+            var request = Copy(inRequest);
+            CheckVersion(request.ProtocolVersion);
+            lock (this.matches)
+                return Task.FromResult(BuildView(request.MatchId, this.matches[request.MatchId], request.SinceRevision));
+        }
+
+        public Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
+        {
+            var request = Copy(inTurn);
+            CheckVersion(request.ProtocolVersion);
+            SubmitTurnResultData result;
+            lock (this.matches)
+            {
+                var match = this.matches[request.MatchId];
+                int seat = match.Seats.IndexOf(this);
+                if (seat < 0 || request.Seat != seat)
+                    throw new UnauthorizedAccessException("Seat does not belong to this device.");
+                if (string.IsNullOrEmpty(request.ClientNonce))
+                    throw new ArgumentException("ClientNonce is required.");
+                if (match.Results.TryGetValue(request.ClientNonce, out var previous))
+                {
+                    if (previous.Seat != seat)
+                        throw new UnauthorizedAccessException("Nonce belongs to another seat.");
+                    return Task.FromResult(Copy(previous.Result));
+                }
+                string reason = match.Status != "active" ? "match_not_active"
+                    : request.ExpectedRevision != match.Revision ? "stale_revision"
+                    : seat != match.CurrentSeat ? "not_your_turn" : null;
+                result = new SubmitTurnResultData
+                {
+                    Accepted = reason == null, Reason = reason,
+                    NewRevision = match.Revision, CurrentSeat = match.CurrentSeat, Status = match.Status
+                };
+                if (reason != null)
+                    return Task.FromResult(Copy(result));
+                if (request.Turn?.FinalState == null)
+                    throw new ArgumentException("A turn with final state is required.");
+                // No simulator, legality, hash, or random-outcome validation occurs here.
+                match.Turns.Add(request.Turn);
+                match.State = request.Turn.FinalState;
+                match.CurrentSeat = request.Turn.NextSeat;
+                match.Status = request.Turn.Status;
+                match.WinnerSeat = request.Turn.WinnerSeat;
+                match.UpdatedAt = DateTime.UtcNow.ToString("O");
+                ++match.Revision;
+                result.NewRevision = match.Revision;
+                result.CurrentSeat = match.CurrentSeat;
+                result.Status = match.Status;
+                match.Results.Add(request.ClientNonce, (seat, Copy(result)));
+            }
+            foreach (var endpoint in this.endpoints.ToArray())
+                endpoint.RevisionCommitted?.Invoke(request.MatchId, result.NewRevision);
+            return Task.FromResult(Copy(result));
+        }
+
+        public Task<ListMyMatchesResultData> ListMyMatches(ListMyMatchesRequestData inRequest)
+        {
+            CheckVersion(Copy(inRequest).ProtocolVersion);
+            var result = new ListMyMatchesResultData();
+            lock (this.matches)
+            {
+                foreach (var pair in this.matches)
+                {
+                    var match = pair.Value;
+                    int seat = match.Seats.IndexOf(this);
+                    if (seat < 0 || (match.Status != "waiting" && match.Status != "active"))
+                        continue;
+                    result.Matches.Add(new MyMatchData
+                    {
+                        MatchId = pair.Key, Status = match.Status, MatchRevision = match.Revision,
+                        CurrentSeat = match.CurrentSeat, YourSeat = seat, UpdatedAt = match.UpdatedAt,
+                        OpponentName = match.Seats.Count == 2 ? match.Seats[1 - seat].name : null
+                    });
+                }
+            }
+            return Task.FromResult(Copy(result));
+        }
+
+        public Task LeaveMatch(string inMatchId)
+        {
+            string id = Copy(inMatchId);
+            lock (this.matches)
+            {
+                var match = this.matches[id];
+                if (!match.Seats.Contains(this))
+                    throw new UnauthorizedAccessException("Device is not seated.");
+                match.Status = "abandoned";
+                match.UpdatedAt = DateTime.UtcNow.ToString("O");
+            }
+            return Task.CompletedTask;
+        }
+
+        private MatchStateUpdateData BuildView(string inId, StoredMatch inMatch, int inSinceRevision)
+        {
+            int seat = inMatch.Seats.IndexOf(this);
+            if (seat < 0)
+                throw new UnauthorizedAccessException("Device is not seated.");
+            var view = new MatchStateUpdateData
+            {
+                MatchId = inId, Status = inMatch.Status, MatchRevision = inMatch.Revision,
+                CurrentSeat = inMatch.CurrentSeat, YourSeat = seat, WinnerSeat = inMatch.WinnerSeat,
+                Rules = inMatch.Rules, State = inMatch.State
+            };
+            foreach (var endpoint in inMatch.Seats)
+                view.SeatNames.Add(endpoint.name);
+            for (int i = Math.Max(0, inSinceRevision); i < inMatch.Turns.Count; ++i)
+                view.Turns.Add(inMatch.Turns[i]);
+            return Copy(view);
+        }
+
+        private static T Copy<T>(T inValue)
+        {
+            if (inValue == null)
+                throw new ArgumentNullException(nameof(inValue));
+            return NetJson.Deserialize<T>(NetJson.Serialize(inValue));
+        }
+
+        private static void CheckVersion(int inVersion)
+        {
+            if (inVersion != ProtocolVersions.Current)
+                throw new InvalidOperationException("update_required: Please update Elemento to play online.");
+        }
+
+        private sealed class StoredMatch
+        {
+            public GameStateData State;
+            public RulesConfigData Rules;
+            public int Revision;
+            public int CurrentSeat;
+            public int WinnerSeat = -1;
+            public string Status = "waiting";
+            public string UpdatedAt = DateTime.UtcNow.ToString("O");
+            public List<InMemoryMatchTransport> Seats = new();
+            public List<TurnPackageData> Turns = new();
+            public Dictionary<string, (int Seat, SubmitTurnResultData Result)> Results = new();
         }
     }
 }

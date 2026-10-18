@@ -3,251 +3,164 @@ using System.Threading.Tasks;
 
 namespace Elemento.Domain.Net
 {
-    //Client-side state for one online match: only ever holds this seat's fair view.
     public sealed class OnlineMatchClient : IDisposable
     {
-        public event Action<MatchSeatViewData> ViewChanged;
-        public event Action<OnlineViewUpdateData> ViewUpdateReceived;
+        private readonly IAsyncMatchTransport transport;
+        private int lastAppliedRevision = -1;
+        private bool disposed;
+
+        public event Action<TurnPackageData> OpponentTurnReceived;
+        public event Action<MatchStateUpdateData> StateChanged;
         public event Action<Exception> RequestFailed;
 
-        private readonly IMatchTransport transport;
-        private readonly IAsyncMatchTransport asyncTransport;
-        private bool disposed;
-        private int clientMoveSequence;
-        private int lastAppliedRevision = -1;
-        private int matchRevision = -1;
-
-        public string MatchId { get; }
-        public int LocalSeat { get; }
-        public MatchSeatViewData CurrentView { get; private set; }
-        public int Revision => this.CurrentView == null ? -1 : this.CurrentView.View.Revision;
-        public int MatchRevision => this.matchRevision;
-        public string Status { get; private set; }
-        public bool IsLocalTurn => this.CurrentView != null && this.CurrentView.View.CurrentPlayerId == this.LocalSeat;
-        public bool UsesAsyncTransport => this.asyncTransport != null;
+        public MatchStateUpdateData CurrentState { get; private set; }
+        public string MatchId => this.CurrentState?.MatchId;
+        public int LocalSeat => this.CurrentState?.YourSeat ?? -1;
         public int LastAppliedRevision => this.lastAppliedRevision;
-        public OnlineTurnBuffer TurnBuffer { get; } = new();
+        public bool IsLocalTurn => this.CurrentState?.Status == "active"
+            && this.CurrentState.CurrentSeat == this.LocalSeat;
 
-        public OnlineMatchClient(IAsyncMatchTransport inTransport, string inMatchId, int inLocalSeat)
-        {
-            this.asyncTransport = inTransport ?? throw new ArgumentNullException(nameof(inTransport));
-            this.MatchId = inMatchId;
-            this.LocalSeat = inLocalSeat;
-            this.asyncTransport.RevisionCommitted += HandleRevisionCommitted;
-        }
-
-        public OnlineMatchClient(IMatchTransport inTransport, string inMatchId, int inLocalSeat)
+        public OnlineMatchClient(IAsyncMatchTransport inTransport)
         {
             this.transport = inTransport ?? throw new ArgumentNullException(nameof(inTransport));
-            this.MatchId = inMatchId;
-            this.LocalSeat = inLocalSeat;
             this.transport.RevisionCommitted += HandleRevisionCommitted;
         }
 
-        //async play: call on resume; live play: also triggered by RevisionCommitted
-        public MatchSeatViewData Refresh()
+        public async Task<MatchStateUpdateData> CreateAsync(CreateMatchRequestData inRequest)
         {
-            if (this.transport == null)
-                throw new InvalidOperationException("Use RefreshAsync for an asynchronous transport.");
-            this.CurrentView = this.transport.FetchSeatView(this.MatchId, this.LocalSeat);
-            this.matchRevision = this.CurrentView.View.Revision;
-            ViewChanged?.Invoke(this.CurrentView);
-            return this.CurrentView;
+            CheckDisposed();
+            return Apply(await this.transport.CreateMatch(inRequest), true);
         }
 
-        public MoveResultData SubmitMove(MoveData inMove)
+        public async Task<MatchStateUpdateData> JoinAsync(string inMatchId)
         {
-            if (this.transport == null)
-                throw new InvalidOperationException("Single-move submission is unavailable for an asynchronous transport.");
-            if (inMove == null)
-                throw new ArgumentNullException(nameof(inMove));
-            if (this.CurrentView == null)
-                Refresh();
+            CheckDisposed();
+            return Apply(await this.transport.JoinMatch(new JoinMatchRequestData { MatchId = inMatchId }), true);
+        }
 
-            var command = new MoveCommandData
+        public async Task<MatchStateUpdateData> RefreshAsync(int? inSinceRevision = null)
+        {
+            CheckDisposed();
+            if (this.CurrentState == null)
+                throw new InvalidOperationException("Create or join a match first.");
+            return Apply(await this.transport.FetchView(new GetViewRequestData
             {
-                MatchId = this.MatchId,
-                Seat = this.LocalSeat,
-                ClientMoveSequence = ++this.clientMoveSequence,
-                ExpectedRevision = this.Revision,
-                Move = inMove,
-                ClientNonce = this.LocalSeat + "-" + this.clientMoveSequence
-            };
+                MatchId = this.MatchId, SinceRevision = inSinceRevision ?? this.lastAppliedRevision
+            }), false);
+        }
 
-            var result = this.transport.Submit(command);
-            if (!result.Accepted)
-                Refresh();//resync on stale/illegal
-
+        public async Task<SubmitTurnResultData> SubmitTurnAsync(TurnPackageData inTurn, string inClientNonce = null)
+        {
+            CheckDisposed();
+            if (inTurn == null)
+                throw new ArgumentNullException(nameof(inTurn));
+            var result = await this.transport.SubmitTurn(new SubmitTurnRequestData
+            {
+                MatchId = this.MatchId, Seat = this.LocalSeat, ExpectedRevision = inTurn.StartRevision,
+                ClientNonce = inClientNonce ?? this.MatchId + ":" + this.LocalSeat + ":" + inTurn.StartRevision,
+                Turn = inTurn
+            });
+            await RefreshAsync();
             return result;
         }
 
-        private void HandleRevisionCommitted(string inMatchId, int inRevision)
+        public Task<ListMyMatchesResultData> ListMyMatchesAsync()
         {
-            if (inMatchId == this.MatchId && inRevision > this.matchRevision)
-            {
-                if (this.asyncTransport != null)
-                    _ = RefreshAsync(this.lastAppliedRevision < 0 ? null : this.lastAppliedRevision,
-                        null, inError => this.RequestFailed?.Invoke(inError));
-                else
-                    Refresh();
-            }
+            CheckDisposed();
+            return this.transport.ListMyMatches(new ListMyMatchesRequestData());
         }
 
-        public Task RefreshAsync(Action<MatchSeatViewData> inCompleted = null, Action<Exception> inFailed = null)
+        public Task LeaveMatchAsync()
         {
-            return RefreshAsync(null, inCompleted, inFailed);
+            CheckDisposed();
+            return this.transport.LeaveMatch(this.MatchId);
         }
 
-        public async Task RefreshAsync(int? inSinceRevision, Action<MatchSeatViewData> inCompleted = null,
-            Action<Exception> inFailed = null)
+        private MatchStateUpdateData Apply(MatchStateUpdateData inUpdate, bool inInitial)
         {
-            try
+            CheckDisposed();
+            if (inUpdate?.State == null || string.IsNullOrEmpty(inUpdate.MatchId))
+                throw new InvalidOperationException("Missing match state.");
+            if (!inInitial && (inUpdate.MatchId != this.MatchId || inUpdate.YourSeat != this.LocalSeat))
+                throw new InvalidOperationException("Unexpected match or seat.");
+            if (!inInitial && inUpdate.MatchRevision < this.lastAppliedRevision)
+                return this.CurrentState;
+            if (!inInitial && inUpdate.MatchRevision == this.lastAppliedRevision)
             {
-                if (this.asyncTransport == null)
+                if (IsStatusRegression(this.CurrentState.Status, inUpdate.Status)
+                    || HaveSameSnapshot(this.CurrentState, inUpdate))
                 {
-                    inCompleted?.Invoke(Refresh());
-                    return;
+                    return this.CurrentState;
                 }
-
-                var update = await this.asyncTransport.FetchView(this.MatchId, inSinceRevision);
-                if (this.disposed)
-                    return;
-                var view = update?.View;
-                if (view == null || view.View == null || view.MatchId != this.MatchId || view.Seat != this.LocalSeat)
-                    throw new InvalidOperationException("The server returned an invalid seat view.");
-                int updateRevision = Math.Max(update.MatchRevision, view.View.Revision);
-                if (updateRevision < this.matchRevision)
-                {
-                    inCompleted?.Invoke(this.CurrentView);
-                    return;
-                }
-                this.matchRevision = updateRevision;
-                this.Status = update.Status;
-                if (view.View.Revision >= this.Revision)
-                {
-                    this.CurrentView = view;
-                    this.ViewChanged?.Invoke(view);
-                    this.ViewUpdateReceived?.Invoke(update);
-                }
-                inCompleted?.Invoke(this.CurrentView);
             }
-            catch (Exception error)
+            int previous = inInitial ? inUpdate.MatchRevision : this.lastAppliedRevision;
+            this.CurrentState = inUpdate;
+            this.lastAppliedRevision = inUpdate.MatchRevision;
+            if (!inInitial)
             {
-                if (inFailed == null)
-                    throw;
-                inFailed(error);
+                foreach (var turn in inUpdate.Turns)
+                {
+                    if (turn.StartRevision >= previous && turn.Seat != this.LocalSeat)
+                        this.OpponentTurnReceived?.Invoke(turn);
+                }
             }
+            this.StateChanged?.Invoke(inUpdate);
+            return inUpdate;
         }
 
-        public bool TryBufferMove(MoveData inMove, out string outReason)
+        private static bool IsStatusRegression(string inCurrent, string inIncoming)
         {
-            if (inMove == null)
-                throw new ArgumentNullException(nameof(inMove));
-            if (this.CurrentView?.View == null)
+            int currentRank = StatusRank(inCurrent);
+            int incomingRank = StatusRank(inIncoming);
+            return incomingRank < currentRank
+                || currentRank == 2 && !string.Equals(inCurrent, inIncoming, StringComparison.Ordinal);
+        }
+
+        private static int StatusRank(string inStatus)
+        {
+            if (inStatus == "active")
+                return 1;
+            if (inStatus == "finished" || inStatus == "abandoned")
+                return 2;
+            return 0;
+        }
+
+        private static bool HaveSameSnapshot(MatchStateUpdateData inFirst, MatchStateUpdateData inSecond)
+        {
+            if (inFirst.Status != inSecond.Status || inFirst.CurrentSeat != inSecond.CurrentSeat
+                || inFirst.YourSeat != inSecond.YourSeat || inFirst.WinnerSeat != inSecond.WinnerSeat
+                || inFirst.SeatNames.Count != inSecond.SeatNames.Count)
             {
-                outReason = "The confirmed seat view is unavailable.";
                 return false;
             }
-
-            if (!this.TurnBuffer.HasMoves && this.TurnBuffer.ExpectedRevision != this.Revision)
-                this.TurnBuffer.Begin(this.CurrentView);
-            return this.TurnBuffer.TryAppend(inMove, out outReason);
+            for (int i = 0; i < inFirst.SeatNames.Count; ++i)
+                if (inFirst.SeatNames[i] != inSecond.SeatNames[i])
+                    return false;
+            return true;
         }
 
-        public string GetNextBufferedCardId()
+        private async void HandleRevisionCommitted(string inMatchId, int inRevision)
         {
-            if (this.CurrentView?.View == null)
-                return null;
-            if (!this.TurnBuffer.HasMoves && this.TurnBuffer.ExpectedRevision != this.Revision)
-                this.TurnBuffer.Begin(this.CurrentView);
-
-            return this.TurnBuffer.NextCardId;
-        }
-
-        public bool TryUndoBufferedMove(out MoveData outMove, out string outReason)
-        {
-            return this.TurnBuffer.TryPop(out outMove, out outReason);
-        }
-
-        public async Task SubmitTurnAsync(MoveData inEndTurnMove,
-            Action<SubmitTurnResultData> inCompleted = null, Action<Exception> inFailed = null)
-        {
-            try
-            {
-                if (this.disposed)
-                    throw new ObjectDisposedException(nameof(OnlineMatchClient));
-                if (this.asyncTransport == null)
-                    throw new InvalidOperationException("Batched turns require an asynchronous transport.");
-                if (!this.TurnBuffer.HasMoves && this.TurnBuffer.ExpectedRevision != this.Revision)
-                    this.TurnBuffer.Begin(this.CurrentView);
-                if (!this.TurnBuffer.IsComplete
-                    && !this.TurnBuffer.TryAppend(inEndTurnMove, out string reason))
-                    throw new InvalidOperationException(reason);
-
-                var result = await this.asyncTransport.SubmitTurn(
-                    this.TurnBuffer.CreateRequest(this.MatchId, this.LocalSeat));
-                if (this.disposed)
-                    throw new ObjectDisposedException(nameof(OnlineMatchClient));
-
-                if (result?.View?.View == null || result.View.MatchId != this.MatchId
-                    || result.View.Seat != this.LocalSeat)
-                    throw new InvalidOperationException("The server returned an invalid submit-turn seat view.");
-
-                this.TurnBuffer.Clear();
-                if (result.Accepted)
-                {
-                    this.matchRevision = Math.Max(this.matchRevision, result.NewRevision);
-                    this.Status = "active";
-                }
-                if (result.View.View.Revision >= this.Revision)
-                {
-                    var update = new OnlineViewUpdateData
-                    {
-                        Status = this.Status,
-                        MatchRevision = this.matchRevision,
-                        View = result.View
-                    };
-                    this.CurrentView = result.View;
-                    this.ViewChanged?.Invoke(result.View);
-                    this.ViewUpdateReceived?.Invoke(update);
-                }
-                inCompleted?.Invoke(result);
-            }
+            if (this.disposed || inMatchId != this.MatchId || inRevision <= this.lastAppliedRevision)
+                return;
+            try { await RefreshAsync(); }
             catch (Exception error)
             {
-                if (inFailed == null)
-                    throw;
-                inFailed(error);
+                if (!this.disposed)
+                    this.RequestFailed?.Invoke(error);
             }
         }
 
-        public async Task LeaveMatchAsync()
+        private void CheckDisposed()
         {
             if (this.disposed)
                 throw new ObjectDisposedException(nameof(OnlineMatchClient));
-            if (this.asyncTransport == null)
-                throw new InvalidOperationException("Leaving a match requires an asynchronous transport.");
-            await this.asyncTransport.LeaveMatch(this.MatchId);
-        }
-
-        public void DiscardBufferedTurn()
-        {
-            this.TurnBuffer.Clear();
-        }
-
-        public void MarkAppliedRevision(int inRevision)
-        {
-            if (inRevision > this.lastAppliedRevision)
-                this.lastAppliedRevision = inRevision;
         }
 
         public void Dispose()
         {
             this.disposed = true;
-            if (this.transport != null)
-                this.transport.RevisionCommitted -= HandleRevisionCommitted;
-            if (this.asyncTransport != null)
-                this.asyncTransport.RevisionCommitted -= HandleRevisionCommitted;
+            this.transport.RevisionCommitted -= HandleRevisionCommitted;
         }
     }
 }
