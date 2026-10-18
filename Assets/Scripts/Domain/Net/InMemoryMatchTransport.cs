@@ -155,6 +155,7 @@ namespace Elemento.Domain.Net
                     result.Matches.Add(new MyMatchData
                     {
                         MatchId = pair.Key, Status = match.Status, MatchRevision = match.Revision,
+                        InviteCode = match.InviteCode,
                         CurrentSeat = match.CurrentSeat, YourSeat = seat, UpdatedAt = match.UpdatedAt,
                         OpponentName = match.Seats.Count == 2 ? match.Seats[1 - seat].name : null
                     });
@@ -286,6 +287,7 @@ namespace Elemento.Domain.Net
 
         private sealed class StoredMatch
         {
+            public string InviteCode = Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant();
             public GameStateData State;
             public RulesConfigData Rules;
             public int Revision;

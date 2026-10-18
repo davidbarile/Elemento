@@ -28,7 +28,7 @@ serve(async (request) => {
   const seatByMatch = new Map(seats.map((row) => [row.match_id, Number(row.seat)]));
   const matchIds = seats.map((row) => row.match_id);
   const { data: matches, error: matchesError } = await service.from("matches")
-    .select("id,status,revision,current_seat,updated_at")
+    .select("id,invite_code,status,revision,current_seat,updated_at")
     .in("id", matchIds)
     .eq("protocol_version", protocolVersion)
     .in("status", ["waiting", "active"])
@@ -54,6 +54,7 @@ serve(async (request) => {
   return json({
     Matches: matches.map((match) => ({
       MatchId: match.id,
+      InviteCode: match.invite_code,
       Status: match.status,
       MatchRevision: Number(match.revision),
       CurrentSeat: match.current_seat == null ? -1 : Number(match.current_seat),

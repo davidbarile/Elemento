@@ -22,7 +22,7 @@ namespace Elemento.Domain.Tests
             AssertFields<CreateMatchRequestData>("ProtocolVersion", "Rules", "InitialState", "InitialStateHash");
             AssertFields<MatchStateUpdateData>("MatchId", "Status", "MatchRevision", "CurrentSeat", "YourSeat",
                 "WinnerSeat", "OpponentLastSeenSecondsAgo", "Rules", "State", "Turns", "SeatNames");
-            AssertFields<MyMatchData>("MatchId", "Status", "MatchRevision", "CurrentSeat", "YourSeat", "OpponentName", "UpdatedAt");
+            AssertFields<MyMatchData>("MatchId", "InviteCode", "Status", "MatchRevision", "CurrentSeat", "YourSeat", "OpponentName", "UpdatedAt");
             var request = Request("match", 0, 0);
             request.Turn.Actions.Add(new TurnActionData
             {
@@ -38,7 +38,7 @@ namespace Elemento.Domain.Tests
             RoundTrip(new CreateMatchRequestData { InitialState = request.Turn.FinalState, InitialStateHash = "hash" });
             RoundTrip(new SubmitTurnResultData { Accepted = true, NewRevision = 4, Status = "active" });
             RoundTrip(new MatchStateUpdateData { Turns = new() { request.Turn }, SeatNames = new() { "A", "B" } });
-            RoundTrip(new ListMyMatchesResultData { Matches = new() { new MyMatchData { OpponentName = "B" } } });
+            RoundTrip(new ListMyMatchesResultData { Matches = new() { new MyMatchData { InviteCode = "52MMXK", OpponentName = "B" } } });
             RoundTrip(new ListMyMatchesRequestData());
             RoundTrip(new GetViewRequestData { MatchId = "match", SinceRevision = 3 });
             RoundTrip(new JoinMatchRequestData { MatchId = "match" });
@@ -211,12 +211,15 @@ namespace Elemento.Domain.Tests
             var peer = host.CreatePeer("B");
             var stranger = host.CreatePeer("C");
             await host.CreateMatch(Setup("list"));
-            Assert.That((await host.ListMyMatches(new ListMyMatchesRequestData())).Matches[0].Status, Is.EqualTo("waiting"));
+            var waitingMatch = (await host.ListMyMatches(new ListMyMatchesRequestData())).Matches[0];
+            Assert.That(waitingMatch.Status, Is.EqualTo("waiting"));
+            Assert.That(waitingMatch.InviteCode, Has.Length.EqualTo(6));
             await peer.JoinMatch(new JoinMatchRequestData { MatchId = "list" });
             var resumed = await peer.JoinMatch(new JoinMatchRequestData { MatchId = "list" });
             Assert.That(resumed.YourSeat, Is.EqualTo(1));
             var matches = await peer.ListMyMatches(new ListMyMatchesRequestData());
             Assert.That(matches.Matches[0].OpponentName, Is.EqualTo("A"));
+            Assert.That(matches.Matches[0].InviteCode, Is.EqualTo(waitingMatch.InviteCode));
             Assert.That((await stranger.ListMyMatches(new ListMyMatchesRequestData())).Matches, Is.Empty);
             Assert.ThrowsAsync<UnauthorizedAccessException>(async () =>
                 await stranger.FetchView(new GetViewRequestData { MatchId = "list" }));

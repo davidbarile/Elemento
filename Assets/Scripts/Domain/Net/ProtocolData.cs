@@ -143,6 +143,7 @@ namespace Elemento.Domain.Net
     public sealed class MyMatchData
     {
         public string MatchId;
+        public string InviteCode;
         public string Status;
         public int MatchRevision;
         public int CurrentSeat;

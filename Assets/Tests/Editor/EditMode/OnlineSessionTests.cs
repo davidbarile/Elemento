@@ -151,6 +151,7 @@ public class OnlineSessionTests
         client.OpponentTurnReceived += _ => replayCount++;
 
         var matches = await client.ListMyMatchesAsync();
+        Assert.That(matches.Matches[0].InviteCode, Is.EqualTo("52MMXK"));
         await client.JoinAsync(matches.Matches[0].MatchId);
         OnlineMatchContext.Set(client);
 
@@ -248,6 +249,7 @@ public class OnlineSessionTests
                 Matches = new() { new MyMatchData
                 {
                     MatchId = this.Snapshot.MatchId, Status = this.Snapshot.Status,
+                    InviteCode = "52MMXK",
                     MatchRevision = this.Snapshot.MatchRevision, YourSeat = this.Snapshot.YourSeat,
                     CurrentSeat = this.Snapshot.CurrentSeat
                 } }
