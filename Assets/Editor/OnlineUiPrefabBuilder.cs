@@ -286,7 +286,12 @@ public static class OnlineUiPrefabBuilder
         Button cancelGameButton = RequireButton(cancelGameObject, "Cancel Game Button");
         TextMeshProUGUI cancelGameText = RequireButtonText(cancelGameObject, "Cancel Game Button");
         cancelGameText.text = "Cancel game";
-        RectTransform createRect = (RectTransform)createButton.transform;
+        Transform createButtonRoot = createButton.transform;
+        while (createButtonRoot != null && createButtonRoot.parent != rootRect)
+            createButtonRoot = createButtonRoot.parent;
+        RectTransform createRect = createButtonRoot as RectTransform;
+        if (createRect == null)
+            throw new InvalidOperationException("[OnlineUiPrefabBuilder] Lobby Create Match Button is not a child of the lobby root.");
         RectTransform cancelGameRect = (RectTransform)cancelGameObject.transform;
         cancelGameRect.anchorMin = createRect.anchorMin;
         cancelGameRect.anchorMax = createRect.anchorMax;
