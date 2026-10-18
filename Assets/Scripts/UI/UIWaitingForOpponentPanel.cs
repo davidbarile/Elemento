@@ -1,5 +1,6 @@
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 public sealed class UIWaitingForOpponentPanel : UIPanelBase
 {
@@ -8,17 +9,21 @@ public sealed class UIWaitingForOpponentPanel : UIPanelBase
     [SerializeField] private TextMeshProUGUI messageText;
     [SerializeField] private RectTransform spinnerTransform;
     [SerializeField] private float spinnerSpeed = -180f;
+    [SerializeField] private Button leaveButton;
+    [SerializeField] private TextMeshProUGUI leaveText;
 
     private bool isOpponentAway;
 
     private void Awake()
     {
         LocalizationManager.OnLanguageChanged += HandleLanguageChanged;
+        this.leaveButton?.onClick.AddListener(HandleLeaveButtonPress);
     }
 
     private void OnDestroy()
     {
         LocalizationManager.OnLanguageChanged -= HandleLanguageChanged;
+        this.leaveButton?.onClick.RemoveListener(HandleLeaveButtonPress);
     }
 
     private void Update()
@@ -49,6 +54,11 @@ public sealed class UIWaitingForOpponentPanel : UIPanelBase
         RefreshText();
     }
 
+    private void HandleLeaveButtonPress()
+    {
+        GameManager.IN?.ShowLeaveGameConfirmation();
+    }
+
     private void RefreshText()
     {
         LocalizationManager localization = LocalizationManager.IN;
@@ -56,5 +66,10 @@ public sealed class UIWaitingForOpponentPanel : UIPanelBase
             ? null : this.isOpponentAway
                 ? localization.OnlineOpponentAway
                 : localization.OnlineWaitingForOpponent);
+        if (this.leaveText != null)
+        {
+            this.leaveText.text = LocalizationManager.GetOnlineText(
+                localization == null ? null : localization.OnlineLeave);
+        }
     }
 }

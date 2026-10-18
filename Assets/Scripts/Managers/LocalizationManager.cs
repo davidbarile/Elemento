@@ -261,7 +261,14 @@ public class LocalizationManager : MonoBehaviour
     public string[] OnlineLobby = { "Online Match", "Partida en línea" };
     public string[] OnlineCreateMatch = { "Create Match", "Crear partida" };
     public string[] OnlineJoinMatch = { "Join Match", "Unirse a partida" };
-    public string[] OnlineResumeMatch = { "Resume", "Continuar" };
+    public string[] OnlineActiveGames = { "Active games", "Partidas activas" };
+    public string[] OnlineMatchCodeFormat = { "Code: {0}", "Código: {0}" };
+    public string[] OnlineOpponentFormat = { "vs {0}", "vs {0}" };
+    public string[] OnlineRejoin = { "Rejoin", "Volver a entrar" };
+    public string[] OnlineForfeit = { "Forfeit", "Abandonar" };
+    public string[] OnlineForfeitTitle = { "Forfeit game?", "¿Abandonar partida?" };
+    public string[] OnlineForfeitMessage = { "Your opponent will win this game.", "Tu rival ganará esta partida." };
+    public string[] OnlineLeave = { "Leave", "Abandonar" };
     public string[] OnlineUpdateRequired = { "Please update Elemento to play online.", "Actualiza Elemento para jugar en línea." };
     public string[] OnlineInviteCode = { "Join with a code", "Unirse con un código" };
     public string[] OnlineInviteCodePlaceholder = { "Enter code", "Introduce el código" };

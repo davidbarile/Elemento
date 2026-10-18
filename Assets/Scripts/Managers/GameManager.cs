@@ -3348,6 +3348,11 @@ public class GameManager : MonoBehaviour
 
     public void HandleHomeButtonPress()
     {
+        ShowLeaveGameConfirmation();
+    }
+
+    public void ShowLeaveGameConfirmation()
+    {
         if (UITutorialPanel.IsTutorialMode || this.isOnlineLeavePending) return;
 
         UIDraggable.CancelActiveDrag();
@@ -3357,6 +3362,7 @@ public class GameManager : MonoBehaviour
             && this.onlineTurnRecorder.Actions.Count > 0
             ? LocalizationManager.GetOnlineText(LOC.IN.OnlineDiscardUnsent)
             : LOC.IN.LeaveGameMessage[LOC.LI];//$"Are you sure you want to leave the game?\n\nAll progress will  be lost.";
+        UIConfirmPanel.IN.transform.SetAsLastSibling();
         UIConfirmPanel.IN.Show(titleText, messageText, async () =>
         {
             string persistedMatchId = UIOnlineLobbyPanel.GetPersistedActiveMatchId();

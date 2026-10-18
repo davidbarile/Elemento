@@ -37,6 +37,10 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     [SerializeField] private Button createButton;
     [SerializeField] private Button joinButton;
     [SerializeField] private Button backButton;
+    [SerializeField] private GameObject activeGamesRoot;
+    [SerializeField] private TextMeshProUGUI activeGamesHeaderText;
+    [SerializeField] private RectTransform activeGamesContent;
+    [SerializeField] private UIActiveGameRow activeGameRowPrefab;
 
     private SupabaseAuthClient auth;
     private SupabaseProfileClient profiles;
@@ -49,8 +53,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     private bool isResumeLoading;
     private bool isRecoveryPending;
     private int resumeGeneration;
-    private GameObject resumeList;
-    private readonly List<Button> resumeButtons = new();
+    private MyMatchData pendingForfeitConfirmation;
+    private readonly List<UIActiveGameRow> activeGameRows = new();
     private readonly HashSet<string> forgottenMatchIds = new();
 
     public bool IsRecoveryPending => this.isRecoveryPending;
@@ -116,7 +120,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             await this.profiles.EnsureProfileAsync();
             this.isProfileReady = true;
             this.statusText.text = string.Empty;
-            await LoadResumableMatches();
+            await LoadActiveGames();
         }
         catch (Exception exception) { ShowError(exception); }
         finally { SetBusy(false); }
@@ -363,8 +367,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.joinButton.interactable = !inIsBusy && this.isProfileReady && this.client == null;
         this.inviteCodeInput.interactable = !inIsBusy && this.client == null;
         this.backButton.interactable = !inIsBusy;
-        foreach (var button in this.resumeButtons)
-            button.interactable = !inIsBusy && this.isProfileReady && this.client == null;
+        foreach (UIActiveGameRow row in this.activeGameRows)
+            row.SetInteractable(!inIsBusy && this.isProfileReady && this.client == null);
         if (inIsBusy)
         {
             string[] status = this.isResumeLoading
@@ -383,8 +387,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.createButton.gameObject.SetActive(!inIsLoading);
         this.joinButton.gameObject.SetActive(!inIsLoading);
         this.backButton.gameObject.SetActive(!inIsLoading);
-        if (this.resumeList != null)
-            this.resumeList.SetActive(!inIsLoading);
+        RefreshActiveGamesVisibility();
         this.statusText.gameObject.SetActive(true);
         if (inIsLoading)
             this.statusText.text = LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineResuming);
@@ -393,6 +396,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     private void HandleLanguageChanged(int inLanguageIndex)
     {
         RefreshText();
+        if (this.pendingForfeitConfirmation != null && UIConfirmPanel.IN?.IsShowing == true)
+            ShowForfeitConfirmation(this.pendingForfeitConfirmation);
     }
 
     private void RefreshText()
@@ -405,6 +410,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.createText.text = LocalizationManager.GetOnlineText(loc.OnlineCreateMatch);
         this.joinText.text = LocalizationManager.GetOnlineText(loc.OnlineJoinMatch);
         this.backText.text = LocalizationManager.GetOnlineText(loc.OnlineBack);
+        if (this.activeGamesHeaderText != null)
+            this.activeGamesHeaderText.text = LocalizationManager.GetOnlineText(loc.OnlineActiveGames);
         if (this.isResumeLoading)
             this.statusText.text = LocalizationManager.GetOnlineText(loc.OnlineResuming);
         else if (!string.IsNullOrEmpty(this.inviteCode))
@@ -420,52 +427,118 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             + LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineWaiting) + "</size>";
     }
 
-    private async Task LoadResumableMatches()
+    private async Task LoadActiveGames()
     {
-        if (this.resumeList != null) Destroy(this.resumeList);
-        this.resumeButtons.Clear();
-        using var lookup = new SupabaseMatchTransport(OnlineCoroutineHost.IN, this.auth);
-        var result = await lookup.ListMyMatches(new ListMyMatchesRequestData());
-        if (result.Matches.Count == 0)
+        ClearActiveGameRows();
+        if (this.activeGamesContent == null || this.activeGameRowPrefab == null)
             return;
 
-        this.resumeList = new GameObject("Resume matches", typeof(RectTransform), typeof(RectMask2D), typeof(ScrollRect));
-        var viewport = (RectTransform)this.resumeList.transform;
-        viewport.SetParent(this.transform, false);
-        viewport.anchorMin = viewport.anchorMax = new Vector2(0.5f, 0.5f);
-        viewport.sizeDelta = new Vector2(500f, 120f);
-        viewport.anchoredPosition = new Vector2(0f, -440f);
-        var content = new GameObject("Matches", typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
-        var contentRect = (RectTransform)content.transform;
-        contentRect.SetParent(viewport, false);
-        contentRect.anchorMin = new Vector2(0f, 1f);
-        contentRect.anchorMax = new Vector2(1f, 1f);
-        contentRect.pivot = new Vector2(0.5f, 1f);
-        contentRect.sizeDelta = Vector2.zero;
-        var layout = content.GetComponent<VerticalLayoutGroup>();
-        layout.spacing = 10f;
-        layout.childControlHeight = false;
-        layout.childForceExpandHeight = false;
-        content.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-        var scroll = this.resumeList.GetComponent<ScrollRect>();
-        scroll.viewport = viewport;
-        scroll.content = contentRect;
-        scroll.horizontal = false;
-        foreach (var match in result.Matches)
+        using var lookup = new SupabaseMatchTransport(OnlineCoroutineHost.IN, this.auth);
+        ListMyMatchesResultData result = await lookup.ListMyMatches(new ListMyMatchesRequestData());
+        if (result?.Matches != null)
         {
-            // Reuse the lobby button's complete visual hierarchy and clear its serialized action.
-            var row = Instantiate(this.createButton.transform.parent.gameObject, contentRect);
-            ((RectTransform)row.transform).sizeDelta = new Vector2(500f, 75f);
-            var button = row.GetComponentInChildren<Button>();
-            button.onClick = new Button.ButtonClickedEvent();
-            button.onClick.AddListener(() => ResumeMatch(match.MatchId));
-            var label = row.GetComponentInChildren<TextMeshProUGUI>();
-            label.richText = false;
-            label.text = LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineResumeMatch)
-                + " — " + (string.IsNullOrEmpty(match.OpponentName)
-                    ? LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineWaiting) : match.OpponentName);
-            this.resumeButtons.Add(button);
+            foreach (MyMatchData match in result.Matches)
+            {
+                UIActiveGameRow row = Instantiate(this.activeGameRowPrefab, this.activeGamesContent);
+                row.Configure(match, HandleRejoin, ShowForfeitConfirmation);
+                row.SetInteractable(!this.isBusy && this.isProfileReady && this.client == null);
+                this.activeGameRows.Add(row);
+            }
         }
+
+        RefreshActiveGamesVisibility();
+    }
+
+    private void HandleRejoin(MyMatchData inMatch)
+    {
+        if (inMatch != null)
+            ResumeMatch(inMatch.MatchId);
+    }
+
+    private void ShowForfeitConfirmation(MyMatchData inMatch)
+    {
+        if (inMatch == null || this.isBusy || UIConfirmPanel.IN == null)
+            return;
+
+        this.pendingForfeitConfirmation = inMatch;
+        LocalizationManager localization = LocalizationManager.IN;
+        UIConfirmPanel.IN.transform.SetAsLastSibling();
+        UIConfirmPanel.IN.Show(
+            LocalizationManager.GetOnlineText(localization?.OnlineForfeitTitle),
+            LocalizationManager.GetOnlineText(localization?.OnlineForfeitMessage),
+            () =>
+            {
+                this.pendingForfeitConfirmation = null;
+                ForfeitActiveGame(inMatch);
+            },
+            () => this.pendingForfeitConfirmation = null);
+    }
+
+    private async void ForfeitActiveGame(MyMatchData inMatch)
+    {
+        if (inMatch == null || this.isBusy)
+            return;
+
+        SetBusy(true);
+        EForfeitOutcome outcome = await ForfeitMatchAsync(inMatch.MatchId, inMatch.YourSeat);
+        if (outcome == EForfeitOutcome.Failed)
+        {
+            string error = LocalizationManager.GetOnlineText(LocalizationManager.IN?.OnlineError);
+            this.statusText.text = error;
+            if (UIAlertPanel.IN != null)
+            {
+                UIAlertPanel.IN.transform.SetAsLastSibling();
+                UIAlertPanel.IN.Show(error, 3f, EAlertMode.Notification);
+            }
+        }
+        else
+        {
+            RemoveActiveGameRow(inMatch.MatchId);
+            this.statusText.text = string.Empty;
+            if (outcome == EForfeitOutcome.AlreadyOver || outcome == EForfeitOutcome.Gone)
+            {
+                string[] notice = outcome == EForfeitOutcome.AlreadyOver
+                    ? LocalizationManager.IN?.OnlineMatchAlreadyEnded
+                    : LocalizationManager.IN?.OnlineMatchGone;
+                if (UIAlertPanel.IN != null)
+                {
+                    UIAlertPanel.IN.transform.SetAsLastSibling();
+                    UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(notice), 3f,
+                        EAlertMode.Notification);
+                }
+            }
+        }
+        SetBusy(false);
+    }
+
+    private void ClearActiveGameRows()
+    {
+        foreach (UIActiveGameRow row in this.activeGameRows)
+        {
+            if (row != null)
+                Destroy(row.gameObject);
+        }
+        this.activeGameRows.Clear();
+        RefreshActiveGamesVisibility();
+    }
+
+    private void RemoveActiveGameRow(string inMatchId)
+    {
+        for (int index = this.activeGameRows.Count - 1; index >= 0; --index)
+        {
+            UIActiveGameRow row = this.activeGameRows[index];
+            if (row == null || row.MatchId != inMatchId)
+                continue;
+            this.activeGameRows.RemoveAt(index);
+            Destroy(row.gameObject);
+        }
+        RefreshActiveGamesVisibility();
+    }
+
+    private void RefreshActiveGamesVisibility()
+    {
+        if (this.activeGamesRoot != null)
+            this.activeGamesRoot.SetActive(!this.isResumeLoading && this.activeGameRows.Count > 0);
     }
 
     private async void ResumeMatch(string inMatchId)
