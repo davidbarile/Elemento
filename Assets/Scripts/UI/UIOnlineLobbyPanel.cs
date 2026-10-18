@@ -59,6 +59,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     private bool pendingCancelGameConfirmation;
     private readonly List<UIActiveGameRow> activeGameRows = new();
     private readonly HashSet<string> forgottenMatchIds = new();
+    private GameObject cancelGameButtonRoot;
 
     public bool IsRecoveryPending => this.isRecoveryPending;
 
@@ -460,7 +461,10 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             return;
 
         bool isVisible = !this.isResumeLoading && IsWaitingForJoiner();
-        this.cancelGameButton.gameObject.SetActive(isVisible);
+        this.cancelGameButtonRoot ??= GetPanelChild(this.transform, this.cancelGameButton);
+        if (isVisible)
+            this.cancelGameButton.gameObject.SetActive(true);
+        this.cancelGameButtonRoot.SetActive(isVisible);
         this.cancelGameButton.interactable = isVisible && !this.isBusy;
         if (isVisible)
         {
@@ -474,6 +478,15 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             this.inviteCodeInput.gameObject.SetActive(true);
             this.joinButton.gameObject.SetActive(true);
         }
+    }
+
+    private static GameObject GetPanelChild(Transform inPanel, Component inComponent)
+    {
+        Transform current = inComponent.transform;
+        while (current.parent != null && current.parent != inPanel)
+            current = current.parent;
+
+        return current.parent == inPanel ? current.gameObject : inComponent.gameObject;
     }
 
     private void HandleCancelGameButtonPress()
