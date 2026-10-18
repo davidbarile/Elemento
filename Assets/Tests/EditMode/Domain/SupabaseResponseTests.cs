@@ -7,39 +7,6 @@ namespace Elemento.Domain.Tests
     public class SupabaseResponseTests
     {
         [Test]
-        public void CreateMatch_ParsesNestedMetadataAndInviteCode()
-        {
-            var result = SupabaseMatchResponseData.Parse("{\"match\":{\"id\":\"match-1\",\"invite_code\":\"ABC234\",\"mode\":\"live\",\"status\":\"waiting\",\"rules\":{\"NumCardsToDeal\":4,\"AllowUndo\":true},\"revision\":0},\"seat\":0}");
-            Assert.That(result.Match.Id, Is.EqualTo("match-1"));
-            Assert.That(result.Match.InviteCode, Is.EqualTo("ABC234"));
-            Assert.That(result.Match.Rules.NumCardsToDeal, Is.EqualTo(4));
-            Assert.That(result.Match.Rules.AllowUndo, Is.True);
-            Assert.That(result.Seat, Is.Zero);
-            Assert.That(result.View, Is.Null);
-        }
-
-        [Test]
-        public void WaitingGetView_ParsesExplicitNullView()
-        {
-            var result = SupabaseMatchResponseData.Parse("{\"match\":{\"id\":\"match-1\",\"status\":\"waiting\",\"revision\":0},\"view\":null}");
-
-            Assert.That(result.Match.Status, Is.EqualTo("waiting"));
-            Assert.That(result.View, Is.Null);
-        }
-
-        [Test]
-        public void JoinAndGetView_KeepFairViewEnvelopeAndSeat()
-        {
-            const string view = "{\"ProtocolVersion\":1,\"MatchId\":\"match-1\",\"Seat\":1,\"View\":{\"Revision\":12,\"CurrentPlayerId\":1}}";
-            foreach (string seatField in new[] { ",\"seat\":1", "" })
-            {
-                var result = SupabaseMatchResponseData.Parse("{\"match\":{\"id\":\"match-1\",\"revision\":12}" + seatField + ",\"view\":" + view + "}");
-                Assert.That(result.View.Seat, Is.EqualTo(1));
-                Assert.That(result.View.View.Revision, Is.EqualTo(12));
-            }
-        }
-
-        [Test]
         public void SubmitTurn_ParsesResultWithAdditionalServerFields()
         {
             var result = NetJson.Deserialize<SubmitTurnResultData>("{\"Accepted\":false,\"Reason\":\"stale_revision\",\"NewRevision\":4,\"CurrentSeat\":1,\"Status\":\"active\",\"Extra\":null}");
@@ -63,25 +30,6 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
-        public void GetView_ParsesOrderedMoveRowsAndReplayCard()
-        {
-            const string json = "{\"match\":{\"id\":\"match-1\",\"status\":\"active\",\"revision\":3,\"rules\":{\"TotalPointsRequiredToWin\":75,\"AllowUndo\":true}},\"view\":{\"MatchId\":\"match-1\",\"Seat\":1,\"View\":{\"Revision\":3}},\"moves\":[{\"revision\":2,\"seat\":0,\"command\":{\"MatchId\":\"match-1\",\"Seat\":0,\"ClientMoveSequence\":1,\"ExpectedRevision\":1,\"ClientNonce\":\"turn-a\",\"Move\":{\"PlayerId\":0,\"Type\":2,\"CardId\":\"bomb-1\"},\"ReplayCard\":{\"Id\":\"bomb-1\",\"DefinitionId\":7,\"Bombs\":[0,0,3,0]}}},{\"revision\":3,\"seat\":0,\"command\":{\"MatchId\":\"match-1\",\"Seat\":0,\"ClientMoveSequence\":2,\"ExpectedRevision\":2,\"ClientNonce\":\"turn-a\",\"Move\":{\"PlayerId\":0,\"Type\":5}}}]}";
-            var update = SupabaseMatchResponseData.Parse(json).ToViewUpdate();
-
-            Assert.That(update.Status, Is.EqualTo("active"));
-            Assert.That(update.MatchRevision, Is.EqualTo(3));
-            Assert.That(update.Rules.TotalPointsRequiredToWin, Is.EqualTo(75));
-            Assert.That(update.Rules.AllowUndo, Is.True);
-            Assert.That(update.Moves, Has.Count.EqualTo(2));
-            Assert.That(update.Moves[0].RevisionBefore, Is.EqualTo(1));
-            Assert.That(update.Moves[0].RevisionAfter, Is.EqualTo(2));
-            Assert.That(update.Moves[0].Move.CardId, Is.EqualTo("bomb-1"));
-            Assert.That(update.Moves[0].ReplayCard.DefinitionId, Is.EqualTo(7));
-            Assert.That(update.Moves[0].ReplayCard.Bombs[2], Is.EqualTo(3));
-            Assert.That(update.Moves[1].RevisionAfter, Is.EqualTo(3));
-        }
-
-        [Test]
         public void AuthSession_RoundTripsSnakeCaseAndRetainsIdentity()
         {
             var result = SupabaseSessionData.Parse("{\"access_token\":\"access\",\"refresh_token\":\"refresh\",\"expires_at\":2100000000,\"expires_in\":3600,\"user\":{\"id\":\"user-1\"}}");
@@ -92,12 +40,9 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
-        public void InvalidServerEnvelopes_AreRejected()
+        public void InvalidAuthSession_IsRejected()
         {
-            Assert.Throws<FormatException>(() => SupabaseMatchResponseData.Parse("{\"error\":\"missing profile\"}"));
             Assert.Throws<FormatException>(() => SupabaseSessionData.Parse("{\"access_token\":\"access\"}"));
-            Assert.Throws<FormatException>(() => SupabaseMatchResponseData.Parse("{\"match\":{\"id\":\"one\"},\"view\":{\"MatchId\":\"two\",\"View\":{}}}"));
-            Assert.Throws<FormatException>(() => SupabaseMatchResponseData.Parse("{\"match\":{\"id\":\"one\",\"status\":\"active\"},\"view\":null}"));
         }
     }
 }

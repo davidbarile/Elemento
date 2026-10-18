@@ -9,19 +9,6 @@ namespace Elemento.Domain.Net
     }
 
     [Serializable]
-    public sealed class MoveCommandData
-    {
-        public int ProtocolVersion = ProtocolVersions.Current;
-        public string MatchId;
-        public int Seat;
-        public int ClientMoveSequence;
-        public int ExpectedRevision;
-        public MoveData Move;
-        public CardInstanceData ReplayCard;
-        public string ClientNonce;
-    }
-
-    [Serializable]
     public sealed class SubmitTurnRequestData
     {
         public int ProtocolVersion = ProtocolVersions.Current;
@@ -132,16 +119,6 @@ namespace Elemento.Domain.Net
     }
 
     [Serializable]
-    public sealed class OnlineViewUpdateData
-    {
-        public string Status;
-        public int MatchRevision;
-        public RulesConfigData Rules;
-        public MatchSeatViewData View;
-        public List<MoveLogEntryData> Moves = new();
-    }
-
-    [Serializable]
     public sealed class SeatPublicStateData
     {
         public int Seat;
@@ -177,19 +154,5 @@ namespace Elemento.Domain.Net
         public string MatchId;
         public int Seat;
         public PlayerViewData View;
-    }
-
-    [Serializable]
-    public sealed class MoveLogEntryData
-    {
-        public int ProtocolVersion = ProtocolVersions.Current;
-        public string MatchId;
-        public int Seat;
-        public int ClientMoveSequence;
-        public string ClientNonce;
-        public int RevisionBefore;
-        public int RevisionAfter;
-        public MoveData Move;
-        public CardInstanceData ReplayCard;
     }
 }
