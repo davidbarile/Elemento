@@ -278,26 +278,21 @@ public static class OnlineUiPrefabBuilder
         if (panel == null)
             throw new InvalidOperationException("[OnlineUiPrefabBuilder] UIOnlineLobbyPanel was not found.");
         SerializedObject serializedPanel = new(panel);
-        TextMeshProUGUI statusText = serializedPanel.FindProperty("statusText").objectReferenceValue
-            as TextMeshProUGUI;
-        if (statusText == null)
-            throw new InvalidOperationException("[OnlineUiPrefabBuilder] Lobby Status Text was not found.");
+        Button createButton = serializedPanel.FindProperty("createButton").objectReferenceValue as Button;
+        if (createButton == null)
+            throw new InvalidOperationException("[OnlineUiPrefabBuilder] Lobby Create Match Button was not found.");
 
         GameObject cancelGameObject = GetOrCreateButton(rootRect, buttonSource, "Cancel Game Button");
         Button cancelGameButton = RequireButton(cancelGameObject, "Cancel Game Button");
         TextMeshProUGUI cancelGameText = RequireButtonText(cancelGameObject, "Cancel Game Button");
         cancelGameText.text = "Cancel game";
-        RectTransform statusRect = (RectTransform)statusText.transform;
-        RectTransform backRect = (RectTransform)buttonSource.transform;
+        RectTransform createRect = (RectTransform)createButton.transform;
         RectTransform cancelGameRect = (RectTransform)cancelGameObject.transform;
-        Vector2 statusAnchor = new(Mathf.Lerp(statusRect.anchorMin.x, statusRect.anchorMax.x, statusRect.pivot.x),
-            Mathf.Lerp(statusRect.anchorMin.y, statusRect.anchorMax.y, statusRect.pivot.y));
-        cancelGameRect.anchorMin = statusAnchor;
-        cancelGameRect.anchorMax = statusAnchor;
-        cancelGameRect.pivot = new Vector2(0.5f, 1f);
-        cancelGameRect.anchoredPosition = new Vector2(statusRect.anchoredPosition.x,
-            statusRect.anchoredPosition.y - statusRect.rect.height * statusRect.pivot.y - 20f);
-        cancelGameRect.sizeDelta = backRect.sizeDelta;
+        cancelGameRect.anchorMin = createRect.anchorMin;
+        cancelGameRect.anchorMax = createRect.anchorMax;
+        cancelGameRect.pivot = createRect.pivot;
+        cancelGameRect.anchoredPosition = createRect.anchoredPosition;
+        cancelGameRect.sizeDelta = createRect.sizeDelta;
 
         Assign(serializedPanel, "activeGamesRoot", activeGames.gameObject);
         Assign(serializedPanel, "activeGamesHeaderText", header);

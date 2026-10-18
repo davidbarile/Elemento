@@ -462,6 +462,18 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         bool isVisible = !this.isResumeLoading && IsWaitingForJoiner();
         this.cancelGameButton.gameObject.SetActive(isVisible);
         this.cancelGameButton.interactable = isVisible && !this.isBusy;
+        if (isVisible)
+        {
+            this.createButton.gameObject.SetActive(false);
+            this.inviteCodeInput.gameObject.SetActive(false);
+            this.joinButton.gameObject.SetActive(false);
+        }
+        else if (!this.isResumeLoading)
+        {
+            this.createButton.gameObject.SetActive(true);
+            this.inviteCodeInput.gameObject.SetActive(true);
+            this.joinButton.gameObject.SetActive(true);
+        }
     }
 
     private void HandleCancelGameButtonPress()
