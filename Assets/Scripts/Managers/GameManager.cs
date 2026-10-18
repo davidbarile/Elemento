@@ -1028,6 +1028,12 @@ public class GameManager : MonoBehaviour
         if (this.onlineClient?.CurrentState == null)
             return;
 
+        if (this.onlineClient.CurrentState.Status == "abandoned")
+        {
+            HandleOnlineOpponentLeft();
+            return;
+        }
+
         ApplyOnlineState(this.onlineClient.CurrentState);
         _ = RestoreOnlineReplayHistoryAsync();
     }
@@ -1035,7 +1041,7 @@ public class GameManager : MonoBehaviour
     private void HandleOnlineStateChanged(MatchStateUpdateData inUpdate)
     {
         if (!this.IsOnline || this.onlineClient == null || inUpdate?.State == null
-            || inUpdate.MatchId != this.onlineClient.MatchId)
+            || inUpdate.MatchId != this.onlineClient.MatchId || this.isOnlineLeavePending)
             return;
 
         HandleOnlinePresenceChanged(inUpdate.OpponentLastSeenSecondsAgo);
@@ -1068,7 +1074,7 @@ public class GameManager : MonoBehaviour
     private void HandleOpponentTurnReceived(TurnPackageData inTurn)
     {
         if (!this.IsOnline || this.onlineClient == null || inTurn == null
-            || inTurn.Seat == this.onlineClient.LocalSeat)
+            || inTurn.Seat == this.onlineClient.LocalSeat || this.isOnlineLeavePending)
             return;
 
         QueueOnlineTurn(inTurn);
@@ -1076,7 +1082,8 @@ public class GameManager : MonoBehaviour
 
     private void HandleMissedTurnReceived(TurnPackageData inTurn)
     {
-        if (!this.IsOnline || this.onlineClient == null || inTurn == null)
+        if (!this.IsOnline || this.onlineClient == null || inTurn == null
+            || this.isOnlineLeavePending)
             return;
 
         QueueOnlineTurn(inTurn);
@@ -2037,6 +2044,7 @@ public class GameManager : MonoBehaviour
 
         bool shouldShow = this.IsOnline && this.IsGameInProgress
             && this.onlineClient?.CurrentState?.State != null
+            && this.onlineClient.CurrentState.Status == "active"
             && !this.IsPlayersTurn && !this.isOnlineReplayActive;
 
         panel.SetOpponentAway(this.opponentPresenceTracker?.IsAway ?? false);
@@ -3351,27 +3359,49 @@ public class GameManager : MonoBehaviour
             : LOC.IN.LeaveGameMessage[LOC.LI];//$"Are you sure you want to leave the game?\n\nAll progress will  be lost.";
         UIConfirmPanel.IN.Show(titleText, messageText, async () =>
         {
-            string matchId = this.onlineClient?.MatchId;
-            if (this.IsOnline && this.onlineClient != null)
+            string persistedMatchId = UIOnlineLobbyPanel.GetPersistedActiveMatchId();
+            string matchId = this.onlineClient?.MatchId ?? persistedMatchId;
+            bool shouldForfeitOnline = this.IsOnline
+                || UIOnlineLobbyPanel.IN?.IsRecoveryPending == true
+                || !string.IsNullOrEmpty(persistedMatchId);
+            if (shouldForfeitOnline && !string.IsNullOrEmpty(matchId))
             {
                 this.isOnlineLeavePending = true;
-                try
+                UIAlertPanel.IN.Hide();
+                UIAlertPanel.IN.Show(
+                    LocalizationManager.GetOnlineText(LOC.IN.OnlineWorking), 0f,
+                    UIAlertPanel.EAlertMode.Notification);
+                EForfeitOutcome outcome = UIOnlineLobbyPanel.IN == null
+                    ? EForfeitOutcome.Failed
+                    : await UIOnlineLobbyPanel.IN.ForfeitMatchAsync(
+                        matchId, this.onlineClient?.LocalSeat ?? -1);
+                UIAlertPanel.IN.Hide();
+                if (outcome == EForfeitOutcome.Failed)
                 {
-                    await this.onlineClient.LeaveMatchAsync();
+                    this.isOnlineLeavePending = false;
+                    if (this.IsOnline && this.onlineClient?.CurrentState != null)
+                        HandleOnlineStateChanged(this.onlineClient.CurrentState);
+                    UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(LOC.IN.OnlineError));
+                    return;
                 }
-                catch (Exception exception)
+
+                UIOnlineLobbyPanel.IN?.ReleaseMatch();
+                UIOnlineLobbyPanel.IN?.Hide();
+
+                if (outcome == EForfeitOutcome.AlreadyOver
+                    || outcome == EForfeitOutcome.Gone)
                 {
-                    if (this.onlineClient?.CurrentState?.Status != "abandoned")
-                    {
-                        this.isOnlineLeavePending = false;
-                        Debug.LogWarning("Leaving online match failed: " + exception.Message);
-                        UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(LOC.IN.OnlineError));
-                        return;
-                    }
+                    string[] resultMessage = outcome == EForfeitOutcome.AlreadyOver
+                        ? LOC.IN.OnlineMatchAlreadyEnded
+                        : LOC.IN.OnlineMatchGone;
+                    UIConfirmPanel.IN.ShowSingleButton(
+                        LocalizationManager.GetOnlineText(LOC.IN.OnlineLobby),
+                        LocalizationManager.GetOnlineText(resultMessage),
+                        LOC.IN.HomeScreen[LOC.LI],
+                        ReturnHomeFromGame);
+                    return;
                 }
             }
-
-            UIOnlineLobbyPanel.ForgetPersistedMatch(matchId);
 
             ReturnHomeFromGame();
         });

@@ -18,6 +18,7 @@ namespace Elemento.Domain.Tests
                 "FinalState", "FinalStateHash", "Status", "WinnerSeat", "WinCondition", "NextSeat");
             AssertFields<SubmitTurnRequestData>("ProtocolVersion", "MatchId", "Seat", "ExpectedRevision", "ClientNonce", "Turn");
             AssertFields<SubmitTurnResultData>("Accepted", "Reason", "NewRevision", "CurrentSeat", "Status");
+            AssertFields<LeaveMatchResultData>("Status", "WinnerSeat", "MatchRevision", "WasAlreadyOver");
             AssertFields<CreateMatchRequestData>("ProtocolVersion", "Rules", "InitialState", "InitialStateHash");
             AssertFields<MatchStateUpdateData>("MatchId", "Status", "MatchRevision", "CurrentSeat", "YourSeat",
                 "WinnerSeat", "OpponentLastSeenSecondsAgo", "Rules", "State", "Turns", "SeatNames");
@@ -144,6 +145,53 @@ namespace Elemento.Domain.Tests
             await host.LeaveMatch("checks");
             Assert.That((await peer.SubmitTurn(Request("checks", 1, 1))).Reason, Is.EqualTo("match_not_active"));
             Assert.That((await host.SubmitTurn(Request("checks", 0, 0))).Accepted, Is.True);
+        }
+
+        [Test]
+        public async Task LeaveMatch_ActiveMatchAbandonsWithOpponentAsWinner()
+        {
+            var host = new InMemoryMatchTransport();
+            var peer = host.CreatePeer();
+            await host.CreateMatch(Setup("leave-active"));
+            await peer.JoinMatch(new JoinMatchRequestData { MatchId = "leave-active" });
+
+            LeaveMatchResultData result = await host.LeaveMatch("leave-active");
+
+            Assert.That(result.Status, Is.EqualTo("abandoned"));
+            Assert.That(result.WinnerSeat, Is.EqualTo(1));
+            Assert.That(result.MatchRevision, Is.EqualTo(1));
+            Assert.That(result.WasAlreadyOver, Is.False);
+        }
+
+        [Test]
+        public async Task LeaveMatch_AbandonedMatchReturnsUnchangedAlreadyOverResult()
+        {
+            var host = new InMemoryMatchTransport();
+            var peer = host.CreatePeer();
+            await host.CreateMatch(Setup("leave-again"));
+            await peer.JoinMatch(new JoinMatchRequestData { MatchId = "leave-again" });
+            LeaveMatchResultData first = await host.LeaveMatch("leave-again");
+
+            LeaveMatchResultData second = await host.LeaveMatch("leave-again");
+
+            Assert.That(second.Status, Is.EqualTo(first.Status));
+            Assert.That(second.WinnerSeat, Is.EqualTo(first.WinnerSeat));
+            Assert.That(second.MatchRevision, Is.EqualTo(first.MatchRevision));
+            Assert.That(second.WasAlreadyOver, Is.True);
+        }
+
+        [Test]
+        public async Task LeaveMatch_WaitingCreatorAbandonsMatch()
+        {
+            var host = new InMemoryMatchTransport();
+            await host.CreateMatch(Setup("leave-waiting"));
+
+            LeaveMatchResultData result = await host.LeaveMatch("leave-waiting");
+
+            Assert.That(result.Status, Is.EqualTo("abandoned"));
+            Assert.That(result.WinnerSeat, Is.EqualTo(-1));
+            Assert.That(result.MatchRevision, Is.EqualTo(1));
+            Assert.That(result.WasAlreadyOver, Is.False);
         }
 
         [Test]
@@ -306,7 +354,7 @@ namespace Elemento.Domain.Tests
                 throw new NotSupportedException();
             }
 
-            public Task LeaveMatch(string inMatchId)
+            public Task<LeaveMatchResultData> LeaveMatch(string inMatchId)
             {
                 throw new NotSupportedException();
             }
@@ -362,7 +410,7 @@ namespace Elemento.Domain.Tests
                 return this.inner.SubmitTurn(inTurn);
             }
 
-            public Task LeaveMatch(string inMatchId)
+            public Task<LeaveMatchResultData> LeaveMatch(string inMatchId)
             {
                 return this.inner.LeaveMatch(inMatchId);
             }
@@ -452,7 +500,7 @@ namespace Elemento.Domain.Tests
                 });
             }
 
-            public Task LeaveMatch(string inMatchId)
+            public Task<LeaveMatchResultData> LeaveMatch(string inMatchId)
             {
                 throw new NotSupportedException();
             }

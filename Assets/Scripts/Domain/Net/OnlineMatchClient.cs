@@ -176,10 +176,15 @@ namespace Elemento.Domain.Net
             return this.transport.ListMyMatches(new ListMyMatchesRequestData());
         }
 
-        public Task LeaveMatchAsync()
+        public async Task<LeaveMatchResultData> LeaveMatchAsync()
         {
             CheckDisposed();
-            return this.transport.LeaveMatch(this.MatchId);
+            bool wasAlreadyOver = this.CurrentState?.Status == "finished"
+                || this.CurrentState?.Status == "abandoned";
+            LeaveMatchResultData result = await this.transport.LeaveMatch(this.MatchId);
+            if (result != null)
+                result.WasAlreadyOver |= wasAlreadyOver;
+            return result;
         }
 
         private MatchStateUpdateData Apply(MatchStateUpdateData inUpdate, bool inInitial,

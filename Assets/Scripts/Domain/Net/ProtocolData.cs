@@ -33,6 +33,15 @@ namespace Elemento.Domain.Net
     }
 
     [Serializable]
+    public sealed class LeaveMatchResultData
+    {
+        public string Status;
+        public int WinnerSeat = -1;
+        public int MatchRevision;
+        public bool WasAlreadyOver;
+    }
+
+    [Serializable]
     public sealed class TurnActionData
     {
         public int Index;

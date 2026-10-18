@@ -188,18 +188,40 @@ namespace Elemento.Domain.Net
             return (int)Math.Max(0, Math.Floor(now - seen));
         }
 
-        public Task LeaveMatch(string inMatchId)
+        public Task<LeaveMatchResultData> LeaveMatch(string inMatchId)
         {
             string id = Copy(inMatchId);
+            LeaveMatchResultData result;
+            bool wasAbandoned = false;
             lock (this.matches)
             {
                 var match = this.matches[id];
-                if (!match.Seats.Contains(this))
+                int seat = match.Seats.IndexOf(this);
+                if (seat < 0)
                     throw new UnauthorizedAccessException("Device is not seated.");
-                match.Status = "abandoned";
-                match.UpdatedAt = DateTime.UtcNow.ToString("O");
+                bool wasAlreadyOver = match.Status == "finished" || match.Status == "abandoned";
+                bool abandonsWaitingMatch = match.Status == "waiting" && seat == 0;
+                if (match.Status == "active" || abandonsWaitingMatch)
+                {
+                    match.Status = "abandoned";
+                    if (!abandonsWaitingMatch)
+                        match.WinnerSeat = 1 - seat;
+                    ++match.Revision;
+                    match.UpdatedAt = DateTime.UtcNow.ToString("O");
+                    wasAbandoned = true;
+                }
+                result = new LeaveMatchResultData
+                {
+                    Status = match.Status,
+                    WinnerSeat = match.WinnerSeat,
+                    MatchRevision = match.Revision,
+                    WasAlreadyOver = wasAlreadyOver
+                };
             }
-            return Task.CompletedTask;
+            if (wasAbandoned)
+                foreach (var endpoint in this.endpoints.ToArray())
+                    endpoint.RevisionCommitted?.Invoke(id, result.MatchRevision);
+            return Task.FromResult(Copy(result));
         }
 
         private MatchStateUpdateData BuildView(string inId, StoredMatch inMatch, int inSinceRevision)

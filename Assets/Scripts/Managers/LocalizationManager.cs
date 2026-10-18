@@ -282,6 +282,8 @@ public class LocalizationManager : MonoBehaviour
     public string[] OnlineDiscardUnsent = { "Discard your unsent moves?", "¿Descartar tus movimientos no enviados?" };
     public string[] OnlineMoveIllegal = { "That move is not legal in the current online turn.", "Ese movimiento no es válido en el turno en línea actual." };
     public string[] OnlineOpponentLeft = { "The other player has left the game", "El otro jugador ha abandonado la partida" };
+    public string[] OnlineMatchAlreadyEnded = { "This match has already ended.", "Esta partida ya ha terminado." };
+    public string[] OnlineMatchGone = { "This match is no longer available.", "Esta partida ya no está disponible." };
     public string[] OnlineMatchSettings = { "The creator's gameplay settings apply to both players.", "Los ajustes de juego del creador se aplican a ambos jugadores." };
     public string[] OnlineYouGoFirst = { "You go first!", "¡Empiezas tú!" };
     public string[] OnlineOpponentGoesFirst = { "Opponent goes first", "Empieza el rival" };

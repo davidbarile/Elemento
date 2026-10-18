@@ -313,7 +313,7 @@ namespace Elemento.Domain.Tests
             public Task<MatchStateUpdateData> FetchView(GetViewRequestData inRequest) => this.inner.FetchView(inRequest);
             public Task<HeartbeatResultData> Heartbeat(HeartbeatRequestData inRequest) => this.inner.Heartbeat(inRequest);
             public Task<ListMyMatchesResultData> ListMyMatches(ListMyMatchesRequestData inRequest) => this.inner.ListMyMatches(inRequest);
-            public Task LeaveMatch(string inMatchId) => this.inner.LeaveMatch(inMatchId);
+            public Task<LeaveMatchResultData> LeaveMatch(string inMatchId) => this.inner.LeaveMatch(inMatchId);
 
             public async Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
             {

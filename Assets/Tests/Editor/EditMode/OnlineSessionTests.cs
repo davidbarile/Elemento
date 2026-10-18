@@ -226,9 +226,14 @@ public class OnlineSessionTests
             });
         }
 
-        public Task LeaveMatch(string inMatchId)
+        public Task<LeaveMatchResultData> LeaveMatch(string inMatchId)
         {
-            return Task.CompletedTask;
+            return Task.FromResult(new LeaveMatchResultData
+            {
+                Status = this.Snapshot.Status,
+                WinnerSeat = this.Snapshot.WinnerSeat,
+                MatchRevision = this.Snapshot.MatchRevision
+            });
         }
 
         public Task<HeartbeatResultData> Heartbeat(HeartbeatRequestData inRequest)

@@ -63,10 +63,19 @@ namespace Elemento.Networking.Supabase
             return result;
         }
 
-        public async Task LeaveMatch(string inMatchId)
+        public async Task<LeaveMatchResultData> LeaveMatch(string inMatchId)
         {
             if (string.IsNullOrEmpty(inMatchId)) throw new ArgumentException("A match id is required.", nameof(inMatchId));
-            await PostAsync("leave-match", NetJson.Serialize(new GetViewRequestData { MatchId = inMatchId }));
+            string json = await PostAsync("leave-match", NetJson.Serialize(new GetViewRequestData { MatchId = inMatchId }));
+            LeaveMatchResponseData response = NetJson.Deserialize<LeaveMatchResponseData>(json);
+            if (response?.Match == null || string.IsNullOrEmpty(response.Match.Status))
+                throw new FormatException("Missing leave-match result.");
+            return new LeaveMatchResultData
+            {
+                Status = response.Match.Status,
+                WinnerSeat = response.Match.WinnerSeat ?? -1,
+                MatchRevision = response.Match.Revision
+            };
         }
 
         public async Task<HeartbeatResultData> Heartbeat(HeartbeatRequestData inRequest)
@@ -168,6 +177,20 @@ namespace Elemento.Networking.Supabase
         {
             public int ProtocolVersion;
             public string InviteCode;
+        }
+
+        [Serializable]
+        private sealed class LeaveMatchResponseData
+        {
+            [NetJsonName("match")] public LeaveMatchData Match;
+        }
+
+        [Serializable]
+        private sealed class LeaveMatchData
+        {
+            [NetJsonName("status")] public string Status;
+            [NetJsonName("winner_seat")] public int? WinnerSeat;
+            [NetJsonName("revision")] public int Revision;
         }
 
         public void Dispose()

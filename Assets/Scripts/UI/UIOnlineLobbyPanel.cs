@@ -9,6 +9,14 @@ using UnityEngine;
 using UnityEngine.UI;
 using static UIAlertPanel;
 
+public enum EForfeitOutcome
+{
+    Forfeited,
+    AlreadyOver,
+    Gone,
+    Failed
+}
+
 public sealed class UIOnlineLobbyPanel : UIPanelBase
 {
     public static UIOnlineLobbyPanel IN;
@@ -40,8 +48,10 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     private bool isResuming;
     private bool isResumeLoading;
     private bool isRecoveryPending;
+    private int resumeGeneration;
     private GameObject resumeList;
     private readonly List<Button> resumeButtons = new();
+    private readonly HashSet<string> forgottenMatchIds = new();
 
     public bool IsRecoveryPending => this.isRecoveryPending;
 
@@ -205,6 +215,9 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
 
     public void ReleaseMatch()
     {
+        ++this.resumeGeneration;
+        this.isBusy = false;
+        this.isResumeLoading = false;
         if (this.client != null)
         {
             this.client.StateChanged -= HandleInitialView;
@@ -224,6 +237,89 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.isResuming = false;
         this.isRecoveryPending = false;
         SettingsManager.IN?.ClearMatchRules();
+    }
+
+    public async Task<EForfeitOutcome> ForfeitMatchAsync(string inMatchId, int inLocalSeat = -1)
+    {
+        if (string.IsNullOrEmpty(inMatchId))
+            return EForfeitOutcome.Failed;
+
+        ++this.resumeGeneration;
+        bool wasResumePending = this.isBusy && this.isResuming;
+        if (wasResumePending && this.client != null)
+            this.client.StateChanged -= HandleInitialView;
+        EForfeitOutcome outcome = EForfeitOutcome.Failed;
+        try
+        {
+            this.auth ??= new SupabaseAuthClient(OnlineCoroutineHost.IN);
+            this.profiles ??= new SupabaseProfileClient(this.auth);
+            await this.profiles.EnsureProfileAsync();
+
+            LeaveMatchResultData result;
+            if (this.client != null && this.client.MatchId == inMatchId)
+            {
+                if (inLocalSeat < 0)
+                    inLocalSeat = this.client.LocalSeat;
+                result = await this.client.LeaveMatchAsync();
+            }
+            else
+            {
+                using var leaveTransport = new SupabaseMatchTransport(OnlineCoroutineHost.IN, this.auth);
+                MatchStateUpdateData checkpoint = LoadCheckpoint(inMatchId);
+                int sinceRevision = Math.Max(checkpoint?.MatchRevision ?? 0, 0);
+                MatchStateUpdateData beforeLeave = null;
+                try
+                {
+                    beforeLeave = await leaveTransport.FetchView(new GetViewRequestData
+                    {
+                        MatchId = inMatchId,
+                        SinceRevision = sinceRevision
+                    });
+                }
+                catch (Exception exception) when (!(exception is SupabaseHttpException http
+                    && (http.ResponseCode == 403 || http.ResponseCode == 404 || http.ResponseCode == 410)))
+                {
+                    Debug.LogWarning("Fetching online match before forfeit failed: " + exception.Message);
+                }
+                if (beforeLeave != null && inLocalSeat < 0)
+                    inLocalSeat = beforeLeave.YourSeat;
+                bool wasAlreadyOver = beforeLeave != null && (beforeLeave.Status == "finished"
+                    || beforeLeave.Status == "abandoned");
+                result = await leaveTransport.LeaveMatch(inMatchId);
+                result.WasAlreadyOver |= wasAlreadyOver;
+            }
+
+            if (result?.Status == "abandoned")
+            {
+                outcome = result.WasAlreadyOver
+                    || (inLocalSeat >= 0 && result.WinnerSeat == inLocalSeat)
+                    ? EForfeitOutcome.AlreadyOver
+                    : EForfeitOutcome.Forfeited;
+            }
+            else if (result?.Status == "finished")
+            {
+                outcome = EForfeitOutcome.AlreadyOver;
+            }
+        }
+        catch (SupabaseHttpException exception) when (exception.ResponseCode == 403
+            || exception.ResponseCode == 404 || exception.ResponseCode == 410)
+        {
+            outcome = EForfeitOutcome.Gone;
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("Forfeiting online match failed: " + exception.Message);
+        }
+
+        if (outcome != EForfeitOutcome.Failed)
+            ForgetPersistedMatch(inMatchId);
+        else if (wasResumePending)
+        {
+            ReleaseMatch();
+            SetBusy(false);
+            _ = ResumeMatchAsync(inMatchId, true);
+        }
+        return outcome;
     }
 
     private void ShowError(Exception inException)
@@ -380,6 +476,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     private async Task ResumeMatchAsync(string inMatchId, bool inIsAutomatic)
     {
         if (this.isBusy || this.client != null || (!inIsAutomatic && !this.isProfileReady)) return;
+        int resumeGeneration = ++this.resumeGeneration;
         SetBusy(true);
         try
         {
@@ -411,6 +508,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             if (inIsAutomatic)
             {
                 await this.profiles.EnsureProfileAsync();
+                if (resumeGeneration != this.resumeGeneration)
+                    return;
                 this.isProfileReady = true;
             }
 
@@ -419,6 +518,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             {
                 this.client.RestorePendingSubmission(pending);
                 SubmitTurnResultData result = await this.client.RetryPendingSubmissionAsync();
+                if (resumeGeneration != this.resumeGeneration)
+                    return;
                 if (checkpoint != null && result?.Accepted == true
                     && pending.Turn.FinalState != null)
                 {
@@ -433,6 +534,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             }
 
             MatchStateUpdateData match = await this.client.ResumeAsync(inMatchId);
+            if (resumeGeneration != this.resumeGeneration)
+                return;
             if (!restoreCheckpoint)
             {
                 StartMatch(match, false);
@@ -455,28 +558,42 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         }
         catch (Exception exception)
         {
+            if (resumeGeneration != this.resumeGeneration)
+                return;
             if (OnlineMatchContext.Client == this.client)
                 GameManager.IN.AbortOnlineRecovery();
             else
                 ReleaseMatch();
+            int failureGeneration = this.resumeGeneration;
             if (inIsAutomatic && exception is SupabaseHttpException http
                 && (http.ResponseCode == 403 || http.ResponseCode == 404 || http.ResponseCode == 410))
                 ForgetPersistedMatch(inMatchId);
             if (inIsAutomatic)
+            {
                 await LoadLobbyAsync();
+                if (failureGeneration != this.resumeGeneration)
+                    return;
+            }
             else
             {
                 base.Show();
                 SetResumeLoading(false);
+                SetBusy(false);
             }
             ShowError(exception);
         }
-        finally { SetBusy(false); }
+        finally
+        {
+            if (resumeGeneration == this.resumeGeneration)
+                SetBusy(false);
+        }
     }
 
     private void HandlePersistentStateChanged(MatchStateUpdateData inState)
     {
         if (inState == null || string.IsNullOrEmpty(inState.MatchId))
+            return;
+        if (this.forgottenMatchIds.Contains(inState.MatchId))
             return;
         if (inState.Status != "waiting" && inState.Status != "active")
         {
@@ -493,6 +610,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     {
         string matchId = inSubmission?.MatchId ?? this.client?.MatchId;
         if (string.IsNullOrEmpty(matchId))
+            return;
+        if (this.forgottenMatchIds.Contains(matchId))
             return;
         string key = pendingSubmissionKeyPrefix + matchId;
         if (inSubmission == null)
@@ -521,6 +640,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     {
         if (string.IsNullOrEmpty(inMatchId) || inHistory?.StartState == null || inHistory.Turn == null)
             return;
+        if (IN?.forgottenMatchIds.Contains(inMatchId) == true)
+            return;
         PlayerPrefs.SetString(replayHistoryKeyPrefix + inMatchId, NetJson.Serialize(inHistory));
         PlayerPrefs.Save();
     }
@@ -545,13 +666,19 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
 
     public static bool HasPersistedMatch()
     {
-        return !string.IsNullOrEmpty(PlayerPrefs.GetString(activeMatchIdKey, string.Empty));
+        return !string.IsNullOrEmpty(GetPersistedActiveMatchId());
+    }
+
+    public static string GetPersistedActiveMatchId()
+    {
+        return PlayerPrefs.GetString(activeMatchIdKey, string.Empty);
     }
 
     public static void ForgetPersistedMatch(string inMatchId)
     {
         if (string.IsNullOrEmpty(inMatchId))
             return;
+        IN?.forgottenMatchIds.Add(inMatchId);
         if (PlayerPrefs.GetString(activeMatchIdKey, string.Empty) == inMatchId)
             PlayerPrefs.DeleteKey(activeMatchIdKey);
         PlayerPrefs.DeleteKey(matchStateKeyPrefix + inMatchId);
