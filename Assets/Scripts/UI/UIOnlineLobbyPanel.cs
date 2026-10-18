@@ -15,6 +15,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     private const string activeMatchIdKey = "Online.ActiveMatchId";
     private const string matchStateKeyPrefix = "Online.MatchState.";
     private const string pendingSubmissionKeyPrefix = "Online.PendingSubmission.";
+    private const string replayHistoryKeyPrefix = "Online.ReplayHistory.";
 
     [SerializeField] private TMP_InputField inviteCodeInput;
     [SerializeField] private TextMeshProUGUI placeholderText;
@@ -510,6 +511,19 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         return LoadPersisted<SubmitTurnRequestData>(pendingSubmissionKeyPrefix + inMatchId);
     }
 
+    public static OnlineReplayHistoryData LoadOnlineReplayHistory(string inMatchId)
+    {
+        return LoadPersisted<OnlineReplayHistoryData>(replayHistoryKeyPrefix + inMatchId);
+    }
+
+    public static void SaveOnlineReplayHistory(string inMatchId, OnlineReplayHistoryData inHistory)
+    {
+        if (string.IsNullOrEmpty(inMatchId) || inHistory?.StartState == null || inHistory.Turn == null)
+            return;
+        PlayerPrefs.SetString(replayHistoryKeyPrefix + inMatchId, NetJson.Serialize(inHistory));
+        PlayerPrefs.Save();
+    }
+
     private static T LoadPersisted<T>(string inKey) where T : class
     {
         string json = PlayerPrefs.GetString(inKey, string.Empty);
@@ -541,6 +555,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             PlayerPrefs.DeleteKey(activeMatchIdKey);
         PlayerPrefs.DeleteKey(matchStateKeyPrefix + inMatchId);
         PlayerPrefs.DeleteKey(pendingSubmissionKeyPrefix + inMatchId);
+        PlayerPrefs.DeleteKey(replayHistoryKeyPrefix + inMatchId);
         PlayerPrefs.Save();
     }
 }

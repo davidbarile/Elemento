@@ -59,6 +59,13 @@ namespace Elemento.Domain.Net
     }
 
     [Serializable]
+    public sealed class OnlineReplayHistoryData
+    {
+        public GameStateData StartState;
+        public TurnPackageData Turn;
+    }
+
+    [Serializable]
     public sealed class CreateMatchRequestData
     {
         public int ProtocolVersion = ProtocolVersions.Current;

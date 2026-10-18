@@ -138,6 +138,92 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public async Task FetchLatestOpponentTurn_ReturnsPreviousFinalStateWithoutMutatingClient()
+        {
+            var host = new InMemoryMatchTransport();
+            var peer = host.CreatePeer();
+            var created = await host.CreateMatch(InitialMatchFactory.Create(inSeed: 2));
+            await peer.JoinMatch(new JoinMatchRequestData { MatchId = created.MatchId });
+            List<TurnPackageData> turns = await SubmitTurns(host, peer, created, 4);
+            var local = turns[0].Seat == 0 ? host : peer;
+            using var client = new OnlineMatchClient(local);
+            await client.ResumeAsync(created.MatchId);
+            string before = NetJson.Serialize(client.CurrentState);
+            int revision = client.LastAppliedRevision;
+            int events = 0;
+            client.OpponentTurnReceived += _ => ++events;
+            client.MissedTurnReceived += _ => ++events;
+            client.StateChanged += _ => ++events;
+            client.RequestFailed += _ => ++events;
+            client.PendingSubmissionChanged += _ => ++events;
+            client.PresenceChanged += _ => ++events;
+
+            OnlineReplayHistoryData history = await client.FetchLatestOpponentTurnAsync();
+
+            Assert.That(history.Turn.StartRevision, Is.EqualTo(3));
+            Assert.That(GameStateHasher.Compute(history.StartState),
+                Is.EqualTo(GameStateHasher.Compute(turns[2].FinalState)));
+            Assert.That(NetJson.Serialize(client.CurrentState), Is.EqualTo(before));
+            Assert.That(client.LastAppliedRevision, Is.EqualTo(revision));
+            Assert.That(events, Is.Zero);
+        }
+
+        [Test]
+        public async Task FetchLatestOpponentTurn_RetriesForMissingPrecedingPackage()
+        {
+            var host = new InMemoryMatchTransport();
+            var peer = host.CreatePeer();
+            var created = await host.CreateMatch(InitialMatchFactory.Create(inSeed: 2));
+            await peer.JoinMatch(new JoinMatchRequestData { MatchId = created.MatchId });
+            List<TurnPackageData> turns = await SubmitTurns(host, peer, created, 3);
+            var local = turns[0].Seat == 0 ? host : peer;
+            using var client = new OnlineMatchClient(local);
+            await client.ResumeAsync(created.MatchId);
+
+            OnlineReplayHistoryData history = await client.FetchLatestOpponentTurnAsync();
+
+            Assert.That(history.Turn.StartRevision, Is.EqualTo(1));
+            Assert.That(GameStateHasher.Compute(history.StartState),
+                Is.EqualTo(GameStateHasher.Compute(turns[0].FinalState)));
+        }
+
+        [Test]
+        public async Task FetchLatestOpponentTurn_ReturnsNullWhenOpponentTurnWasFirstPackage()
+        {
+            var host = new InMemoryMatchTransport();
+            var peer = host.CreatePeer();
+            var created = await host.CreateMatch(InitialMatchFactory.Create(inSeed: 2));
+            await peer.JoinMatch(new JoinMatchRequestData { MatchId = created.MatchId });
+            List<TurnPackageData> turns = await SubmitTurns(host, peer, created, 1);
+            var local = turns[0].Seat == 0 ? peer : host;
+            using var client = new OnlineMatchClient(local);
+            await client.ResumeAsync(created.MatchId);
+
+            Assert.That(await client.FetchLatestOpponentTurnAsync(), Is.Null);
+        }
+
+        private static async Task<List<TurnPackageData>> SubmitTurns(InMemoryMatchTransport inHost,
+            InMemoryMatchTransport inPeer, MatchStateUpdateData inCreated, int inCount)
+        {
+            List<TurnPackageData> turns = new();
+            var state = inCreated.State.Clone();
+            for (int revision = 0; revision < inCount; ++revision)
+            {
+                var turn = new TurnRecorder(state.Clone(), revision).EndTurn();
+                var transport = turn.Seat == 0 ? inHost : inPeer;
+                var result = await transport.SubmitTurn(new SubmitTurnRequestData
+                {
+                    MatchId = inCreated.MatchId, Seat = turn.Seat, ExpectedRevision = revision,
+                    ClientNonce = "replay-" + inCount + "-" + revision, Turn = turn
+                });
+                Assert.That(result.Accepted, Is.True);
+                turns.Add(turn);
+                state = turn.FinalState.Clone();
+            }
+            return turns;
+        }
+
+        [Test]
         public async Task DefinitiveRejection_ClearsPendingSoResyncedTurnCanBeSubmitted()
         {
             var host = new InMemoryMatchTransport();

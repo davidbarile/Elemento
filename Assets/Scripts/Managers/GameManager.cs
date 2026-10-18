@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using DG.Tweening;
 using Elemento.Domain.Net;
 using Elemento.Networking.Supabase;
@@ -996,6 +997,7 @@ public class GameManager : MonoBehaviour
             return;
         RefreshTurnAndMoveCountDisplay();
         RefreshOnlineControls();
+        _ = RestoreOnlineReplayHistoryAsync();
     }
 
     private void StartOnlineSession()
@@ -1027,6 +1029,7 @@ public class GameManager : MonoBehaviour
             return;
 
         ApplyOnlineState(this.onlineClient.CurrentState);
+        _ = RestoreOnlineReplayHistoryAsync();
     }
 
     private void HandleOnlineStateChanged(MatchStateUpdateData inUpdate)
@@ -1087,6 +1090,8 @@ public class GameManager : MonoBehaviour
         {
             this.onlineReplayStartState = this.onlineRenderedState?.Clone();
             this.onlineReplayTurns.Clear();
+            if (inTurn.Seat != this.onlineClient.LocalSeat)
+                PersistOnlineReplayHistory(this.onlineReplayStartState, inTurn);
             this.onlineReplayCoroutine = StartCoroutine(ReplayPendingOnlineTurnsCo());
         }
     }
@@ -1171,6 +1176,7 @@ public class GameManager : MonoBehaviour
 
     private IEnumerator ReplayPendingOnlineTurnsCo()
     {
+        OnlineReplayHistoryData latestOpponentHistory = null;
         this.isOnlineReplayActive = true;
         this.skipOnlineReplay = false;
         UIWaitingForOpponentPanel.IN?.Hide();
@@ -1198,6 +1204,13 @@ public class GameManager : MonoBehaviour
                     LogOnlineReplayMismatch(turn, replay.Reason, replay.ActualHash);
 
                 this.onlineReplayTurns.Add(turn);
+                if (turn.Seat != this.onlineClient.LocalSeat)
+                {
+                    latestOpponentHistory = new OnlineReplayHistoryData
+                    {
+                        StartState = startState.Clone(), Turn = turn
+                    };
+                }
                 yield return AnimateOnlineTurnCo(turn, startState);
                 DomainGameStateData resolvedState = replay.IsMatch ? replay.State : turn.FinalState;
                 RenderOnlineState(resolvedState, false);
@@ -1212,6 +1225,9 @@ public class GameManager : MonoBehaviour
             ReleaseReplayInputLocks();
             SetOnlineReplayButton(false);
         }
+
+        if (latestOpponentHistory != null)
+            PersistOnlineReplayHistory(latestOpponentHistory.StartState, latestOpponentHistory.Turn);
 
         MatchStateUpdateData update = this.pendingOnlineUpdate ?? this.onlineClient?.CurrentState;
         this.pendingOnlineUpdate = null;
@@ -1572,6 +1588,81 @@ public class GameManager : MonoBehaviour
     {
         this.onlineReplayStartState = null;
         this.onlineReplayTurns.Clear();
+    }
+
+    private void PersistOnlineReplayHistory(DomainGameStateData inStartState, TurnPackageData inTurn)
+    {
+        if (inStartState == null || inTurn == null || this.onlineClient == null
+            || inTurn.Seat == this.onlineClient.LocalSeat
+            || (this.onlineClient.CurrentState?.Status != "waiting"
+                && this.onlineClient.CurrentState?.Status != "active"))
+            return;
+        UIOnlineLobbyPanel.SaveOnlineReplayHistory(this.onlineClient.MatchId, new OnlineReplayHistoryData
+        {
+            StartState = inStartState.Clone(), Turn = inTurn
+        });
+    }
+
+    private async Task RestoreOnlineReplayHistoryAsync()
+    {
+        if (!CanRestoreOnlineReplayHistory()
+            || UIOnlineLobbyPanel.IN?.IsRecoveryPending == true)
+            return;
+
+        OnlineMatchClient client = this.onlineClient;
+        string matchId = client.MatchId;
+        try
+        {
+            OnlineReplayHistoryData history = UIOnlineLobbyPanel.LoadOnlineReplayHistory(matchId);
+            if (!IsCurrentOnlineReplayHistory(history, client.CurrentState, client.LocalSeat))
+                history = await client.FetchLatestOpponentTurnAsync();
+            if (this.onlineClient != client || client.MatchId != matchId
+                || !CanRestoreOnlineReplayHistory()
+                || !IsCurrentOnlineReplayHistory(history, client.CurrentState, client.LocalSeat))
+                return;
+
+            this.onlineReplayStartState = history.StartState.Clone();
+            this.onlineReplayTurns.Add(history.Turn);
+            RefreshOnlineControls();
+        }
+        catch (Exception exception)
+        {
+            if (this.onlineClient == client && client.MatchId == matchId)
+                HandleOnlineRequestFailed(exception);
+        }
+    }
+
+    private bool CanRestoreOnlineReplayHistory()
+    {
+        return this.IsOnline && this.onlineClient?.CurrentState != null
+            && this.onlineReplayTurns.Count == 0 && this.onlineReplayCoroutine == null
+            && !this.isOnlineReplayActive;
+    }
+
+    private static bool IsCurrentOnlineReplayHistory(OnlineReplayHistoryData inHistory,
+        MatchStateUpdateData inCurrentState, int inLocalSeat)
+    {
+        TurnPackageData turn = inHistory?.Turn;
+        if (inHistory?.StartState == null || turn?.FinalState == null || inCurrentState == null
+            || (!string.IsNullOrEmpty(turn.MatchId) && turn.MatchId != inCurrentState.MatchId)
+            || turn.Seat == inLocalSeat)
+            return false;
+
+        int revisionAge = inCurrentState.MatchRevision - turn.StartRevision;
+        if (revisionAge < 1 || revisionAge > 2)
+            return false;
+
+        TurnPackageData latestOpponentTurn = null;
+        foreach (var currentTurn in inCurrentState.Turns)
+        {
+            if (currentTurn.Seat != inLocalSeat
+                && (latestOpponentTurn == null
+                    || currentTurn.StartRevision > latestOpponentTurn.StartRevision))
+                latestOpponentTurn = currentTurn;
+        }
+        return latestOpponentTurn == null
+            || (latestOpponentTurn.StartRevision == turn.StartRevision
+                && latestOpponentTurn.FinalStateHash == turn.FinalStateHash);
     }
 
     private void SaveOnlineLocalReplay(TurnPackageData inTurn)

@@ -63,6 +63,39 @@ namespace Elemento.Domain.Net
             }), initial, !initial);
         }
 
+        public async Task<OnlineReplayHistoryData> FetchLatestOpponentTurnAsync()
+        {
+            CheckDisposed();
+            if (this.CurrentState == null)
+                throw new InvalidOperationException("Create, join or resume a match first.");
+
+            string matchId = this.MatchId;
+            int localSeat = this.LocalSeat;
+            int sinceRevision = Math.Max(0, this.CurrentState.MatchRevision - 2);
+            MatchStateUpdateData view = await this.transport.FetchView(new GetViewRequestData
+            {
+                MatchId = matchId, SinceRevision = sinceRevision
+            });
+            int opponentIndex = FindLatestOpponentTurnIndex(view, localSeat);
+            if (sinceRevision > 0 && (opponentIndex < 0 || opponentIndex == 0))
+            {
+                view = await this.transport.FetchView(new GetViewRequestData
+                {
+                    MatchId = matchId, SinceRevision = 0
+                });
+                opponentIndex = FindLatestOpponentTurnIndex(view, localSeat);
+            }
+
+            CheckDisposed();
+            if (opponentIndex <= 0 || view.Turns[opponentIndex - 1].FinalState == null)
+                return null;
+            return new OnlineReplayHistoryData
+            {
+                StartState = view.Turns[opponentIndex - 1].FinalState.Clone(),
+                Turn = view.Turns[opponentIndex]
+            };
+        }
+
         public async Task<HeartbeatResultData> HeartbeatAsync()
         {
             CheckDisposed();
@@ -232,6 +265,16 @@ namespace Elemento.Domain.Net
                 if (inFirst.SeatNames[i] != inSecond.SeatNames[i])
                     return false;
             return true;
+        }
+
+        private static int FindLatestOpponentTurnIndex(MatchStateUpdateData inView, int inLocalSeat)
+        {
+            if (inView?.Turns == null)
+                return -1;
+            for (int i = inView.Turns.Count - 1; i >= 0; --i)
+                if (inView.Turns[i].Seat != inLocalSeat)
+                    return i;
+            return -1;
         }
 
         private async void HandleRevisionCommitted(string inMatchId, int inRevision)
