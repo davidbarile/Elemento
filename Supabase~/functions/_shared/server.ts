@@ -1,15 +1,6 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-import {
-  CardDefinitionData,
-  DeckDefinitionData,
-  FairView,
-  GameStateData,
-  MatchFactory,
-  MatchSeatViewData,
-  RulesConfigData,
-} from "./rules/mod.ts";
-
+export const protocolVersion = 2;
 export const publicMatchFields = "id,status,mode,protocol_version,rules,invite_code,revision,turn_number,current_seat,winner_seat,turn_deadline,created_at,updated_at";
 
 export const corsHeaders = {
@@ -24,9 +15,28 @@ export class HttpError extends Error {
   }
 }
 
+class UpdateRequiredError extends Error {
+  constructor() {
+    super("update_required");
+  }
+}
+
 export interface RequestContext {
   userId: string;
   service: SupabaseClient;
+}
+
+export interface MatchStateUpdateData {
+  MatchId: string;
+  Status: string;
+  MatchRevision: number;
+  CurrentSeat: number;
+  YourSeat: number;
+  WinnerSeat: number;
+  Rules: unknown;
+  State: unknown;
+  Turns: unknown[];
+  SeatNames: string[];
 }
 
 function requiredEnv(name: string): string {
@@ -48,6 +58,10 @@ export async function bodyJson<T>(request: Request): Promise<T> {
   } catch {
     throw new HttpError(400, "invalid JSON body");
   }
+}
+
+export function requireProtocolVersion(value: unknown): void {
+  if (value !== protocolVersion) throw new UpdateRequiredError();
 }
 
 export async function authenticate(request: Request): Promise<RequestContext> {
@@ -76,78 +90,10 @@ export async function requireProfile(service: SupabaseClient, userId: string): P
   return String(data.username);
 }
 
-export function rulesFrom(value: unknown): RulesConfigData {
-  if (value == null) return new RulesConfigData();
-  if (typeof value !== "object" || Array.isArray(value)) throw new HttpError(400, "invalid rules");
-  if ("AllowUndo" in value && typeof value.AllowUndo !== "boolean") throw new HttpError(400, "invalid rules");
-  return Object.assign(new RulesConfigData(), value);
-}
-
-export function deckForSeat(value: unknown, seat: number): CardDefinitionData[] {
-  const source = value == null ? defaultDeckForSeat(seat) : value;
-  if (!Array.isArray(source) || source.length === 0) throw new HttpError(400, "invalid deck");
-  try {
-    const deck = source.map((definition) => Object.assign(
-      Object.create(CardDefinitionData.prototype) as CardDefinitionData,
-      definition,
-    ));
-    for (const definition of deck) {
-      if (definition.IsPowerCard) throw new Error("power card");
-      definition.CreateCard();
-    }
-    return deck;
-  } catch {
-    throw new HttpError(400, "invalid deck");
-  }
-}
-
-function defaultDeckForSeat(seat: number): CardDefinitionData[] {
-  const deck: CardDefinitionData[] = [];
-  let cardIndex = 0;
-  for (const definition of DeckDefinitionData.NormalCards) {
-    for (let copy = 0; copy < definition.ChoiceCount; ++copy) {
-      if (cardIndex % 2 === seat) deck.push(definition);
-      ++cardIndex;
-    }
-  }
-  return deck;
-}
-
-export function createState(
-  seed: number,
-  rules: RulesConfigData,
-  decks: CardDefinitionData[][],
-  matchId: string,
-  startingSeat = 0,
-  names?: string[],
-): GameStateData {
-  try {
-    const state = new MatchFactory().Create(seed, rules, decks, matchId, startingSeat);
-    if (names != null) for (let seat = 0; seat < names.length; ++seat) state.Players[seat].Name = names[seat];
-    return state;
-  } catch (error) {
-    console.error("invalid match setup", error);
-    throw new HttpError(400, "invalid deck or rules");
-  }
-}
-
-export function hydrateState(value: unknown): GameStateData {
-  if (value == null || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid stored match state");
-  return Object.assign(new GameStateData(), value);
-}
-
-export function buildSeatViews(state: GameStateData): MatchSeatViewData[] {
-  return [FairView.BuildSeatView(state, 0), FairView.BuildSeatView(state, 1)];
-}
-
 export function randomInviteCode(): string {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no I/O/0/1: they look alike in the Match ID font
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   return Array.from(bytes, (value) => alphabet[value % alphabet.length]).join("");
-}
-
-export function randomInt32(): number {
-  return crypto.getRandomValues(new Int32Array(1))[0];
 }
 
 export function databaseFailure(action: string, error: unknown): never {
@@ -159,11 +105,20 @@ export function isUniqueViolation(error: { code?: string } | null): boolean {
   return error?.code === "23505";
 }
 
-export async function loadSeatView(service: SupabaseClient, matchId: string, seat: number): Promise<unknown> {
-  const { data, error } = await service.from("match_seat_views").select("view").eq("match_id", matchId).eq("seat", seat).maybeSingle();
-  if (error != null) databaseFailure("load seat view", error);
-  if (data == null) throw new HttpError(404, "match view not found");
-  return data.view;
+export async function loadMatchStateUpdate(
+  service: SupabaseClient,
+  matchId: string,
+  userId: string,
+  sinceRevision: number,
+): Promise<MatchStateUpdateData> {
+  const { data, error } = await service.rpc("load_match_state_update", {
+    p_match_id: matchId,
+    p_user_id: userId,
+    p_since_revision: sinceRevision,
+  });
+  if (error != null) databaseFailure("load match state update", error);
+  if (data == null) throw new HttpError(404, "match not found");
+  return data as MatchStateUpdateData;
 }
 
 export async function broadcastRevision(service: SupabaseClient, matchId: string, revision: number): Promise<void> {
@@ -209,13 +164,26 @@ export async function broadcastBestEffort(service: SupabaseClient, matchId: stri
   }
 }
 
-export function serve(handler: (request: Request) => Promise<Response>): void {
+export function serve(
+  handler: (request: Request) => Promise<Response>,
+  onMethodRejected?: (reason: string) => void,
+): void {
   Deno.serve(async (request) => {
     if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-    if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
+    if (request.method !== "POST") {
+      onMethodRejected?.("method_not_allowed");
+      return json({ error: "method not allowed" }, 405);
+    }
     try {
       return await handler(request);
     } catch (error) {
+      if (error instanceof UpdateRequiredError) {
+        return json({
+          Error: "update_required",
+          Reason: "Please update Elemento to play online.",
+          ProtocolVersion: protocolVersion,
+        }, 426);
+      }
       if (error instanceof HttpError) return json({ error: error.message }, error.status);
       console.error("edge function failed", error);
       return json({ error: "internal server error" }, 500);

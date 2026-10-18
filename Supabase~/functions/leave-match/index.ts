@@ -6,23 +6,26 @@ import {
   HttpError,
   json,
   publicMatchFields,
+  requireProtocolVersion,
   serve,
 } from "../_shared/server.ts";
 
-interface LeaveMatchBody {
-  matchId: string;
+interface LeaveMatchRequestData {
+  ProtocolVersion: number;
+  MatchId: string;
 }
 
 serve(async (request) => {
   const { userId, service } = await authenticate(request);
-  const body = await bodyJson<LeaveMatchBody>(request);
-  if (typeof body.matchId !== "string" || body.matchId.length === 0) {
-    return json({ error: "matchId required" }, 400);
+  const body = await bodyJson<LeaveMatchRequestData>(request);
+  requireProtocolVersion(body?.ProtocolVersion);
+  if (typeof body.MatchId !== "string" || body.MatchId.length === 0) {
+    return json({ error: "MatchId required" }, 400);
   }
 
   const { data: player, error: playerError } = await service.from("match_players")
     .select("seat")
-    .eq("match_id", body.matchId)
+    .eq("match_id", body.MatchId)
     .eq("user_id", userId)
     .maybeSingle();
   if (playerError != null) databaseFailure("load match seat", playerError);
@@ -30,35 +33,34 @@ serve(async (request) => {
 
   for (let attempt = 0; attempt < 3; ++attempt) {
     const { data: match, error: matchError } = await service.from("matches")
-      .select(publicMatchFields)
-      .eq("id", body.matchId)
+      .select(`${publicMatchFields},created_by`)
+      .eq("id", body.MatchId)
       .single();
     if (matchError != null) databaseFailure("load match", matchError);
 
-    if (match.status !== "active") {
-      if (match.status === "abandoned") {
-        await broadcastBestEffort(service, body.matchId, match.revision);
-      }
-      return json({ match });
-    }
+    const abandonsWaitingMatch = match.status === "waiting" && match.created_by === userId;
+    if (match.status !== "active" && !abandonsWaitingMatch) return json({ match });
 
-    const revision = match.revision + 1;
-    const { data: abandoned, error: abandonError } = await service.from("matches")
-      .update({
+    const revision = Number(match.revision) + 1;
+    const update = abandonsWaitingMatch
+      ? { status: "abandoned", revision, updated_at: new Date().toISOString() }
+      : {
         status: "abandoned",
-        winner_seat: 1 - player.seat,
+        winner_seat: 1 - Number(player.seat),
         revision,
         updated_at: new Date().toISOString(),
-      })
-      .eq("id", body.matchId)
-      .eq("status", "active")
+      };
+    const { data: abandoned, error: abandonError } = await service.from("matches")
+      .update(update)
+      .eq("id", body.MatchId)
+      .eq("status", match.status)
       .eq("revision", match.revision)
       .select(publicMatchFields)
       .maybeSingle();
     if (abandonError != null) databaseFailure("leave match", abandonError);
     if (abandoned == null) continue;
 
-    await broadcastBestEffort(service, body.matchId, revision);
+    await broadcastBestEffort(service, body.MatchId, revision);
     return json({ match: abandoned });
   }
 

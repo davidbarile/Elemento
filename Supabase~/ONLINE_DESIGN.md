@@ -1,142 +1,95 @@
-# Elemento Online Multiplayer: Protocol and Authority Design (draft)
+# Elemento Online Multiplayer v2
 
-Status: drafts only. Project 'Elemento' exists (ref dgmpxhxsfgfxaidxwmzq, us-west-1, free plan) but no migration has been applied and nothing is configured.
+Protocol v2 uses client-authoritative turns. The active client applies the game rules, generates
+every random outcome, and submits one complete TurnPackageData at the end of the turn. Supabase
+authenticates the caller and provides durable storage, optimistic concurrency, resume, and
+Realtime notifications. It does not replay moves, validate game rules, shuffle decks, deal cards,
+or choose a starting player.
 
-Decided: anonymous sign-in + unique username (profiles.username, citext, 3-20 [A-Za-z0-9_]); optional later identity linking (Apple on iOS, Google on Android, both on desktop/web). Authority: Edge Function with a TS rules port + golden fixtures.
-(`Supabase~` ends in `~` so Unity ignores the folder.)
+PROTOCOL_V2.md is the binding wire contract. JSON field names use the same PascalCase names as the
+C# data types and must not be renamed.
 
-## Protocol (Elemento.Domain.Net)
-- `MoveCommandData`: matchId, seat, clientSeq, expectedRevision, move, optional replayCard,
-  clientNonce, protocolVersion. `replayCard` is server-authored only after a play/discard reveals it.
-- `MoveResultData`: accepted/rejected + reason, newRevision.
-- `MatchSnapshotData`: public match state at a revision (counts only for hidden zones).
-- `MatchSeatViewData`: fair per-seat view built from authoritative state: own hand, public boards,
-  opponent hand COUNT, deck COUNTS. Never opponent hand contents, never deck order, never the seed.
-- `MoveLogEntryData`: revision, seat, command. Replay(seed, rules, decks, log) == live state.
-- Deterministic setup: `MatchFactory(seed, rules, decks)` uses only `DeterministicRandom`, so any
-  holder of the seed reproduces the deck order. Therefore the seed is a SECRET held by the server.
+## Match creation and joining
 
-## Authority options
-| Option | Pros | Cons |
-|---|---|---|
-| A. TS port of the rules in an Edge Function | Real server authority, hidden info stays server-side, cheap (free tier), fits async | Two rule implementations; drift risk |
-| B. Postgres RPC (PL/pgSQL port) | Transactional, no function cold start | Painful to write/maintain the rules in SQL |
-| C. Run C# Elemento.Domain on the server (.NET WASM in Edge Function, or a small .NET container) | One rules codebase | WASM in Deno is fiddly; a container costs money/ops |
-| D. Trusted host (one client is authority, server just stores) | No port | Host sees deck order/opponent hand; cheatable; host must be online (breaks async) |
+create-match accepts CreateMatchRequestData:
 
-**Recommendation: A**, an Edge Function `match-move` with a TypeScript port of `GameRules`/`GameSimulator`,
-kept honest by **golden fixtures**: the dotnet test project exports move logs + expected
-snapshots (JSON) from seeded AI self-play, and a Deno test replays them in the TS port and must
-match byte-for-byte. Revisit C (.NET WASM) if the port proves costly. D is rejected because the
-seed/deck order would be visible to the host and async play needs an always-on authority.
+    { ProtocolVersion, Rules, InitialState, InitialStateHash }
 
-## Batched online turns
-New clients send the whole ordered turn to `submit-turn` as
-`{MatchId, Seat, ExpectedRevision, ClientNonce, Moves}`. `ClientNonce` identifies the whole turn,
-and `Moves` must be non-empty and end with `EndTurn`; the server does not append it. The function
-authenticates seat ownership, loads `match_secrets.state`, and replays every move through the shared
-TypeScript `MatchAuthority` with consecutive expected revisions. Any illegal move rejects the whole
-batch without writes and returns its zero-based `FailedIndex` plus the caller's current seat view.
+The creator generates the complete initial GameStateData, including decks, the initial deal,
+random outcomes, and the starting-seat coin flip. The server stores Rules as the match rules,
+stores InitialState at revision 0, and copies InitialState.CurrentPlayerId to
+matches.current_seat. It also creates seat 0 and a six-character invite code. Username/profile
+requirements and anonymous Supabase authentication remain unchanged.
 
-An accepted turn is committed by one `commit_turn` RPC transaction: the match row is conditionally
-advanced from `ExpectedRevision`, one `match_moves` row is inserted per move at consecutive
-revisions, the turn nonce is stored only on the final row, and the secret state plus both fair seat
-views are updated together. A repeated `(match, seat, nonce)` returns the stored revision and move
-count with the latest available seat view. Stale revisions write nothing. After commit, the function
-broadcasts only `{revision}` on the private `match:<id>` topic.
+join-match accepts { ProtocolVersion, InviteCode }, claims seat 1, activates the match, and
+returns the stored state unchanged as MatchStateUpdateData. Joining never deals cards or mutates
+the game state.
 
-The trailing `EndTurn` is validated normally while the submitting seat still owns an active,
-unfinished turn. If the immediately preceding legal action already exhausted the move budget,
-triggered `DiscardEndsTurn`, or won the match, the server accepts only that final `EndTurn` as a
-terminal marker. The marker gets its own consecutive revision/log row but does not transition the
-turn a second time. This keeps the batch envelope uniform without allowing an early delimiter.
+## Turn commit
 
-`get-view` accepts optional `sinceRevision` and then includes ordered `moves` rows with revisions
-greater than that value. Move actions are public, but `CardId` is removed from an opponent's
-`DrawCard` action. For play/discard rows, the server stores the now-public card snapshot as
-`ReplayCard`; this lets passive clients reproduce consumed bombs and other effects even when the
-card is absent from the final view. Direct authenticated reads of `match_moves` are disabled so
-redaction cannot be bypassed.
+submit-turn accepts SubmitTurnRequestData. It checks:
 
-The single-command `submit-move` endpoint remains deployed only for old builds and is deprecated.
+1. the bearer token is valid;
+2. ProtocolVersion is 2;
+3. the authenticated user owns Seat;
+4. the nonce was not already committed for this match;
+5. the match is active;
+6. ExpectedRevision equals matches.revision;
+7. Seat equals matches.current_seat.
 
-Live vs async are the same pipeline: live = both clients subscribed to Realtime; async = push
-notification / poll on `turn_deadline`, resume by fetching the seat view at current revision.
+The server performs only basic envelope-shape checks. It trusts the submitted actions,
+FinalState, state hash, status, winner, and next seat. Rejections caused by match state return
+HTTP 200 with Reason equal to stale_revision, not_your_turn, or match_not_active. A retry with the
+same nonce returns the original accepted revision without another write.
 
-## Client (Unity)
-`OnlineSession : IGameSession`, viewing seat = local seat via `SeatViewBinder` (local player always
-at bottom). During the local turn, normal Unity drag/drop and activation paths apply immediately.
-Each completed UI action is mapped to `MoveData`, checked against an `OnlineTurnBuffer`, and appended
-in order without a network request. The buffer starts from the last confirmed fair seat view and
-uses a best-effort local `GameStateData` mirror for owned/public state. Hidden opponent hands and
-deck order make a complete mirror impossible; after an action depends on hidden randomness (notably
-an activation draw), validation falls back to the legal actions exposed at turn start plus the
-existing Unity drop/activation rules and local duplicate-card/turn checks. UI actions are mapped
-structurally before the evolving mirror validates them, so actions made newly legal by earlier
-deterministic moves are not incorrectly filtered against the stale turn-start list. Newly drawn
-hidden-random cards still cannot become further buffered actions until a server view reveals them.
+commit_client_turn performs the compare-and-set transaction. One accepted package creates one
+match_turns row and increments the match revision by one. The same transaction updates the latest
+full state, state hash, current seat, status, winner, and turn number. The RPC is SECURITY DEFINER,
+has an empty search path, and is executable only by service_role.
 
-End Turn appends the explicit `EndTurn` action and sends the whole buffer through `submit-turn`.
-One nonce is created when the turn buffer begins and remains unchanged across network retries. A
-network failure retains the buffer and exposes End Turn as the retry action. A server rejection
-clears the buffer and immediately rebuilds from the response seat view (or a follow-up `get-view`).
-Leaving during a local turn with buffered actions requires confirmation before those actions are
-discarded.
+After a successful or idempotent commit, the function broadcasts {revision} on the private
+match:<id> Realtime topic. Clients treat the broadcast as an invalidation signal and fetch the new
+data.
 
-Realtime, polling, and app-focus refreshes call `get-view` with the last applied revision. Ordered
-move rows are animated through the existing Unity move/drop and activation paths at the configured
-game speed; the existing speed-up control becomes a localized Skip control during replay. Input is
-locked for the replay and the final fair seat view is authoritative, so the board is rebuilt after
-animation when the projected state is absent or differs. Last applied revision is persisted per
-match in `PlayerPrefs` for async resume. The corresponding fair seat view is persisted as the cold-
-resume replay base; it contains only data the server already released to that seat.
+## Fetch and resume
 
-Played/discarded cards from a masked opponent hand are materialized from the server-authored
-`ReplayCard` snapshot before the existing Unity drop path runs, so consumed bombs retain their
-card-specific explosion. Older log rows that predate `ReplayCard` can replay only when the card is
-recoverable from the final public zones; otherwise the final authoritative rebuild remains the
-compatibility fallback.
-Supabase uses `IAsyncMatchTransport`; the in-memory single-move transport remains only for domain
-simulation and legacy protocol tests.
+get-view accepts { ProtocolVersion, MatchId, SinceRevision } and returns MatchStateUpdateData.
+State is always the latest stored full state. Turns contains complete turn packages with revision
+greater than SinceRevision, ordered ascending. There is no DrawCard redaction and no ReplayCard;
+all random outcomes needed for replay are already inside the client-authored turn actions.
 
-## Match lifecycle and setup (implemented)
-- Leaving an active match is an authenticated, server-authoritative forfeit. `leave-match` verifies
-  seat ownership, advances the revision with a compare-and-set update, marks the match `abandoned`,
-  assigns the other seat as winner, and broadcasts the new revision. Repeated requests are
-  idempotent once the match is abandoned. Unity confirms before leaving, warns specifically when
-  buffered moves will be discarded, and returns home only after the leave succeeds (or the server
-  already reports the match abandoned). The opponent receives a localized leave notification.
-- The creator's gameplay settings are stored in `matches.rules`, validated when the match is
-  created, and used by the authoritative server state. Both Unity clients apply those shared rules
-  for the match and restore their local settings when the online session is released. Per-player
-  handicap settings are not supported.
-- When the second player joins, the server randomly chooses starting seat 0 or 1 and records it as
-  `StartingPlayerId`/`CurrentPlayerId`. Only that seat receives the opening hand and first active
-  turn. Each client maps its local seat to the result and shows a localized first-player message.
+list-my-matches accepts { ProtocolVersion } and returns the caller's waiting and active matches,
+including their seat, current seat, revision, opponent name, and update time. This is the resume
+entry point after restart or sign-in restoration.
 
-## Decisions David must make
-1. Supabase org + project (new org vs existing; project name; region, e.g. us-west-1).
-2. Plan: Free tier to start (projects pause after ~1 week inactivity; limits on Edge Function
-   invocations/Realtime) vs Pro (~$25/mo) at launch.
-3. Auth: anonymous sign-in first (zero-friction), with linking to Sign in with Apple (required on
-   iOS if any other social login is offered) and/or Google; email magic link optional.
-4. Live, async, or both at launch; async turn timeout and forfeit policy.
-5. Matchmaking: invite code/friends only vs random queue.
-6. Authority choice (recommend A, TS port + golden fixtures) and acceptable anti-cheat level.
-7. Push notifications for async turns (APNs/FCM) now or later.
-8. Data retention for finished matches/move logs; privacy policy update.
+leave-match preserves active-match forfeits: it marks the match abandoned, assigns the other seat
+as winner, advances the revision, and broadcasts. A creator can also abandon their own waiting
+match. The database sweeper marks waiting or active matches abandoned after three days of
+inactivity; when pg_cron is installed it runs hourly.
 
-## Hidden-information rules (decided)
-- Pile point totals (`ZoneStateData.Points`, including face-down cards) are PUBLIC to both players (David, 2026-10-12).
-  Face-down card identities are masked to `{Id, IsFaceUp=false}` in opponent views and snapshots.
-- Never sent to clients: seed, deck/reserve order, opponent hand contents (count only).
+## Storage and access
 
-## Known issues fixed
-- O1: authoritative online view rebuilds now cancel the active drag before destroying cards, block new drags for the full rebuild, and clear drag/render locks in `finally`. Previously a dragged card could be destroyed before `StopDraggingItem` ran, leaving the static input lock and drag overlay active indefinitely; Home now clears stale locks as an escape path.
+- matches stores lifecycle, creator rules, current seat, winner, and the single turn revision.
+- match_state stores the latest opaque GameStateData and its hash.
+- match_turns stores one opaque TurnPackageData per committed revision and a per-match unique
+  client nonce.
+- match_players maps authenticated users to seats.
+- profiles keeps the existing anonymous-user username flow.
 
-## TODOs after U2
-- Validate the online board projection, drag/drop, panel prefabs, and reconnect behavior in the Unity Editor; U2 was completed with static review only because Unity was unavailable.
-- Add explicit online game-over presentation from `WinnerPlayerId`/`WinType` instead of relying on local board-side win checks.
-- Drive online-only rule affordances and counters entirely from `PlayerViewData.Rules` (including power-deck/discard presentation) if server match rules can differ from the local settings asset.
-- Add cancellation/lifetime guards for requests that complete after leaving a match, plus a user-facing reconnect/retry state for prolonged network failures.
-- Decide and implement async-turn deadlines, forfeits, and APNs/FCM notifications before shipping async matches.
+RLS is enabled on state and turn storage without anon/authenticated policies. Edge Functions use
+the service role; clients never write match tables directly.
+
+Every request carries ProtocolVersion. Versions other than 2 receive HTTP 426:
+
+    {
+      "Error": "update_required",
+      "Reason": "Please update Elemento to play online.",
+      "ProtocolVersion": 2
+    }
+
+## Security boundary
+
+Protocol v2 intentionally favors a simple, deterministic client experience over anti-cheat:
+clients can submit any internally shaped final state while it is their turn. Server-side rule
+validation, signed turn proofs, anomaly detection, or another anti-cheat layer can be added later
+without changing the revision/idempotency storage model.

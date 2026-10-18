@@ -1,0 +1,34 @@
+{
+  "MatchId": "",
+  "Revision": 0,
+  "TurnNumber": 0,
+  "StartingPlayerId": 0,
+  "CurrentPlayerId": 0,
+  "WinnerPlayerId": -1,
+  "WinCondition": 0,
+  "Rules": {
+    "NumCardsToDeal": 4,
+    "MaxCardsInHand": 9,
+    "TotalPointsRequiredToWin": 75,
+    "AllowUndo": true
+  },
+  "Players": [
+    {
+      "Id": 0,
+      "Name": "",
+      "Hand": [],
+      "Zones": []
+    },
+    {
+      "Id": 1,
+      "Name": "",
+      "Hand": [],
+      "Zones": []
+    }
+  ],
+  "Deck": [],
+  "DiscardPile": [],
+  "PowerDeck": [],
+  "PowerDiscardPile": [],
+  "Moves": []
+}
