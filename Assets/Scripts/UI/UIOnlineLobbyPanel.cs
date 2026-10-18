@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Elemento.Domain.Net;
+using Elemento.Networking;
 using Elemento.Networking.Supabase;
 using TMPro;
 using UnityEngine;
@@ -100,7 +101,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         SetBusy(true);
         try
         {
-            this.auth ??= new SupabaseAuthClient(this);
+            this.auth ??= new SupabaseAuthClient(OnlineCoroutineHost.IN);
             this.profiles ??= new SupabaseProfileClient(this.auth);
             await this.profiles.EnsureProfileAsync();
             this.isProfileReady = true;
@@ -151,7 +152,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
 
     private void CreateClient()
     {
-        this.transport = new SupabaseMatchTransport(this, this.auth);
+        this.transport = new SupabaseMatchTransport(OnlineCoroutineHost.IN, this.auth);
         this.transport.RequestFailed += HandleTransportFailed;
         this.client = new OnlineMatchClient(this.transport);
         this.client.StateChanged += HandlePersistentStateChanged;
@@ -327,7 +328,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     {
         if (this.resumeList != null) Destroy(this.resumeList);
         this.resumeButtons.Clear();
-        using var lookup = new SupabaseMatchTransport(this, this.auth);
+        using var lookup = new SupabaseMatchTransport(OnlineCoroutineHost.IN, this.auth);
         var result = await lookup.ListMyMatches(new ListMyMatchesRequestData());
         if (result.Matches.Count == 0)
             return;
@@ -385,7 +386,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             this.isResuming = true;
             if (inIsAutomatic)
             {
-                this.auth ??= new SupabaseAuthClient(this);
+                this.auth ??= new SupabaseAuthClient(OnlineCoroutineHost.IN);
                 this.profiles ??= new SupabaseProfileClient(this.auth);
             }
 

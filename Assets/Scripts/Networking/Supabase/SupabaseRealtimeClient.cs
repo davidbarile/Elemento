@@ -19,6 +19,7 @@ namespace Elemento.Networking.Supabase
         public event Action<MatchStateUpdateData> StateReceived;
 
         private readonly MonoBehaviour runner;
+        private readonly string runnerName;
         private readonly SupabaseAuthClient auth;
         private readonly string matchId;
         private readonly Func<Task<MatchStateUpdateData>> fetchView;
@@ -39,6 +40,7 @@ namespace Elemento.Networking.Supabase
             Func<Task> inSendPresenceHeartbeat)
         {
             this.runner = inRunner;
+            this.runnerName = inRunner != null ? inRunner.name : "<null or destroyed>";
             this.auth = inAuth;
             this.matchId = inMatchId;
             this.fetchView = inFetchView;
@@ -52,12 +54,39 @@ namespace Elemento.Networking.Supabase
             if (this.polling != null)
                 return;
             // Poll in both modes: also recovers missed broadcasts and reconnect gaps.
-            this.polling = this.runner.StartCoroutine(Poll());
-            this.presenceHeartbeat = this.runner.StartCoroutine(PresenceHeartbeat());
+            this.polling = TryStartCoroutine(Poll(), "polling");
+            this.presenceHeartbeat = TryStartCoroutine(PresenceHeartbeat(), "presence heartbeat");
 #if !UNITY_WEBGL
             if (inUseRealtime)
                 _ = ConnectAsync();
 #endif
+        }
+
+        private Coroutine TryStartCoroutine(IEnumerator inRoutine, string inRoutineName)
+        {
+            if (this.runner == null || !this.runner.isActiveAndEnabled)
+            {
+                Debug.LogWarning("Supabase realtime " + inRoutineName + " coroutine could not start on runner '"
+                    + this.runnerName + "': runner is null, destroyed, inactive, or disabled.");
+                return null;
+            }
+
+            try
+            {
+                Coroutine routine = this.runner.StartCoroutine(inRoutine);
+                if (routine == null)
+                {
+                    Debug.LogWarning("Supabase realtime " + inRoutineName + " coroutine could not start on runner '"
+                        + this.runnerName + "': StartCoroutine returned null.");
+                }
+                return routine;
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Supabase realtime " + inRoutineName + " coroutine could not start on runner '"
+                    + this.runnerName + "': " + exception.Message);
+                return null;
+            }
         }
 
         private IEnumerator PresenceHeartbeat()

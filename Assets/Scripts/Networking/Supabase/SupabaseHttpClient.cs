@@ -33,10 +33,12 @@ namespace Elemento.Networking.Supabase
     {
         private const int TimeoutSeconds = 30;
         private readonly MonoBehaviour runner;
+        private readonly string runnerName;
 
         public SupabaseHttpClient(MonoBehaviour inRunner)
         {
-            this.runner = inRunner != null ? inRunner : throw new ArgumentNullException(nameof(inRunner));
+            this.runner = inRunner;
+            this.runnerName = inRunner != null ? inRunner.name : "<null or destroyed>";
         }
 
         public async Task<string> SendAsync(string inPath, string inBody, string inAccessToken, string inMethod = "POST")
@@ -50,7 +52,23 @@ namespace Elemento.Networking.Supabase
             var completion = new TaskCompletionSource<SupabaseHttpResponseData>();
             try
             {
-                this.runner.StartCoroutine(Send(inPath, inBody, inAccessToken, inMethod, completion));
+                if (this.runner == null || !this.runner.isActiveAndEnabled)
+                {
+                    completion.TrySetException(new InvalidOperationException(
+                        "Supabase HTTP coroutine runner '" + this.runnerName
+                        + "' is null, destroyed, inactive, or disabled."));
+                }
+                else
+                {
+                    Coroutine request = this.runner.StartCoroutine(
+                        Send(inPath, inBody, inAccessToken, inMethod, completion));
+                    if (request == null)
+                    {
+                        completion.TrySetException(new InvalidOperationException(
+                            "Supabase HTTP coroutine runner '" + this.runnerName
+                            + "' returned null while starting the request."));
+                    }
+                }
             }
             catch (Exception error)
             {
