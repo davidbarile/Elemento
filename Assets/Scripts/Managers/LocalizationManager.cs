@@ -268,6 +268,10 @@ public class LocalizationManager : MonoBehaviour
     public string[] OnlineForfeit = { "Forfeit", "Abandonar" };
     public string[] OnlineForfeitTitle = { "Forfeit game?", "¿Abandonar partida?" };
     public string[] OnlineForfeitMessage = { "Your opponent will win this game.", "Tu rival ganará esta partida." };
+    public string[] OnlineCancelGame = { "Cancel game", "Cancelar partida" };
+    public string[] OnlineCancelGameTitle = { "Cancel this game?", "¿Cancelar esta partida?" };
+    public string[] OnlineCancelGameMessage = { "The invite code will stop working and you can create or join a new game.", "El código de invitación dejará de funcionar y podrás crear o unirte a otra partida." };
+    public string[] OnlineGameCancelled = { "Game cancelled", "Partida cancelada" };
     public string[] OnlineLeave = { "Leave", "Abandonar" };
     public string[] OnlineUpdateRequired = { "Please update Elemento to play online.", "Actualiza Elemento para jugar en línea." };
     public string[] OnlineInviteCode = { "Join with a code", "Unirse con un código" };

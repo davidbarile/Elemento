@@ -37,6 +37,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     [SerializeField] private Button createButton;
     [SerializeField] private Button joinButton;
     [SerializeField] private Button backButton;
+    [SerializeField] private Button cancelGameButton;
+    [SerializeField] private TextMeshProUGUI cancelGameText;
     [SerializeField] private GameObject activeGamesRoot;
     [SerializeField] private TextMeshProUGUI activeGamesHeaderText;
     [SerializeField] private RectTransform activeGamesContent;
@@ -54,6 +56,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     private bool isRecoveryPending;
     private int resumeGeneration;
     private MyMatchData pendingForfeitConfirmation;
+    private bool pendingCancelGameConfirmation;
     private readonly List<UIActiveGameRow> activeGameRows = new();
     private readonly HashSet<string> forgottenMatchIds = new();
 
@@ -63,11 +66,13 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     {
         this.inviteCodeInput.gameObject.AddComponent<UIInputPlaceholderToggle>().Initialize(this.inviteCodeInput);
         LocalizationManager.OnLanguageChanged += HandleLanguageChanged;
+        this.cancelGameButton?.onClick.AddListener(HandleCancelGameButtonPress);
     }
 
     private void OnDestroy()
     {
         LocalizationManager.OnLanguageChanged -= HandleLanguageChanged;
+        this.cancelGameButton?.onClick.RemoveListener(HandleCancelGameButtonPress);
         ReleaseMatch();
     }
 
@@ -181,6 +186,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.client.RequestFailed += HandleTransportFailed;
         if (inStartListening)
             this.transport.StartListening(this.client);
+        RefreshCancelGameVisibility();
         if (inMatch.Status == "waiting")
         {
             if (!this.isResumeLoading)
@@ -192,7 +198,13 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
 
     private void HandleInitialView(MatchStateUpdateData inView)
     {
+        RefreshCancelGameVisibility();
         if (inView?.State == null || inView.Status == "waiting" || this.client == null) return;
+        if (this.pendingCancelGameConfirmation)
+        {
+            this.pendingCancelGameConfirmation = false;
+            UIConfirmPanel.IN?.Hide();
+        }
         this.client.StateChanged -= HandleInitialView;
         OnlineMatchContext.Set(this.client);
         if (!this.isRecoveryPending)
@@ -209,8 +221,17 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         }  
     }
 
-    public void HandleBackButtonPress()
+    public async void HandleBackButtonPress()
     {
+        if (this.isResumeLoading)
+        {
+            ++this.resumeGeneration;
+            ReleaseMatch();
+            SetResumeLoading(false);
+            SetBusy(false);
+            await LoadLobbyAsync();
+            return;
+        }
         if (this.isBusy) return;
         ReleaseMatch();
         Hide();
@@ -240,16 +261,19 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.transport = null;
         this.isResuming = false;
         this.isRecoveryPending = false;
+        this.pendingCancelGameConfirmation = false;
         SettingsManager.IN?.ClearMatchRules();
+        RefreshCancelGameVisibility();
     }
 
-    public async Task<EForfeitOutcome> ForfeitMatchAsync(string inMatchId, int inLocalSeat = -1)
+    public async Task<EForfeitOutcome> ForfeitMatchAsync(string inMatchId, int inLocalSeat = -1,
+        bool inResumeOnFailure = true)
     {
         if (string.IsNullOrEmpty(inMatchId))
             return EForfeitOutcome.Failed;
 
         ++this.resumeGeneration;
-        bool wasResumePending = this.isBusy && this.isResuming;
+        bool wasResumePending = inResumeOnFailure && this.isBusy && this.isResuming;
         if (wasResumePending && this.client != null)
             this.client.StateChanged -= HandleInitialView;
         EForfeitOutcome outcome = EForfeitOutcome.Failed;
@@ -366,7 +390,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.createButton.interactable = !inIsBusy && this.isProfileReady && this.client == null;
         this.joinButton.interactable = !inIsBusy && this.isProfileReady && this.client == null;
         this.inviteCodeInput.interactable = !inIsBusy && this.client == null;
-        this.backButton.interactable = !inIsBusy;
+        this.backButton.interactable = this.isResumeLoading || !inIsBusy;
         foreach (UIActiveGameRow row in this.activeGameRows)
             row.SetInteractable(!inIsBusy && this.isProfileReady && this.client == null);
         if (inIsBusy)
@@ -376,6 +400,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
                 : LocalizationManager.IN.OnlineWorking;
             this.statusText.text = LocalizationManager.GetOnlineText(status);
         }
+        RefreshCancelGameVisibility();
     }
 
     private void SetResumeLoading(bool inIsLoading)
@@ -386,8 +411,10 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.inviteCodeInput.gameObject.SetActive(!inIsLoading);
         this.createButton.gameObject.SetActive(!inIsLoading);
         this.joinButton.gameObject.SetActive(!inIsLoading);
-        this.backButton.gameObject.SetActive(!inIsLoading);
+        this.backButton.gameObject.SetActive(true);
+        this.backButton.interactable = inIsLoading || !this.isBusy;
         RefreshActiveGamesVisibility();
+        RefreshCancelGameVisibility();
         this.statusText.gameObject.SetActive(true);
         if (inIsLoading)
             this.statusText.text = LocalizationManager.GetOnlineText(LocalizationManager.IN.OnlineResuming);
@@ -396,7 +423,9 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     private void HandleLanguageChanged(int inLanguageIndex)
     {
         RefreshText();
-        if (this.pendingForfeitConfirmation != null && UIConfirmPanel.IN?.IsShowing == true)
+        if (this.pendingCancelGameConfirmation && UIConfirmPanel.IN?.IsShowing == true)
+            ShowCancelGameConfirmation();
+        else if (this.pendingForfeitConfirmation != null && UIConfirmPanel.IN?.IsShowing == true)
             ShowForfeitConfirmation(this.pendingForfeitConfirmation);
     }
 
@@ -410,12 +439,92 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.createText.text = LocalizationManager.GetOnlineText(loc.OnlineCreateMatch);
         this.joinText.text = LocalizationManager.GetOnlineText(loc.OnlineJoinMatch);
         this.backText.text = LocalizationManager.GetOnlineText(loc.OnlineBack);
+        if (this.cancelGameText != null)
+            this.cancelGameText.text = LocalizationManager.GetOnlineText(loc.OnlineCancelGame);
         if (this.activeGamesHeaderText != null)
             this.activeGamesHeaderText.text = LocalizationManager.GetOnlineText(loc.OnlineActiveGames);
         if (this.isResumeLoading)
             this.statusText.text = LocalizationManager.GetOnlineText(loc.OnlineResuming);
         else if (!string.IsNullOrEmpty(this.inviteCode))
             this.statusText.text = GetWaitingText();
+    }
+
+    private bool IsWaitingForJoiner()
+    {
+        return this.client != null && this.client.CurrentState?.Status == "waiting";
+    }
+
+    private void RefreshCancelGameVisibility()
+    {
+        if (this.cancelGameButton == null)
+            return;
+
+        bool isVisible = !this.isResumeLoading && IsWaitingForJoiner();
+        this.cancelGameButton.gameObject.SetActive(isVisible);
+        this.cancelGameButton.interactable = isVisible && !this.isBusy;
+    }
+
+    private void HandleCancelGameButtonPress()
+    {
+        ShowCancelGameConfirmation();
+    }
+
+    private void ShowCancelGameConfirmation()
+    {
+        if (!IsWaitingForJoiner() || this.isBusy || UIConfirmPanel.IN == null)
+            return;
+
+        this.pendingCancelGameConfirmation = true;
+        LocalizationManager localization = LocalizationManager.IN;
+        UIConfirmPanel.IN.transform.SetAsLastSibling();
+        UIConfirmPanel.IN.Show(
+            LocalizationManager.GetOnlineText(localization?.OnlineCancelGameTitle),
+            LocalizationManager.GetOnlineText(localization?.OnlineCancelGameMessage),
+            () =>
+            {
+                this.pendingCancelGameConfirmation = false;
+                CancelWaitingGame();
+            },
+            () => this.pendingCancelGameConfirmation = false);
+    }
+
+    private async void CancelWaitingGame()
+    {
+        if (!IsWaitingForJoiner())
+            return;
+
+        string matchId = this.client.MatchId;
+        int localSeat = this.client.LocalSeat;
+        SetBusy(true);
+        EForfeitOutcome outcome = await ForfeitMatchAsync(matchId, localSeat, false);
+        if (outcome == EForfeitOutcome.Failed)
+        {
+            string error = LocalizationManager.GetOnlineText(LocalizationManager.IN?.OnlineError);
+            this.statusText.text = error;
+            if (UIAlertPanel.IN != null)
+            {
+                UIAlertPanel.IN.transform.SetAsLastSibling();
+                UIAlertPanel.IN.Show(error, 3f, EAlertMode.Notification);
+            }
+            SetBusy(false);
+            return;
+        }
+
+        ReleaseMatch();
+        this.inviteCode = null;
+        this.statusText.text = string.Empty;
+        string[] notice = outcome == EForfeitOutcome.AlreadyOver
+            ? LocalizationManager.IN?.OnlineMatchAlreadyEnded
+            : outcome == EForfeitOutcome.Gone
+                ? LocalizationManager.IN?.OnlineMatchGone
+                : LocalizationManager.IN?.OnlineGameCancelled;
+        if (UIAlertPanel.IN != null)
+        {
+            UIAlertPanel.IN.transform.SetAsLastSibling();
+            UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(notice), 3f,
+                EAlertMode.Notification);
+        }
+        await LoadLobbyAsync();
     }
 
     private string GetWaitingText()
