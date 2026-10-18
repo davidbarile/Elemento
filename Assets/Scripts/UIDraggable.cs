@@ -471,7 +471,8 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
             var card = this.GetComponent<Card>();
             inDestPosition = this.animatedTargetCell.GetCardLandingPosition(card);
             Vector3 destinationScale = this.animatedTargetCell.GetCardLandingLocalScale(this.transform.parent);
-            this.transform.DOScale(destinationScale, inTweenDuration).SetEase(Ease.InOutSine);
+            if ((this.transform.localScale - destinationScale).sqrMagnitude > 0.0001f)
+                this.transform.DOScale(destinationScale, inTweenDuration).SetEase(Ease.InOutSine);
         }
 
         UIDraggable.ShouldBlockInput = true;

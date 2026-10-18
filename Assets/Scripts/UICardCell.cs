@@ -119,7 +119,8 @@ public class UICardCell : MonoBehaviour
         Vector3 destination = GetCardLandingPosition(card);
         Vector3 destinationScale = GetCardLandingLocalScale(card.transform.parent);
 
-        card.transform.DOScale(destinationScale, GameManager.IN.CardSnapBackTweenSpeed);
+        if ((card.transform.localScale - destinationScale).sqrMagnitude > 0.0001f)
+            card.transform.DOScale(destinationScale, GameManager.IN.CardSnapBackTweenSpeed);
         card.transform.DOMove(destination, GameManager.IN.CardSnapBackTweenSpeed).OnComplete(() =>
         {
             SetParentCell(card);

@@ -1474,8 +1474,9 @@ public class GameManager : MonoBehaviour
 
             destination = target.GetCardLandingPosition(card);
             Vector3 destinationScale = target.GetCardLandingLocalScale(card.transform.parent);
-            card.transform.DOScale(destinationScale, this.OpponentMoveTweenDuration)
-                .SetEase(Ease.InOutSine);
+            if ((card.transform.localScale - destinationScale).sqrMagnitude > 0.0001f)
+                card.transform.DOScale(destinationScale, this.OpponentMoveTweenDuration)
+                    .SetEase(Ease.InOutSine);
         }
 
         Tween moveTween = card.transform.DOMove(destination, this.OpponentMoveTweenDuration)
