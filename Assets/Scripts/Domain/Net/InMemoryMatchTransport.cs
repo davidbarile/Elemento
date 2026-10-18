@@ -88,6 +88,9 @@ namespace Elemento.Domain.Net
         {
             var request = Copy(inTurn);
             CheckVersion(request.ProtocolVersion);
+            string envelopeFailure = GetTurnEnvelopeFailure(request);
+            if (envelopeFailure != null)
+                throw new ArgumentException("invalid turn package: " + envelopeFailure, nameof(inTurn));
             SubmitTurnResultData result;
             lock (this.matches)
             {
@@ -199,6 +202,34 @@ namespace Elemento.Domain.Net
         {
             if (inVersion != ProtocolVersions.Current)
                 throw new InvalidOperationException("update_required: Please update Elemento to play online.");
+        }
+
+        private static string GetTurnEnvelopeFailure(SubmitTurnRequestData inRequest)
+        {
+            TurnPackageData turn = inRequest?.Turn;
+            if (turn == null)
+                return "Turn must be an object";
+            if (string.IsNullOrEmpty(turn.MatchId))
+                turn.MatchId = inRequest.MatchId;
+            if (turn.MatchId != inRequest.MatchId)
+                return "Turn.MatchId must match MatchId";
+            if (turn.Seat != inRequest.Seat)
+                return "Turn.Seat must match Seat";
+            if (turn.StartRevision != inRequest.ExpectedRevision)
+                return "Turn.StartRevision must match ExpectedRevision";
+            if (turn.Actions == null)
+                return "Turn.Actions must be an array";
+            if (turn.FinalState == null)
+                return "Turn.FinalState must be an object";
+            if (turn.FinalStateHash == null)
+                return "Turn.FinalStateHash must be a string";
+            if (turn.Status != "active" && turn.Status != "finished")
+                return "Turn.Status must be active or finished";
+            if (turn.NextSeat != 0 && turn.NextSeat != 1)
+                return "Turn.NextSeat must be 0 or 1";
+            if (turn.WinnerSeat != -1 && turn.WinnerSeat != 0 && turn.WinnerSeat != 1)
+                return "Turn.WinnerSeat must be -1, 0, or 1";
+            return null;
         }
 
         private sealed class StoredMatch

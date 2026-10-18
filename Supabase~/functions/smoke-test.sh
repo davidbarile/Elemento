@@ -8,6 +8,9 @@ command -v python3 >/dev/null 2>&1 || { echo "smoke-test requires python3" >&2; 
 SUPABASE_URL=${SUPABASE_URL%/}
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 INITIAL_STATE_FIXTURE="$SCRIPT_DIR/fixtures/initial-state-v2.json"
+HARNESS_FIXTURE_DIR=${HARNESS_FIXTURE_DIR:-"$SCRIPT_DIR/fixtures/generated-first-turn"}
+HARNESS_CREATE_FIXTURE="$HARNESS_FIXTURE_DIR/create-match.json"
+HARNESS_SUBMIT_FIXTURE="$HARNESS_FIXTURE_DIR/submit-turn.json"
 
 json_get() {
   python3 -c 'import json,sys
@@ -36,22 +39,27 @@ json_length() {
 make_json() {
   local kind=$1
   shift
-  python3 - "$kind" "$INITIAL_STATE_FIXTURE" "$@" <<'PY'
+  python3 - "$kind" "$INITIAL_STATE_FIXTURE" "$HARNESS_CREATE_FIXTURE" "$HARNESS_SUBMIT_FIXTURE" "$@" <<'PY'
 import json
+import os
 import sys
 
-kind, fixture_path, *args = sys.argv[1:]
+kind, fixture_path, harness_create_path, harness_submit_path, *args = sys.argv[1:]
 if kind == "profile":
     value = [{"id": args[0], "username": args[1]}]
 elif kind == "create":
-    with open(fixture_path, encoding="utf-8") as source:
-        state = json.load(source)
-    value = {
-        "ProtocolVersion": 2,
-        "Rules": state["Rules"],
-        "InitialState": state,
-        "InitialStateHash": "smoke-initial-v2",
-    }
+    if os.path.isfile(harness_create_path):
+        with open(harness_create_path, encoding="utf-8") as source:
+            value = json.load(source)
+    else:
+        with open(fixture_path, encoding="utf-8") as source:
+            state = json.load(source)
+        value = {
+            "ProtocolVersion": 2,
+            "Rules": state["Rules"],
+            "InitialState": state,
+            "InitialStateHash": "smoke-initial-v2",
+        }
 elif kind == "join":
     value = {"ProtocolVersion": 2, "InviteCode": args[0]}
 elif kind == "view":
@@ -63,40 +71,54 @@ elif kind == "old_view":
 elif kind == "turn":
     match_id, seat, revision, nonce, next_seat = args
     seat, revision, next_seat = int(seat), int(revision), int(next_seat)
-    with open(fixture_path, encoding="utf-8") as source:
-        final_state = json.load(source)
-    final_state.update({
-        "MatchId": match_id,
-        "Revision": revision + 1,
-        "TurnNumber": revision + 1,
-        "CurrentPlayerId": next_seat,
-    })
-    value = {
-        "ProtocolVersion": 2,
-        "MatchId": match_id,
-        "Seat": seat,
-        "ExpectedRevision": revision,
-        "ClientNonce": nonce,
-        "Turn": {
+    if seat == 0 and revision == 0 and os.path.isfile(harness_submit_path):
+        with open(harness_submit_path, encoding="utf-8") as source:
+            value = json.load(source)
+        def replace_match_id(item):
+            if isinstance(item, str):
+                return item.replace("MATCH_ID", match_id)
+            if isinstance(item, list):
+                return [replace_match_id(entry) for entry in item]
+            if isinstance(item, dict):
+                return {key: replace_match_id(entry) for key, entry in item.items()}
+            return item
+        value = replace_match_id(value)
+        value["ClientNonce"] = nonce
+    else:
+        with open(fixture_path, encoding="utf-8") as source:
+            final_state = json.load(source)
+        final_state.update({
+            "MatchId": match_id,
+            "Revision": revision + 1,
+            "TurnNumber": revision + 1,
+            "CurrentPlayerId": next_seat,
+        })
+        value = {
+            "ProtocolVersion": 2,
             "MatchId": match_id,
             "Seat": seat,
-            "TurnNumber": revision + 1,
-            "StartRevision": revision,
-            "Actions": [{
-                "Index": 0,
-                "Move": None,
-                "DrawnCards": [],
-                "PowerCard": None,
-                "Kind": "EndTurn",
-            }],
-            "FinalState": final_state,
-            "FinalStateHash": f"smoke-state-{revision + 1}",
-            "Status": "active",
-            "WinnerSeat": -1,
-            "WinCondition": 0,
-            "NextSeat": next_seat,
-        },
-    }
+            "ExpectedRevision": revision,
+            "ClientNonce": nonce,
+            "Turn": {
+                "MatchId": match_id,
+                "Seat": seat,
+                "TurnNumber": revision + 1,
+                "StartRevision": revision,
+                "Actions": [{
+                    "Index": 0,
+                    "Move": None,
+                    "DrawnCards": [],
+                    "PowerCard": None,
+                    "Kind": "EndTurn",
+                }],
+                "FinalState": final_state,
+                "FinalStateHash": f"smoke-state-{revision + 1}",
+                "Status": "active",
+                "WinnerSeat": -1,
+                "WinCondition": 0,
+                "NextSeat": next_seat,
+            },
+        }
 else:
     raise SystemExit(f"unknown JSON kind: {kind}")
 print(json.dumps(value, separators=(",", ":")))
@@ -118,12 +140,12 @@ upsert_profile() {
 
 call_function() {
   local name=$1 token=$2 body=$3
-  curl --fail-with-body --silent --show-error -X POST "$SUPABASE_URL/functions/v1/$name" -H "apikey: $ANON_KEY" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d "$body"
+  printf '%s' "$body" | curl --fail-with-body --silent --show-error -X POST "$SUPABASE_URL/functions/v1/$name" -H "apikey: $ANON_KEY" -H "Authorization: Bearer $token" -H "Content-Type: application/json" --data-binary @-
 }
 
 call_function_with_status() {
   local name=$1 token=$2 body=$3
-  curl --silent --show-error -X POST "$SUPABASE_URL/functions/v1/$name" -H "apikey: $ANON_KEY" -H "Authorization: Bearer $token" -H "Content-Type: application/json" -d "$body" --write-out $'\n%{http_code}'
+  printf '%s' "$body" | curl --silent --show-error -X POST "$SUPABASE_URL/functions/v1/$name" -H "apikey: $ANON_KEY" -H "Authorization: Bearer $token" -H "Content-Type: application/json" --data-binary @- --write-out $'\n%{http_code}'
 }
 
 echo "Creating two anonymous users..."
@@ -142,7 +164,9 @@ invite_code=$(printf '%s' "$created" | json_get InviteCode)
 assert_json "$created" MatchRevision 0
 assert_json "$created" CurrentSeat 0
 assert_json "$created" State.CurrentPlayerId 0
-assert_json "$created" Rules.TotalPointsRequiredToWin 75
+create_body=$(make_json create)
+expected_points=$(printf '%s' "$create_body" | json_get Rules.TotalPointsRequiredToWin)
+assert_json "$created" Rules.TotalPointsRequiredToWin "$expected_points"
 
 joined=$(call_function join-match "$token1" "$(make_json join "$invite_code")")
 assert_json "$joined" MatchId "$match_id"
@@ -159,6 +183,17 @@ assert_json "$view0" SeatNames.1 "e2_${user1:0:8}"
 
 nonce="v2-$match_id-turn-1"
 turn=$(make_json turn "$match_id" 0 0 "$nonce" 1)
+first_turn_hash=$(printf '%s' "$turn" | json_get Turn.FinalStateHash)
+invalid_turn=$(printf '%s' "$turn" | python3 -c 'import json,sys
+value=json.load(sys.stdin)
+value["Turn"]["MatchId"]="wrong-match"
+print(json.dumps(value,separators=(",",":")))')
+invalid_response=$(call_function_with_status submit-turn "$token0" "$invalid_turn")
+invalid_status=${invalid_response##*$'\n'}
+invalid_body=${invalid_response%$'\n'*}
+[[ $invalid_status == 400 ]] || { echo "expected HTTP 400, got $invalid_status" >&2; exit 1; }
+assert_json "$invalid_body" Reason "invalid turn package: Turn.MatchId must match MatchId"
+
 accepted=$(call_function submit-turn "$token0" "$turn")
 assert_json "$accepted" Accepted true
 assert_json "$accepted" NewRevision 1
@@ -185,7 +220,7 @@ assert_json "$updated" MatchRevision 1
 assert_json "$updated" State.CurrentPlayerId 1
 turn_count=$(printf '%s' "$updated" | json_get Turns | json_length)
 [[ $turn_count == 1 ]] || { echo "expected one stored turn, got $turn_count" >&2; exit 1; }
-assert_json "$updated" Turns.0.FinalStateHash smoke-state-1
+assert_json "$updated" Turns.0.FinalStateHash "$first_turn_hash"
 
 mine0=$(call_function list-my-matches "$token0" "$(make_json list)")
 mine1=$(call_function list-my-matches "$token1" "$(make_json list)")

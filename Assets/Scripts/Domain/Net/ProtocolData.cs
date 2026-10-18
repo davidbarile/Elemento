@@ -27,6 +27,9 @@ namespace Elemento.Domain.Net
         public int NewRevision;
         public int CurrentSeat;
         public string Status;
+
+        public long HttpStatusCode { get; set; }
+        public string ResponseBody { get; set; }
     }
 
     [Serializable]

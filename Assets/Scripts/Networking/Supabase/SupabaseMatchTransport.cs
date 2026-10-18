@@ -50,9 +50,16 @@ namespace Elemento.Networking.Supabase
         public async Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
         {
             if (inTurn == null) throw new ArgumentNullException(nameof(inTurn));
-            var result = NetJson.Deserialize<SubmitTurnResultData>(await PostAsync("submit-turn", NetJson.Serialize(inTurn)));
+            SupabaseHttpResponseData response = await PostResponseAsync(
+                "submit-turn", NetJson.Serialize(inTurn));
+            var result = NetJson.Deserialize<SubmitTurnResultData>(response.Body);
+            result.HttpStatusCode = response.StatusCode;
+            result.ResponseBody = response.Body;
             if (!result.Accepted)
-                Debug.LogWarning("Online turn rejected: " + result.Reason);
+            {
+                Debug.LogWarning(SupabaseHttpClient.BuildFailureWarning(
+                    "Online turn rejected", response.StatusCode, result.Reason, response.Body));
+            }
             return result;
         }
 
@@ -133,9 +140,15 @@ namespace Elemento.Networking.Supabase
 
         private async Task<string> PostAsync(string inFunction, string inBody)
         {
+            return (await PostResponseAsync(inFunction, inBody)).Body;
+        }
+
+        private async Task<SupabaseHttpResponseData> PostResponseAsync(string inFunction, string inBody)
+        {
             if (this.disposed) throw new ObjectDisposedException(nameof(SupabaseMatchTransport));
             var session = await this.auth.EnsureSessionAsync();
-            return await this.auth.Http.SendAsync("/functions/v1/" + inFunction, inBody, session.AccessToken);
+            return await this.auth.Http.SendWithStatusAsync(
+                "/functions/v1/" + inFunction, inBody, session.AccessToken);
         }
 
         [Serializable]

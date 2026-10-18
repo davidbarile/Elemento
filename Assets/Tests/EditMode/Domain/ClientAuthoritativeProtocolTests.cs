@@ -44,6 +44,60 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public async Task FirstTurnAfterCreateJoin_SerializesCompleteServerEnvelope()
+        {
+            var server = new InMemoryMatchTransport("Creator");
+            var recording = new RecordingTransport(server);
+            using var creator = new OnlineMatchClient(recording);
+            using var opponent = new OnlineMatchClient(server.CreatePeer("Opponent"));
+            MatchStateUpdateData created = await creator.CreateAsync(InitialMatchFactory.Create(null, 2));
+            await opponent.JoinAsync(created.MatchId);
+            await creator.RefreshAsync();
+
+            var recorder = new TurnRecorder(creator.CurrentState.State.Clone(),
+                creator.LastAppliedRevision);
+            SubmitTurnResultData result = await creator.SubmitTurnAsync(recorder.EndTurn());
+            string json = NetJson.Serialize(recording.LastSubmission);
+            SubmitTurnRequestData request = NetJson.Deserialize<SubmitTurnRequestData>(json);
+
+            Assert.That(result.Accepted, Is.True);
+            Assert.That(request.Turn, Is.Not.Null);
+            Assert.That(request.Turn.MatchId, Is.EqualTo(request.MatchId));
+            Assert.That(request.Turn.Seat, Is.EqualTo(request.Seat));
+            Assert.That(request.Turn.StartRevision, Is.EqualTo(request.ExpectedRevision));
+            Assert.That(request.Turn.TurnNumber, Is.EqualTo(1));
+            Assert.That(request.Turn.Actions, Is.Not.Null);
+            Assert.That(request.Turn.FinalState, Is.Not.Null);
+            Assert.That(request.Turn.FinalStateHash, Is.Not.Null);
+            Assert.That(request.Turn.Status, Is.AnyOf("active", "finished"));
+            Assert.That(request.Turn.NextSeat, Is.AnyOf(0, 1));
+            Assert.That(request.Turn.WinnerSeat, Is.AnyOf(-1, 0, 1));
+            Assert.That(json, Does.Contain("\"WinnerSeat\":-1"));
+        }
+
+        [Test]
+        public async Task Client_NormalizesServerAssignedMatchIdBeforeFirstSubmit()
+        {
+            var transport = new ServerAssignedMatchTransport(
+                InitialMatchFactory.Create(null, 2), "server-match-id");
+            using var client = new OnlineMatchClient(transport);
+            await client.CreateAsync(transport.CreateRequest);
+            Assert.That(client.CurrentState.State.MatchId, Is.EqualTo("server-match-id"));
+
+            var recorder = new TurnRecorder(client.CurrentState.State.Clone(),
+                client.LastAppliedRevision);
+            SubmitTurnResultData result = await client.SubmitTurnAsync(recorder.EndTurn());
+
+            Assert.That(result.Accepted, Is.True);
+            Assert.That(transport.LastSubmission.MatchId, Is.EqualTo("server-match-id"));
+            Assert.That(transport.LastSubmission.Turn.MatchId, Is.EqualTo("server-match-id"));
+            Assert.That(transport.LastSubmission.Turn.FinalState.MatchId,
+                Is.EqualTo("server-match-id"));
+            Assert.That(transport.LastSubmission.Turn.FinalStateHash,
+                Is.EqualTo(GameStateHasher.Compute(transport.LastSubmission.Turn.FinalState)));
+        }
+
+        [Test]
         public async Task Transport_CommitsOpaqueTurnOnceAndNeverAliasesCallerState()
         {
             var host = new InMemoryMatchTransport("A");
@@ -90,6 +144,16 @@ namespace Elemento.Domain.Tests
             await host.LeaveMatch("checks");
             Assert.That((await peer.SubmitTurn(Request("checks", 1, 1))).Reason, Is.EqualTo("match_not_active"));
             Assert.That((await host.SubmitTurn(Request("checks", 0, 0))).Accepted, Is.True);
+        }
+
+        [Test]
+        public void Transport_RejectsMismatchedTurnEnvelope()
+        {
+            var transport = new InMemoryMatchTransport();
+            SubmitTurnRequestData request = Request("envelope", 0, 0);
+            request.Turn.MatchId = "different-match";
+            Assert.That(async () => await transport.SubmitTurn(request),
+                Throws.ArgumentException.With.Message.Contains("Turn.MatchId must match MatchId"));
         }
 
         [Test]
@@ -188,7 +252,8 @@ namespace Elemento.Domain.Tests
                 Turn = new TurnPackageData
                 {
                     MatchId = inId, Seat = inSeat, StartRevision = inRevision, NextSeat = 1 - inSeat,
-                    Status = "active", FinalState = new GameStateData { MatchId = inId, Seed = 42 }
+                    Status = "active", FinalState = new GameStateData { MatchId = inId, Seed = 42 },
+                    FinalStateHash = "opaque-unverified-hash"
                 }
             };
         }
@@ -252,6 +317,148 @@ namespace Elemento.Domain.Tests
             public Task<ListMyMatchesResultData> ListMyMatches(ListMyMatchesRequestData inRequest)
             {
                 throw new NotSupportedException();
+            }
+        }
+
+        private sealed class RecordingTransport : IAsyncMatchTransport
+        {
+            private readonly IAsyncMatchTransport inner;
+
+            public event Action<string, int> RevisionCommitted
+            {
+                add { this.inner.RevisionCommitted += value; }
+                remove { this.inner.RevisionCommitted -= value; }
+            }
+
+            public SubmitTurnRequestData LastSubmission { get; private set; }
+
+            public RecordingTransport(IAsyncMatchTransport inInner)
+            {
+                this.inner = inInner;
+            }
+
+            public Task<MatchStateUpdateData> CreateMatch(CreateMatchRequestData inRequest)
+            {
+                return this.inner.CreateMatch(inRequest);
+            }
+
+            public Task<MatchStateUpdateData> JoinMatch(JoinMatchRequestData inRequest)
+            {
+                return this.inner.JoinMatch(inRequest);
+            }
+
+            public Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
+            {
+                this.LastSubmission = NetJson.Deserialize<SubmitTurnRequestData>(
+                    NetJson.Serialize(inTurn));
+                return this.inner.SubmitTurn(inTurn);
+            }
+
+            public Task LeaveMatch(string inMatchId)
+            {
+                return this.inner.LeaveMatch(inMatchId);
+            }
+
+            public Task<MatchStateUpdateData> FetchView(GetViewRequestData inRequest)
+            {
+                return this.inner.FetchView(inRequest);
+            }
+
+            public Task<ListMyMatchesResultData> ListMyMatches(ListMyMatchesRequestData inRequest)
+            {
+                return this.inner.ListMyMatches(inRequest);
+            }
+        }
+
+        private sealed class ServerAssignedMatchTransport : IAsyncMatchTransport
+        {
+            private readonly string matchId;
+            private MatchStateUpdateData update;
+
+            public event Action<string, int> RevisionCommitted
+            {
+                add { }
+                remove { }
+            }
+
+            public CreateMatchRequestData CreateRequest { get; }
+            public SubmitTurnRequestData LastSubmission { get; private set; }
+
+            public ServerAssignedMatchTransport(CreateMatchRequestData inCreateRequest,
+                string inMatchId)
+            {
+                this.CreateRequest = inCreateRequest;
+                this.matchId = inMatchId;
+                this.update = new MatchStateUpdateData
+                {
+                    MatchId = inMatchId,
+                    Status = "active",
+                    MatchRevision = 0,
+                    CurrentSeat = 0,
+                    YourSeat = 0,
+                    WinnerSeat = -1,
+                    Rules = inCreateRequest.Rules,
+                    State = NetJson.Deserialize<GameStateData>(
+                        NetJson.Serialize(inCreateRequest.InitialState)),
+                    SeatNames = new() { "Creator", "Opponent" }
+                };
+            }
+
+            public Task<MatchStateUpdateData> CreateMatch(CreateMatchRequestData inRequest)
+            {
+                return Task.FromResult(CopyUpdate());
+            }
+
+            public Task<MatchStateUpdateData> JoinMatch(JoinMatchRequestData inRequest)
+            {
+                throw new NotSupportedException();
+            }
+
+            public Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
+            {
+                this.LastSubmission = NetJson.Deserialize<SubmitTurnRequestData>(
+                    NetJson.Serialize(inTurn));
+                this.update = new MatchStateUpdateData
+                {
+                    MatchId = this.matchId,
+                    Status = inTurn.Turn.Status,
+                    MatchRevision = 1,
+                    CurrentSeat = inTurn.Turn.NextSeat,
+                    YourSeat = 0,
+                    WinnerSeat = inTurn.Turn.WinnerSeat,
+                    Rules = inTurn.Turn.FinalState.Rules,
+                    State = inTurn.Turn.FinalState,
+                    Turns = new() { inTurn.Turn },
+                    SeatNames = new() { "Creator", "Opponent" }
+                };
+                return Task.FromResult(new SubmitTurnResultData
+                {
+                    Accepted = true,
+                    NewRevision = 1,
+                    CurrentSeat = inTurn.Turn.NextSeat,
+                    Status = inTurn.Turn.Status
+                });
+            }
+
+            public Task LeaveMatch(string inMatchId)
+            {
+                throw new NotSupportedException();
+            }
+
+            public Task<MatchStateUpdateData> FetchView(GetViewRequestData inRequest)
+            {
+                return Task.FromResult(CopyUpdate());
+            }
+
+            public Task<ListMyMatchesResultData> ListMyMatches(ListMyMatchesRequestData inRequest)
+            {
+                throw new NotSupportedException();
+            }
+
+            private MatchStateUpdateData CopyUpdate()
+            {
+                return NetJson.Deserialize<MatchStateUpdateData>(
+                    NetJson.Serialize(this.update));
             }
         }
     }

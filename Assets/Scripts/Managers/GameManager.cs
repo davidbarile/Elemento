@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using DG.Tweening;
 using Elemento.Domain.Net;
+using Elemento.Networking.Supabase;
 using DomainCardInstanceData = Elemento.Domain.CardInstanceData;
 using DomainGameStateData = Elemento.Domain.GameStateData;
 using DomainGameRules = Elemento.Domain.GameRules;
@@ -1918,8 +1919,7 @@ public class GameManager : MonoBehaviour
             || this.isOnlineMovePending)
             return;
 
-        if (string.IsNullOrEmpty(inTurn.MatchId))
-            inTurn.MatchId = this.onlineClient.MatchId;
+        inTurn.MatchId = this.onlineClient.MatchId;
         SaveOnlineLocalReplay(inTurn);
         TurnRecorder submittedRecorder = this.onlineTurnRecorder;
         this.isOnlineMovePending = true;
@@ -1927,16 +1927,16 @@ public class GameManager : MonoBehaviour
         try
         {
             SubmitTurnResultData result = await this.onlineClient.SubmitTurnAsync(inTurn);
-            this.isOnlineMovePending = false;
             if (result == null || !result.Accepted)
             {
                 string reason = result?.Reason ?? "missing_result";
-                Debug.LogWarning("Online turn rejected: " + reason);
+                Debug.LogWarning(SupabaseHttpClient.BuildFailureWarning(
+                    "Online turn rejected", result?.HttpStatusCode ?? 0,
+                    reason, result?.ResponseBody));
                 if (reason == "stale_revision")
                     ApplyOnlineState(this.onlineClient.CurrentState);
                 else if (this.onlineClient.CurrentState?.Status != "active")
                     ApplyOnlineState(this.onlineClient.CurrentState);
-                RefreshOnlineControls();
                 return;
             }
 
@@ -1950,13 +1950,14 @@ public class GameManager : MonoBehaviour
             if (!replayOwnsUpdate && this.onlineTurnRecorder == null
                 && this.onlineClient.CurrentState?.State != null)
                 ApplyOnlineState(this.onlineClient.CurrentState);
-            RefreshOnlineControls();
             TryShowOnlineGameOver();
         }
         catch (Exception exception)
         {
-            this.isOnlineMovePending = false;
-            Debug.LogWarning("Online turn submission failed: " + exception.Message);
+            var httpException = exception as SupabaseHttpException;
+            Debug.LogWarning(SupabaseHttpClient.BuildFailureWarning(
+                "Online turn submission failed", httpException?.ResponseCode ?? 0,
+                httpException?.Reason ?? exception.Message, httpException?.ResponseBody));
             if (exception.Message.Contains("426")
                 || exception.Message.Contains("update_required"))
                 UIAlertPanel.IN.Show(
@@ -1964,6 +1965,11 @@ public class GameManager : MonoBehaviour
             else
                 UIAlertPanel.IN.Show(
                     LocalizationManager.GetOnlineText(LOC.IN.OnlineTurnRetry));
+        }
+        finally
+        {
+            this.isOnlineMovePending = false;
+            RefreshTurnAndMoveCountDisplay();
             RefreshOnlineControls();
         }
     }

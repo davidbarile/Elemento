@@ -62,7 +62,7 @@ function requestRejection(
   actualRevision: number | null = null,
 ): Response {
   warnRejection(body, actualRevision, reason);
-  return json({ error: reason }, status);
+  return json({ error: reason, Reason: reason }, status);
 }
 
 function turnRejection(body: SubmitTurnRequestData, reason: string, actualRevision: number, currentSeat: number, status: string): Response {
@@ -100,24 +100,29 @@ async function loadStoredTurn(
   return data as StoredTurn | null;
 }
 
-function validTurnEnvelope(body: SubmitTurnRequestData): boolean {
-  const turn = body.Turn;
-  return turn != null
-    && typeof turn === "object"
-    && turn.MatchId === body.MatchId
-    && turn.Seat === body.Seat
-    && turn.StartRevision === body.ExpectedRevision
-    && Number.isInteger(turn.TurnNumber)
-    && Array.isArray(turn.Actions)
-    && turn.FinalState != null
-    && typeof turn.FinalState === "object"
-    && !Array.isArray(turn.FinalState)
-    && typeof turn.FinalStateHash === "string"
-    && (turn.Status === "active" || turn.Status === "finished")
-    && Number.isInteger(turn.NextSeat)
-    && (turn.NextSeat === 0 || turn.NextSeat === 1)
-    && Number.isInteger(turn.WinnerSeat)
-    && (turn.WinnerSeat === -1 || turn.WinnerSeat === 0 || turn.WinnerSeat === 1);
+function turnEnvelopeFailure(body: SubmitTurnRequestData): string | null {
+  const turn = body.Turn as Partial<TurnPackageData> | null;
+  if (turn == null || typeof turn !== "object" || Array.isArray(turn)) return "Turn must be an object";
+  // MatchId is redundant with the authenticated outer envelope. Accept old clients that omitted it.
+  if (turn.MatchId == null || turn.MatchId === "") turn.MatchId = body.MatchId;
+  if (turn.MatchId !== body.MatchId) return "Turn.MatchId must match MatchId";
+  if (turn.Seat !== body.Seat) return "Turn.Seat must match Seat";
+  if (turn.StartRevision !== body.ExpectedRevision) return "Turn.StartRevision must match ExpectedRevision";
+  if (!Number.isInteger(turn.TurnNumber)) return "Turn.TurnNumber must be an integer";
+  if (!Array.isArray(turn.Actions)) return "Turn.Actions must be an array";
+  if (turn.FinalState == null || typeof turn.FinalState !== "object" || Array.isArray(turn.FinalState)) {
+    return "Turn.FinalState must be an object";
+  }
+  if (typeof turn.FinalStateHash !== "string") return "Turn.FinalStateHash must be a string";
+  if (turn.Status !== "active" && turn.Status !== "finished") return "Turn.Status must be active or finished";
+  if (!Number.isInteger(turn.NextSeat) || (turn.NextSeat !== 0 && turn.NextSeat !== 1)) {
+    return "Turn.NextSeat must be 0 or 1";
+  }
+  if (!Number.isInteger(turn.WinnerSeat)
+    || (turn.WinnerSeat !== -1 && turn.WinnerSeat !== 0 && turn.WinnerSeat !== 1)) {
+    return "Turn.WinnerSeat must be -1, 0, or 1";
+  }
+  return null;
 }
 
 serve(async (request) => {
@@ -140,7 +145,10 @@ serve(async (request) => {
     if (typeof body.ClientNonce !== "string" || body.ClientNonce.length === 0) {
       return requestRejection(body, "ClientNonce required", 400);
     }
-    if (!validTurnEnvelope(body)) return requestRejection(body, "invalid turn package", 400);
+    const envelopeFailure = turnEnvelopeFailure(body);
+    if (envelopeFailure != null) {
+      return requestRejection(body, `invalid turn package: ${envelopeFailure}`, 400);
+    }
 
     const [playerResult, matchResult] = await Promise.all([
       service.from("match_players")

@@ -8,6 +8,11 @@ namespace Elemento.Simulation
         {
             try
             {
+                if (inArgs.Length > 0 && inArgs[0] == "export-first-turn")
+                {
+                    FirstTurnExporter.Run(inArgs);
+                    return 0;
+                }
                 var options = SimulationOptions.Parse(inArgs);
                 if (options.Online)
                     new OnlineSimulationRunner(options).RunAsync().GetAwaiter().GetResult();
@@ -20,6 +25,7 @@ namespace Elemento.Simulation
                 Console.Error.WriteLine(exception.Message);
                 Console.Error.WriteLine("Usage: --games N --seed S --cap N --p1 hard|medium|easy|random|strong|strong-hard|strong-medium|strong-easy --p2 hard|medium|easy|random|strong|strong-hard|strong-medium|strong-easy");
                 Console.Error.WriteLine("Online: online [--transport] --games N --seed S --cap N");
+                Console.Error.WriteLine("Fixtures: export-first-turn --out <directory>");
                 return 2;
             }
             catch (InvalidOperationException exception)

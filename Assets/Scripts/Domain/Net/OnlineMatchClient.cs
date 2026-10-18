@@ -54,6 +54,12 @@ namespace Elemento.Domain.Net
             CheckDisposed();
             if (inTurn == null)
                 throw new ArgumentNullException(nameof(inTurn));
+            inTurn.MatchId = this.MatchId;
+            if (inTurn.FinalState != null && inTurn.FinalState.MatchId != this.MatchId)
+            {
+                inTurn.FinalState.MatchId = this.MatchId;
+                inTurn.FinalStateHash = GameStateHasher.Compute(inTurn.FinalState);
+            }
             var result = await this.transport.SubmitTurn(new SubmitTurnRequestData
             {
                 MatchId = this.MatchId, Seat = this.LocalSeat, ExpectedRevision = inTurn.StartRevision,
@@ -93,6 +99,7 @@ namespace Elemento.Domain.Net
                     return this.CurrentState;
                 }
             }
+            inUpdate.State.MatchId = inUpdate.MatchId;
             int previous = inInitial ? inUpdate.MatchRevision : this.lastAppliedRevision;
             this.CurrentState = inUpdate;
             this.lastAppliedRevision = inUpdate.MatchRevision;

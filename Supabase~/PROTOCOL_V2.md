@@ -13,6 +13,9 @@ The server performs NO rule validation and NO random generation. State/packages 
   GameStateData FinalState; string FinalStateHash; string Status ("active"|"finished"); int WinnerSeat (-1 none);
   EWinCondition WinCondition; int NextSeat }
 - SubmitTurnRequestData { int ProtocolVersion; string MatchId; int Seat; int ExpectedRevision; string ClientNonce; TurnPackageData Turn }
+  The client replaces the simulator's local `GameStateData.MatchId` with the server-assigned `MatchId` before recording/submitting.
+  `Turn.MatchId` must equal the outer `MatchId`; submit-turn fills an omitted/empty redundant `Turn.MatchId` for compatibility,
+  but rejects a non-empty mismatch. Malformed envelopes return HTTP 400 with the failed check in `Reason`.
 - SubmitTurnResultData { bool Accepted; string Reason; int NewRevision; int CurrentSeat; string Status }
   Rejections: 200 + Accepted=false + Reason in {"stale_revision","not_your_turn","match_not_active"}. Same nonce retry => Accepted=true idempotently.
 - CreateMatchRequestData { int ProtocolVersion; RulesConfigData Rules; GameStateData InitialState; string InitialStateHash }
@@ -31,3 +34,15 @@ The server performs NO rule validation and NO random generation. State/packages 
 - drop submit-move path: drop function commit_move, commit_turn (old). Revoke from anon/authenticated.
 - abandon_stale_matches(): marks active/waiting matches with updated_at older than 3 days abandoned; scheduled with pg_cron hourly if available.
 - Realtime: after commit, broadcast `{revision}` on the match channel as today.
+
+## C# smoke fixtures
+
+Generate protocol JSON from the same C# types and `NetJson` serializer used by Unity:
+
+```sh
+dotnet run --project Simulation~/Harness -- export-first-turn --out Supabase~/functions/fixtures/generated-first-turn
+```
+
+This writes `create-match.json` and `submit-turn.json`. Both use `MATCH_ID` where a server-assigned id belongs.
+`functions/smoke-test.sh` automatically uses these files from that directory when present, or from
+`HARNESS_FIXTURE_DIR` when set, replacing `MATCH_ID` in the first submit request with the created match id.
