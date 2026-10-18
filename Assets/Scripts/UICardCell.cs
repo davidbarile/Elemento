@@ -114,7 +114,8 @@ public class UICardCell : MonoBehaviour
             AudioManager.IN.PlayRejectSound(inRejectReason);
 
         var card = this.TopCard;
-        UIDragOverlay.IN.SetMovingCardFromHand(card, this);
+        if (UIDragOverlay.IN != null)
+            UIDragOverlay.IN.SetMovingCardFromHand(card, this);
         Vector3 destination = GetCardLandingPosition(card);
         Vector3 destinationScale = GetCardLandingLocalScale(card.transform.parent);
 
@@ -881,7 +882,7 @@ public class UICardCell : MonoBehaviour
 
     public Vector3 GetCardLandingLocalScale(Transform inParent)
     {
-        Vector3 parentScale = inParent.lossyScale;
+        Vector3 parentScale = inParent != null ? inParent.lossyScale : Vector3.one;
         Vector3 cardHolderScale = this.CardHolder.lossyScale;
         return new Vector3(cardHolderScale.x / parentScale.x,
             cardHolderScale.y / parentScale.y, cardHolderScale.z / parentScale.z);

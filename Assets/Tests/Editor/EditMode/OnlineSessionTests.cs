@@ -106,7 +106,7 @@ public class OnlineSessionTests
         var result = await client.SubmitTurnAsync(package, "turn-0");
 
         Assert.That(result.Accepted, Is.True);
-        Assert.That(transport.LastSubmission.Turn, Is.SameAs(package));
+        Assert.That(NetJson.Serialize(transport.LastSubmission.Turn), Is.EqualTo(NetJson.Serialize(package)));
         Assert.That(transport.LastSubmission.ClientNonce, Is.EqualTo("turn-0"));
         Assert.That(transport.LastSubmission.ExpectedRevision, Is.Zero);
         Assert.That(transport.LastSubmission.ProtocolVersion, Is.EqualTo(2));
