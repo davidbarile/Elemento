@@ -9,6 +9,8 @@ public sealed class UIWaitingForOpponentPanel : UIPanelBase
     [SerializeField] private RectTransform spinnerTransform;
     [SerializeField] private float spinnerSpeed = -180f;
 
+    private bool isOpponentAway;
+
     private void Awake()
     {
         LocalizationManager.OnLanguageChanged += HandleLanguageChanged;
@@ -33,6 +35,15 @@ public sealed class UIWaitingForOpponentPanel : UIPanelBase
         base.Show();
     }
 
+    public void SetOpponentAway(bool inIsOpponentAway)
+    {
+        if (this.isOpponentAway == inIsOpponentAway)
+            return;
+
+        this.isOpponentAway = inIsOpponentAway;
+        RefreshText();
+    }
+
     private void HandleLanguageChanged(int inLanguageIndex)
     {
         RefreshText();
@@ -40,7 +51,10 @@ public sealed class UIWaitingForOpponentPanel : UIPanelBase
 
     private void RefreshText()
     {
-        this.messageText.text = LocalizationManager.GetOnlineText(LocalizationManager.IN != null
-            ? LocalizationManager.IN.OnlineWaitingForOpponent : null);
+        LocalizationManager localization = LocalizationManager.IN;
+        this.messageText.text = LocalizationManager.GetOnlineText(localization == null
+            ? null : this.isOpponentAway
+                ? localization.OnlineOpponentAway
+                : localization.OnlineWaitingForOpponent);
     }
 }

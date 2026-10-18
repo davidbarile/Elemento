@@ -11365,6 +11365,15 @@ MonoBehaviour:
   OnlineWaitingForOpponent:
   - Waiting for opponent...
   - Esperando al rival...
+  OnlineOpponentAway:
+  - Opponent away...
+  - Rival ausente...
+  OnlineKeepWaiting:
+  - Keep waiting
+  - Seguir esperando
+  OnlineLeaveAndContinueLater:
+  - Leave and continue later
+  - "Salir y continuar despu\xE9s"
   OnlineBack:
   - Back
   - Volver

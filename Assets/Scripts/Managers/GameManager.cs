@@ -129,7 +129,8 @@ public class GameManager : MonoBehaviour
     public bool IsGameInProgress { get; private set; }
     private bool IsOnlineInputBlocked => this.IsOnline && (this.isOnlineMovePending || this.isOnlineLeavePending
         || this.isOnlineReplayActive || this.onlineTurnRecorder == null || this.onlineTurnRecorder.IsComplete
-        || !this.IsPlayersTurn || !IsHumanPlayingPhase());
+        || UIOnlineLobbyPanel.IN?.IsRecoveryPending == true || !this.IsPlayersTurn
+        || !IsHumanPlayingPhase());
     public bool IsCurrentSeatControlledByAI => !this.IsOnline && !this.IsPassAndPlay && ((this.gameSession != null && this.gameSession.ShouldRunAI(this.currentPlayerIndex)) || this.CurrentPlayerBoard.IsAutoPlay);
 
     public bool CanControlPlayer(EPlayerType inPlayerType)
@@ -159,6 +160,10 @@ public class GameManager : MonoBehaviour
     private bool isMoveBudgetEndPending;
     private bool isOnlineActivationRecorded;
     private bool skipOnlineReplay;
+    private bool isOnlineHeartbeatPending;
+    private bool isOnlineResumePending;
+    private bool isApplicationPaused;
+    private bool isOpponentAwayPromptShowing;
     private Coroutine onlineReplayCoroutine;
     private MatchStateUpdateData pendingOnlineUpdate;
     private TurnRecorder onlineTurnRecorder;
@@ -168,6 +173,7 @@ public class GameManager : MonoBehaviour
     private readonly List<TurnPackageData> onlineReplayTurns = new();
     private readonly Queue<TurnPackageData> pendingOnlineTurns = new();
     private readonly Elemento.Domain.TurnUndoHistory<BoardState> undoHistory = new();
+    private OpponentPresenceTracker opponentPresenceTracker;
 
     private BoardState lastCreatedBoardState;
 
@@ -212,6 +218,14 @@ public class GameManager : MonoBehaviour
 #if UNITY_WEBGL
         Screen.fullScreen = true;
 #endif
+        if (UIOnlineLobbyPanel.HasPersistedMatch())
+        {
+            SettingsManager.IN.PlayMode = EPlayMode.Multiplayer;
+            UISplashScreen.IN.Hide();
+            UIGameBoard.IN.Show();
+            RestartGame();
+            return;
+        }
         if (!SettingsManager.IN.ShouldShowSplashScreen)
             RestartGame();
     }
@@ -900,7 +914,9 @@ public class GameManager : MonoBehaviour
         {
             this.onlineClient.StateChanged -= HandleOnlineStateChanged;
             this.onlineClient.OpponentTurnReceived -= HandleOpponentTurnReceived;
+            this.onlineClient.MissedTurnReceived -= HandleMissedTurnReceived;
             this.onlineClient.RequestFailed -= HandleOnlineRequestFailed;
+            this.onlineClient.PresenceChanged -= HandleOnlinePresenceChanged;
         }
 
         this.onlineClient = null;
@@ -913,7 +929,13 @@ public class GameManager : MonoBehaviour
         {
             this.onlineClient.StateChanged += HandleOnlineStateChanged;
             this.onlineClient.OpponentTurnReceived += HandleOpponentTurnReceived;
+            this.onlineClient.MissedTurnReceived += HandleMissedTurnReceived;
             this.onlineClient.RequestFailed += HandleOnlineRequestFailed;
+            this.onlineClient.PresenceChanged += HandleOnlinePresenceChanged;
+            this.opponentPresenceTracker = new OpponentPresenceTracker(
+                () => Time.realtimeSinceStartup);
+            this.opponentPresenceTracker.Observe(
+                this.onlineClient.CurrentState?.OpponentLastSeenSecondsAgo ?? -1);
         }
 
         if (this.boardSlots == null || this.boardSlots.Length != this.PlayerBoards.Length)
@@ -932,7 +954,9 @@ public class GameManager : MonoBehaviour
         {
             this.onlineClient.StateChanged -= HandleOnlineStateChanged;
             this.onlineClient.OpponentTurnReceived -= HandleOpponentTurnReceived;
+            this.onlineClient.MissedTurnReceived -= HandleMissedTurnReceived;
             this.onlineClient.RequestFailed -= HandleOnlineRequestFailed;
+            this.onlineClient.PresenceChanged -= HandleOnlinePresenceChanged;
         }
 
         this.onlineClient = null;
@@ -945,10 +969,25 @@ public class GameManager : MonoBehaviour
         this.isOnlineLeavePending = false;
         this.isOnlineReplayActive = false;
         this.isMoveBudgetEndPending = false;
+        this.isOnlineHeartbeatPending = false;
+        this.isOnlineResumePending = false;
+        this.opponentPresenceTracker?.Reset();
+        this.opponentPresenceTracker = null;
+        if (this.isOpponentAwayPromptShowing && UIConfirmPanel.IN != null)
+            UIConfirmPanel.IN.Hide();
+        this.isOpponentAwayPromptShowing = false;
         ClearOnlineReplayHistory();
         UIOnlineLobbyPanel.IN.ReleaseMatch();
         this.gameSession = null;
         UIWaitingForOpponentPanel.IN?.Hide();
+    }
+
+    public void AbortOnlineRecovery()
+    {
+        if (!this.IsOnline)
+            return;
+        SetGameInProgress(false);
+        ReleaseOnlineSession();
     }
 
     private void StartOnlineSession()
@@ -973,6 +1012,8 @@ public class GameManager : MonoBehaviour
         this.pendingOnlineUpdate = null;
         this.pendingOnlineTurns.Clear();
         ClearOnlineReplayHistory();
+        this.opponentPresenceTracker?.Observe(
+            this.onlineClient?.CurrentState?.OpponentLastSeenSecondsAgo ?? -1);
 
         if (this.onlineClient?.CurrentState == null)
             return;
@@ -985,6 +1026,8 @@ public class GameManager : MonoBehaviour
         if (!this.IsOnline || this.onlineClient == null || inUpdate?.State == null
             || inUpdate.MatchId != this.onlineClient.MatchId)
             return;
+
+        HandleOnlinePresenceChanged(inUpdate.OpponentLastSeenSecondsAgo);
 
         if (inUpdate.Rules != null)
             SettingsManager.IN.ApplyMatchRules(inUpdate.Rules);
@@ -1017,6 +1060,20 @@ public class GameManager : MonoBehaviour
             || inTurn.Seat == this.onlineClient.LocalSeat)
             return;
 
+        QueueOnlineTurn(inTurn);
+    }
+
+    private void HandleMissedTurnReceived(TurnPackageData inTurn)
+    {
+        if (!this.IsOnline || this.onlineClient == null || inTurn == null)
+            return;
+
+        QueueOnlineTurn(inTurn);
+    }
+
+    private void QueueOnlineTurn(TurnPackageData inTurn)
+    {
+
         this.pendingOnlineTurns.Enqueue(inTurn);
         if (this.onlineReplayCoroutine == null)
         {
@@ -1033,6 +1090,18 @@ public class GameManager : MonoBehaviour
         Debug.LogWarning("Online request failed: " + inException.Message);
         if (inException.Message.Contains("426") || inException.Message.Contains("update_required"))
             UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(LOC.IN.OnlineUpdateRequired));
+    }
+
+    private void HandleOnlinePresenceChanged(int inSecondsAgo)
+    {
+        this.opponentPresenceTracker?.Observe(inSecondsAgo);
+        bool isAway = this.opponentPresenceTracker?.IsAway ?? false;
+        UIWaitingForOpponentPanel.IN?.SetOpponentAway(isAway);
+        if (!isAway && this.isOpponentAwayPromptShowing)
+        {
+            this.isOpponentAwayPromptShowing = false;
+            UIConfirmPanel.IN?.Hide();
+        }
     }
 
     private void ApplyOnlineState(MatchStateUpdateData inUpdate)
@@ -1854,6 +1923,8 @@ public class GameManager : MonoBehaviour
             && this.onlineClient?.CurrentState?.State != null
             && !this.IsPlayersTurn && !this.isOnlineReplayActive;
 
+        panel.SetOpponentAway(this.opponentPresenceTracker?.IsAway ?? false);
+
         if (shouldShow && !panel.IsShowing)
             panel.Show();
         else if (!shouldShow && panel.IsShowing)
@@ -1981,21 +2052,69 @@ public class GameManager : MonoBehaviour
             return;
         this.onlineClient.StateChanged -= HandleOnlineStateChanged;
         this.onlineClient.OpponentTurnReceived -= HandleOpponentTurnReceived;
+        this.onlineClient.MissedTurnReceived -= HandleMissedTurnReceived;
         this.onlineClient.RequestFailed -= HandleOnlineRequestFailed;
+        this.onlineClient.PresenceChanged -= HandleOnlinePresenceChanged;
     }
 
-    private async void OnApplicationFocus(bool inHasFocus)
+    private void OnApplicationPause(bool inIsPaused)
     {
-        if (!inHasFocus || !this.IsOnline || this.onlineClient == null
-            || this.isOnlineMovePending)
+        this.isApplicationPaused = inIsPaused;
+        if (!inIsPaused)
+            ResumeOnlineAfterInterruption();
+    }
+
+    private void OnApplicationFocus(bool inHasFocus)
+    {
+        this.isApplicationPaused = !inHasFocus;
+        if (inHasFocus)
+            ResumeOnlineAfterInterruption();
+    }
+
+    private async void ResumeOnlineAfterInterruption()
+    {
+        if (this.isApplicationPaused || !this.IsOnline || this.onlineClient == null
+            || this.isOnlineResumePending)
             return;
+
+        SendOnlineHeartbeat();
+        if (this.isOnlineMovePending)
+            return;
+
+        this.isOnlineResumePending = true;
         try
         {
+            if (this.onlineClient.PendingSubmission != null)
+                await this.onlineClient.RetryPendingSubmissionAsync();
             await this.onlineClient.RefreshAsync();
         }
         catch (Exception exception)
         {
             HandleOnlineRequestFailed(exception);
+        }
+        finally
+        {
+            this.isOnlineResumePending = false;
+        }
+    }
+
+    private async void SendOnlineHeartbeat()
+    {
+        if (this.isApplicationPaused || !this.IsOnline || this.onlineClient == null
+            || this.isOnlineHeartbeatPending)
+            return;
+        this.isOnlineHeartbeatPending = true;
+        try
+        {
+            await this.onlineClient.HeartbeatAsync();
+        }
+        catch (Exception exception)
+        {
+            HandleOnlineRequestFailed(exception);
+        }
+        finally
+        {
+            this.isOnlineHeartbeatPending = false;
         }
     }
 
@@ -3115,6 +3234,7 @@ public class GameManager : MonoBehaviour
             : LOC.IN.LeaveGameMessage[LOC.LI];//$"Are you sure you want to leave the game?\n\nAll progress will  be lost.";
         UIConfirmPanel.IN.Show(titleText, messageText, async () =>
         {
+            string matchId = this.onlineClient?.MatchId;
             if (this.IsOnline && this.onlineClient != null)
             {
                 this.isOnlineLeavePending = true;
@@ -3134,6 +3254,8 @@ public class GameManager : MonoBehaviour
                 }
             }
 
+            UIOnlineLobbyPanel.ForgetPersistedMatch(matchId);
+
             ReturnHomeFromGame();
         });
     }
@@ -3144,6 +3266,7 @@ public class GameManager : MonoBehaviour
             return;
 
         SetGameInProgress(false);
+        UIOnlineLobbyPanel.ForgetPersistedMatch(this.onlineClient.MatchId);
         ReleaseOnlineSession();
         UIConfirmPanel.IN.ShowSingleButton(
             LocalizationManager.GetOnlineText(LOC.IN.OnlineLobby),
@@ -3437,9 +3560,39 @@ public class GameManager : MonoBehaviour
     private void Update()
     {
         RefreshUndoControls();
+        UpdateOpponentPresence();
 
         if (Input.GetKeyDown(KeyCode.F))
             ToggleFulScreen();
+    }
+
+    private void UpdateOpponentPresence()
+    {
+        if (!this.IsOnline || this.onlineClient?.CurrentState?.Status != "active"
+            || this.opponentPresenceTracker == null)
+            return;
+
+        UIWaitingForOpponentPanel.IN?.SetOpponentAway(this.opponentPresenceTracker.IsAway);
+        if (this.isOpponentAwayPromptShowing || UIConfirmPanel.IN == null
+            || UIConfirmPanel.IN.IsShowing || !this.opponentPresenceTracker.TryPrompt())
+            return;
+
+        this.isOpponentAwayPromptShowing = true;
+        UIConfirmPanel.IN.Show(
+            LocalizationManager.GetOnlineText(LOC.IN.OnlineLobby),
+            LocalizationManager.GetOnlineText(LOC.IN.OnlineOpponentAway),
+            () =>
+            {
+                this.isOpponentAwayPromptShowing = false;
+                ReturnHomeFromGame();
+            },
+            () =>
+            {
+                this.isOpponentAwayPromptShowing = false;
+                this.opponentPresenceTracker?.KeepWaiting();
+            },
+            LocalizationManager.GetOnlineText(LOC.IN.OnlineKeepWaiting),
+            LocalizationManager.GetOnlineText(LOC.IN.OnlineLeaveAndContinueLater));
     }
 
     public void ToggleFulScreen()

@@ -62,6 +62,40 @@ list-my-matches accepts { ProtocolVersion } and returns the caller's waiting and
 including their seat, current seat, revision, opponent name, and update time. This is the resume
 entry point after restart or sign-in restoration.
 
+The client persists its active match id and last applied committed revision locally. Returning
+from background reconnects/resyncs the open match; relaunch checks list-my-matches before resuming
+the saved active match. get-view uses SinceRevision = lastAppliedRevision. Missed turn packages
+are replayed in order using TurnReplayer, with Skip available, before accepting new local input.
+An unfinished local turn may be discarded in favor of the last committed state. A pending submit
+is persisted with its original package and ClientNonce before sending, and retried with that same
+nonce after interruption before resyncing, including when the original response was lost.
+
+App pause, focus loss, quit, and network errors do not call leave-match or end a match. A player
+can leave the away prompt for Home and later resume through the lobby list. Only the explicit
+Home/forfeit confirmation forfeits through leave-match.
+
+## Presence and opponent away
+
+Migration 0007 adds nullable match_players.last_seen. heartbeat accepts
+{ ProtocolVersion, MatchId } and returns { OpponentLastSeenSecondsAgo }. It authenticates the
+caller and stamps only their own membership row through the service-only touch_match_presence
+RPC. get-view and valid, owned submit-turn requests also stamp the caller. The age is calculated
+using the database clock, never a device timestamp; -1 means no opponent observation is known.
+get-view returns the same age in MatchStateUpdateData; create/join responses default it to -1
+until the first presence-aware fetch.
+
+While a match is open and the app is foregrounded, the client sends a heartbeat about every
+15 seconds and immediately on focus regain. Heartbeat is the authoritative presence signal;
+Realtime match revision broadcasts still trigger fetches and do not imply continued presence.
+At about 20 seconds without an opponent observation, the waiting banner becomes “Opponent
+away...” / “Rival ausente...”, clearing when presence returns. After about two minutes away in
+a live game, the existing confirmation panel offers “Keep waiting” / “Seguir esperando” and
+“Leave and continue later” / “Salir y continuar después”. Keeping waiting re-arms the prompt;
+leaving returns Home while preserving the active match.
+
+Presence never updates matches.updated_at, revision, status, winner, or turn state, and never
+broadcasts a turn revision. It does not modify the existing three-day abandonment policy.
+
 leave-match preserves active-match forfeits: it marks the match abandoned, assigns the other seat
 as winner, advances the revision, and broadcasts. A creator can also abandon their own waiting
 match. The database sweeper marks waiting or active matches abandoned after three days of
@@ -73,7 +107,7 @@ inactivity; when pg_cron is installed it runs hourly.
 - match_state stores the latest opaque GameStateData and its hash.
 - match_turns stores one opaque TurnPackageData per committed revision and a per-match unique
   client nonce.
-- match_players maps authenticated users to seats.
+- match_players maps authenticated users to seats and records advisory last_seen timestamps.
 - profiles keeps the existing anonymous-user username flow.
 
 RLS is enabled on state and turn storage without anon/authenticated policies. Edge Functions use
@@ -93,3 +127,11 @@ Protocol v2 intentionally favors a simple, deterministic client experience over 
 clients can submit any internally shaped final state while it is their turn. Server-side rule
 validation, signed turn proofs, anomaly detection, or another anti-cheat layer can be added later
 without changing the revision/idempotency storage model.
+
+## Deploy and verify presence
+
+Apply migrations through 0007_presence.sql before deploying the new heartbeat function and
+updated get-view and submit-turn functions. Redeploy create-match and join-match as well to pick
+up the shared response field default. Run functions/smoke-test.sh against the deployed test
+project; it checks unknown/recent presence, nonmember heartbeat rejection, unchanged revision,
+and protocol-v1 HTTP 426 for both get-view and heartbeat.

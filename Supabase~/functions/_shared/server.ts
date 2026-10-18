@@ -37,6 +37,7 @@ export interface MatchStateUpdateData {
   State: unknown;
   Turns: unknown[];
   SeatNames: string[];
+  OpponentLastSeenSecondsAgo: number;
 }
 
 function requiredEnv(name: string): string {
@@ -118,7 +119,17 @@ export async function loadMatchStateUpdate(
   });
   if (error != null) databaseFailure("load match state update", error);
   if (data == null) throw new HttpError(404, "match not found");
-  return data as MatchStateUpdateData;
+  return { ...data, OpponentLastSeenSecondsAgo: -1 } as MatchStateUpdateData;
+}
+
+export async function touchMatchPresence(service: SupabaseClient, matchId: string, userId: string): Promise<number> {
+  const { data, error } = await service.rpc("touch_match_presence", {
+    p_match_id: matchId,
+    p_user_id: userId,
+  });
+  if (error != null) databaseFailure("touch match presence", error);
+  if (data == null) throw new HttpError(404, "match not found");
+  return Number(data);
 }
 
 export async function broadcastRevision(service: SupabaseClient, matchId: string, revision: number): Promise<void> {

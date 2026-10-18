@@ -76,10 +76,24 @@ namespace Elemento.Domain.Net
         public int CurrentSeat;
         public int YourSeat;
         public int WinnerSeat = -1;
+        public int OpponentLastSeenSecondsAgo = -1;
         public RulesConfigData Rules;
         public GameStateData State;
         public List<TurnPackageData> Turns = new();
         public List<string> SeatNames = new();
+    }
+
+    [Serializable]
+    public sealed class HeartbeatRequestData
+    {
+        public int ProtocolVersion = ProtocolVersions.Current;
+        public string MatchId;
+    }
+
+    [Serializable]
+    public sealed class HeartbeatResultData
+    {
+        public int OpponentLastSeenSecondsAgo = -1;
     }
 
     [Serializable]

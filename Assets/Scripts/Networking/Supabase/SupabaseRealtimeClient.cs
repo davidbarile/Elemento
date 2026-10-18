@@ -22,7 +22,9 @@ namespace Elemento.Networking.Supabase
         private readonly SupabaseAuthClient auth;
         private readonly string matchId;
         private readonly Func<Task<MatchStateUpdateData>> fetchView;
+        private readonly Func<Task> sendPresenceHeartbeat;
         private Coroutine polling;
+        private Coroutine presenceHeartbeat;
         private bool disposed;
         private string lastFailure;
 #if !UNITY_WEBGL
@@ -32,12 +34,15 @@ namespace Elemento.Networking.Supabase
         private int messageReference;
 #endif
 
-        public SupabaseRealtimeClient(MonoBehaviour inRunner, SupabaseAuthClient inAuth, string inMatchId, Func<Task<MatchStateUpdateData>> inFetchView)
+        public SupabaseRealtimeClient(MonoBehaviour inRunner, SupabaseAuthClient inAuth,
+            string inMatchId, Func<Task<MatchStateUpdateData>> inFetchView,
+            Func<Task> inSendPresenceHeartbeat)
         {
             this.runner = inRunner;
             this.auth = inAuth;
             this.matchId = inMatchId;
             this.fetchView = inFetchView;
+            this.sendPresenceHeartbeat = inSendPresenceHeartbeat;
         }
 
         public void Start(bool inUseRealtime)
@@ -48,16 +53,40 @@ namespace Elemento.Networking.Supabase
                 return;
             // Poll in both modes: also recovers missed broadcasts and reconnect gaps.
             this.polling = this.runner.StartCoroutine(Poll());
+            this.presenceHeartbeat = this.runner.StartCoroutine(PresenceHeartbeat());
 #if !UNITY_WEBGL
             if (inUseRealtime)
                 _ = ConnectAsync();
 #endif
         }
 
+        private IEnumerator PresenceHeartbeat()
+        {
+            while (!this.disposed)
+            {
+                if (!Application.isFocused)
+                {
+                    yield return new WaitForSecondsRealtime(1f);
+                    continue;
+                }
+                Task request = this.sendPresenceHeartbeat();
+                while (!request.IsCompleted && !this.disposed)
+                    yield return null;
+                if (request.IsFaulted && !this.disposed)
+                    LogRealtimeFailure("presence heartbeat", request.Exception.GetBaseException());
+                yield return new WaitForSecondsRealtime(15f);
+            }
+        }
+
         private IEnumerator Poll()
         {
             while (!this.disposed)
             {
+                if (!Application.isFocused)
+                {
+                    yield return new WaitForSecondsRealtime(1f);
+                    continue;
+                }
                 Task request = PollOnceAsync();
                 while (!request.IsCompleted && !this.disposed)
                     yield return null;
@@ -215,7 +244,10 @@ namespace Elemento.Networking.Supabase
             this.disposed = true;
             if (this.polling != null && this.runner != null)
                 this.runner.StopCoroutine(this.polling);
+            if (this.presenceHeartbeat != null && this.runner != null)
+                this.runner.StopCoroutine(this.presenceHeartbeat);
             this.polling = null;
+            this.presenceHeartbeat = null;
 #if !UNITY_WEBGL
             this.cancellation.Cancel();
             this.socket?.Abort();

@@ -32,6 +32,15 @@ assert_json() {
   }
 }
 
+assert_recent_presence() {
+  local age
+  age=$(printf '%s' "$1" | json_get OpponentLastSeenSecondsAgo)
+  [[ $age =~ ^[0-9]+$ && $age -le 20 ]] || {
+    echo "expected recent opponent presence (0..20 seconds), got $age" >&2
+    exit 1
+  }
+}
+
 json_length() {
   python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'
 }
@@ -68,6 +77,10 @@ elif kind == "list":
     value = {"ProtocolVersion": 2}
 elif kind == "old_view":
     value = {"ProtocolVersion": 1, "MatchId": args[0], "SinceRevision": 0}
+elif kind == "heartbeat":
+    value = {"ProtocolVersion": 2, "MatchId": args[0]}
+elif kind == "old_heartbeat":
+    value = {"ProtocolVersion": 1, "MatchId": args[0]}
 elif kind == "turn":
     match_id, seat, revision, nonce, next_seat = args
     seat, revision, next_seat = int(seat), int(revision), int(next_seat)
@@ -168,6 +181,12 @@ create_body=$(make_json create)
 expected_points=$(printf '%s' "$create_body" | json_get Rules.TotalPointsRequiredToWin)
 assert_json "$created" Rules.TotalPointsRequiredToWin "$expected_points"
 
+waiting_heartbeat=$(call_function heartbeat "$token0" "$(make_json heartbeat "$match_id")")
+assert_json "$waiting_heartbeat" OpponentLastSeenSecondsAgo -1
+outsider_response=$(call_function_with_status heartbeat "$token1" "$(make_json heartbeat "$match_id")")
+outsider_status=${outsider_response##*$'\n'}
+[[ $outsider_status == 404 ]] || { echo "expected nonmember heartbeat HTTP 404, got $outsider_status" >&2; exit 1; }
+
 joined=$(call_function join-match "$token1" "$(make_json join "$invite_code")")
 assert_json "$joined" MatchId "$match_id"
 assert_json "$joined" Status active
@@ -180,6 +199,16 @@ view1=$(call_function get-view "$token1" "$(make_json view "$match_id" 0)")
 assert_json "$view0" YourSeat 0
 assert_json "$view1" YourSeat 1
 assert_json "$view0" SeatNames.1 "e2_${user1:0:8}"
+assert_json "$view0" OpponentLastSeenSecondsAgo -1
+assert_recent_presence "$view1"
+heartbeat0=$(call_function heartbeat "$token0" "$(make_json heartbeat "$match_id")")
+heartbeat1=$(call_function heartbeat "$token1" "$(make_json heartbeat "$match_id")")
+assert_recent_presence "$heartbeat0"
+assert_recent_presence "$heartbeat1"
+presence_view=$(call_function get-view "$token0" "$(make_json view "$match_id" 0)")
+assert_recent_presence "$presence_view"
+assert_json "$presence_view" MatchRevision 0
+assert_json "$presence_view" Status active
 
 nonce="v2-$match_id-turn-1"
 turn=$(make_json turn "$match_id" 0 0 "$nonce" 1)
@@ -218,6 +247,7 @@ assert_json "$not_your_turn" NewRevision 1
 updated=$(call_function get-view "$token1" "$(make_json view "$match_id" 0)")
 assert_json "$updated" MatchRevision 1
 assert_json "$updated" State.CurrentPlayerId 1
+assert_recent_presence "$updated"
 turn_count=$(printf '%s' "$updated" | json_get Turns | json_length)
 [[ $turn_count == 1 ]] || { echo "expected one stored turn, got $turn_count" >&2; exit 1; }
 assert_json "$updated" Turns.0.FinalStateHash "$first_turn_hash"
@@ -236,5 +266,12 @@ old_body=${old_response%$'\n'*}
 [[ $old_status == 426 ]] || { echo "expected HTTP 426, got $old_status" >&2; exit 1; }
 assert_json "$old_body" Error update_required
 assert_json "$old_body" ProtocolVersion 2
+
+old_heartbeat_response=$(call_function_with_status heartbeat "$token0" "$(make_json old_heartbeat "$match_id")")
+old_heartbeat_status=${old_heartbeat_response##*$'\n'}
+old_heartbeat_body=${old_heartbeat_response%$'\n'*}
+[[ $old_heartbeat_status == 426 ]] || { echo "expected heartbeat HTTP 426, got $old_heartbeat_status" >&2; exit 1; }
+assert_json "$old_heartbeat_body" Error update_required
+assert_json "$old_heartbeat_body" ProtocolVersion 2
 
 echo "Protocol v2 smoke test passed for match $match_id"

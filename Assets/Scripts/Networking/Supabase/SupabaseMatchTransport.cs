@@ -69,6 +69,14 @@ namespace Elemento.Networking.Supabase
             await PostAsync("leave-match", NetJson.Serialize(new GetViewRequestData { MatchId = inMatchId }));
         }
 
+        public async Task<HeartbeatResultData> Heartbeat(HeartbeatRequestData inRequest)
+        {
+            if (string.IsNullOrEmpty(inRequest?.MatchId))
+                throw new ArgumentException("A match id is required.", nameof(inRequest));
+            return NetJson.Deserialize<HeartbeatResultData>(
+                await PostAsync("heartbeat", NetJson.Serialize(inRequest)));
+        }
+
         public async Task<ListMyMatchesResultData> ListMyMatches(ListMyMatchesRequestData inRequest)
         {
             return NetJson.Deserialize<ListMyMatchesResultData>(await PostAsync("list-my-matches", NetJson.Serialize(inRequest)));
@@ -111,7 +119,8 @@ namespace Elemento.Networking.Supabase
             this.realtime?.Dispose();
             this.listeningClient = inClient;
             this.realtime = new SupabaseRealtimeClient(this.runner, this.auth, inClient.MatchId,
-                () => FetchRemoteView(new GetViewRequestData { MatchId = inClient.MatchId, SinceRevision = inClient.LastAppliedRevision }));
+                () => FetchRemoteView(new GetViewRequestData { MatchId = inClient.MatchId, SinceRevision = inClient.LastAppliedRevision }),
+                () => inClient.HeartbeatAsync());
             this.realtime.StateReceived += HandlePolledState;
             this.realtime.RevisionCommitted += HandleRevisionCommitted;
             this.realtime.RequestFailed += HandleRequestFailed;

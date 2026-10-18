@@ -22,8 +22,15 @@ The server performs NO rule validation and NO random generation. State/packages 
   Creator device generates seed, shuffled deck, initial deal and starting seat (coin flip) in InitialState. Revision 0.
 - MatchStateUpdateData (get-view / join-match / submit result fetch) { string MatchId; string Status; int MatchRevision;
   int CurrentSeat; int YourSeat; int WinnerSeat; RulesConfigData Rules; GameStateData State (latest committed full state);
-  List<TurnPackageData> Turns (revision > SinceRevision, ascending); List<string> SeatNames }
+  List<TurnPackageData> Turns (revision > SinceRevision, ascending); List<string> SeatNames;
+  int OpponentLastSeenSecondsAgo (-1 unknown) }
 - get-view request { ProtocolVersion, MatchId, SinceRevision }; poll uses SinceRevision = last applied revision.
+- heartbeat request { ProtocolVersion, MatchId } -> { OpponentLastSeenSecondsAgo: int }.
+  Authenticated membership is required (404 for a nonmember); old protocol versions receive 426.
+  Both heartbeat and get-view stamp the caller's last_seen; submit-turn stamps after envelope and
+  seat-ownership validation, including idempotent retries. Opponent age is nonnegative whole seconds
+  measured with the database clock, or -1 if the opponent is absent/has never been observed.
+  create/join responses default OpponentLastSeenSecondsAgo to -1 until get-view supplies an observation.
 - list-my-matches request { ProtocolVersion } -> { Matches: [ {MatchId, Status, MatchRevision, CurrentSeat, YourSeat, OpponentName, UpdatedAt} ] } for status in (waiting, active).
 
 ## DB (migration 0005)
@@ -34,6 +41,26 @@ The server performs NO rule validation and NO random generation. State/packages 
 - drop submit-move path: drop function commit_move, commit_turn (old). Revoke from anon/authenticated.
 - abandon_stale_matches(): marks active/waiting matches with updated_at older than 3 days abandoned; scheduled with pg_cron hourly if available.
 - Realtime: after commit, broadcast `{revision}` on the match channel as today.
+
+## Presence and interruption recovery (migration 0007)
+
+- match_players.last_seen is a nullable timestamptz, initially unknown for existing and new players.
+- Service-only RPC touch_match_presence(p_match_id uuid, p_user_id uuid) verifies protocol-v2
+  membership, stamps the caller with database time, and returns the opponent age (-1 unknown).
+  A missing match/membership returns null, mapped by the Edge Function to HTTP 404.
+- The foreground client heartbeats about every 15 seconds while an online match is open and on
+  focus regain. Presence does not advance revision or modify matches.updated_at/status/winner.
+  The existing three-day abandon_stale_matches sweeper is unchanged.
+- At about 20 seconds without an opponent observation, show the localized opponent-away banner.
+  At about 120 seconds away in a live game, offer Keep waiting (re-arm) or Leave and continue later
+  (Home, no leave-match). Explicit Home/forfeit confirmation remains the only forfeit action.
+- Pause, focus loss, app/Editor quit, and network failures never forfeit. Persist the active match
+  id and last applied committed revision locally. On launch validate the saved match through
+  list-my-matches; on foreground return or resume fetch get-view with that SinceRevision and replay
+  missed packages in ascending revision order through TurnReplayer, with Skip available.
+- Persist a submit's complete request and ClientNonce before sending. After an interrupted submit,
+  retry that same request/nonce before resyncing; the unique nonce guarantees one commit even if
+  the first response was lost. Uncommitted local moves may restore from the last committed state.
 
 ## C# smoke fixtures
 

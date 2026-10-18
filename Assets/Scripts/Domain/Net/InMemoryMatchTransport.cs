@@ -10,12 +10,14 @@ namespace Elemento.Domain.Net
         private readonly Dictionary<string, StoredMatch> matches;
         private readonly List<InMemoryMatchTransport> endpoints;
         private readonly string name;
+        private readonly Func<double> clock;
 
         public event Action<string, int> RevisionCommitted;
 
-        public InMemoryMatchTransport(string inName = "Player")
+        public InMemoryMatchTransport(string inName = "Player", Func<double> inClock = null)
         {
             this.name = inName;
+            this.clock = inClock ?? (() => DateTime.UtcNow.Ticks / (double)TimeSpan.TicksPerSecond);
             this.matches = new();
             this.endpoints = new() { this };
         }
@@ -23,6 +25,7 @@ namespace Elemento.Domain.Net
         private InMemoryMatchTransport(InMemoryMatchTransport inServer, string inName)
         {
             this.name = inName;
+            this.clock = inServer.clock;
             this.matches = inServer.matches;
             this.endpoints = inServer.endpoints;
             this.endpoints.Add(this);
@@ -98,6 +101,7 @@ namespace Elemento.Domain.Net
                 int seat = match.Seats.IndexOf(this);
                 if (seat < 0 || request.Seat != seat)
                     throw new UnauthorizedAccessException("Seat does not belong to this device.");
+                match.LastSeen[this] = this.clock();
                 if (string.IsNullOrEmpty(request.ClientNonce))
                     throw new ArgumentException("ClientNonce is required.");
                 if (match.Results.TryGetValue(request.ClientNonce, out var previous))
@@ -159,6 +163,31 @@ namespace Elemento.Domain.Net
             return Task.FromResult(Copy(result));
         }
 
+        public Task<HeartbeatResultData> Heartbeat(HeartbeatRequestData inRequest)
+        {
+            CheckVersion(inRequest.ProtocolVersion);
+            lock (this.matches)
+            {
+                var match = this.matches[inRequest.MatchId];
+                return Task.FromResult(new HeartbeatResultData
+                {
+                    OpponentLastSeenSecondsAgo = StampPresence(match)
+                });
+            }
+        }
+
+        private int StampPresence(StoredMatch inMatch)
+        {
+            int seat = inMatch.Seats.IndexOf(this);
+            if (seat < 0)
+                throw new UnauthorizedAccessException("Device is not seated.");
+            double now = this.clock();
+            inMatch.LastSeen[this] = now;
+            if (inMatch.Seats.Count < 2 || !inMatch.LastSeen.TryGetValue(inMatch.Seats[1 - seat], out double seen))
+                return -1;
+            return (int)Math.Max(0, Math.Floor(now - seen));
+        }
+
         public Task LeaveMatch(string inMatchId)
         {
             string id = Copy(inMatchId);
@@ -182,7 +211,8 @@ namespace Elemento.Domain.Net
             {
                 MatchId = inId, Status = inMatch.Status, MatchRevision = inMatch.Revision,
                 CurrentSeat = inMatch.CurrentSeat, YourSeat = seat, WinnerSeat = inMatch.WinnerSeat,
-                Rules = inMatch.Rules, State = inMatch.State
+                Rules = inMatch.Rules, State = inMatch.State,
+                OpponentLastSeenSecondsAgo = StampPresence(inMatch)
             };
             foreach (var endpoint in inMatch.Seats)
                 view.SeatNames.Add(endpoint.name);
@@ -244,6 +274,7 @@ namespace Elemento.Domain.Net
             public List<InMemoryMatchTransport> Seats = new();
             public List<TurnPackageData> Turns = new();
             public Dictionary<string, (int Seat, SubmitTurnResultData Result)> Results = new();
+            public Dictionary<InMemoryMatchTransport, double> LastSeen = new();
         }
     }
 }

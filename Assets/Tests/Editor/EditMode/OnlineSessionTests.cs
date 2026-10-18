@@ -231,6 +231,11 @@ public class OnlineSessionTests
             return Task.CompletedTask;
         }
 
+        public Task<HeartbeatResultData> Heartbeat(HeartbeatRequestData inRequest)
+        {
+            return Task.FromResult(new HeartbeatResultData());
+        }
+
         public Task<ListMyMatchesResultData> ListMyMatches(ListMyMatchesRequestData inRequest)
         {
             return Task.FromResult(new ListMyMatchesResultData

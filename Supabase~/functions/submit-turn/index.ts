@@ -7,6 +7,7 @@ import {
   protocolVersion,
   requireProtocolVersion,
   serve,
+  touchMatchPresence,
 } from "../_shared/server.ts";
 
 interface TurnPackageData {
@@ -172,6 +173,7 @@ serve(async (request) => {
       return requestRejection(body, "seat does not belong to user", 403, actualRevision);
     }
 
+    await touchMatchPresence(service, body.MatchId, userId);
     const prior = await loadStoredTurn(service, body.MatchId, body.ClientNonce);
     if (prior != null) {
       if (prior.seat !== body.Seat) return requestRejection(body, "nonce_conflict", 409, actualRevision);

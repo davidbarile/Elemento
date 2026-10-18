@@ -20,7 +20,7 @@ namespace Elemento.Domain.Tests
             AssertFields<SubmitTurnResultData>("Accepted", "Reason", "NewRevision", "CurrentSeat", "Status");
             AssertFields<CreateMatchRequestData>("ProtocolVersion", "Rules", "InitialState", "InitialStateHash");
             AssertFields<MatchStateUpdateData>("MatchId", "Status", "MatchRevision", "CurrentSeat", "YourSeat",
-                "WinnerSeat", "Rules", "State", "Turns", "SeatNames");
+                "WinnerSeat", "OpponentLastSeenSecondsAgo", "Rules", "State", "Turns", "SeatNames");
             AssertFields<MyMatchData>("MatchId", "Status", "MatchRevision", "CurrentSeat", "YourSeat", "OpponentName", "UpdatedAt");
             var request = Request("match", 0, 0);
             request.Turn.Actions.Add(new TurnActionData
@@ -280,6 +280,10 @@ namespace Elemento.Domain.Tests
 
         private sealed class ReorderedTransport : IAsyncMatchTransport
         {
+            public Task<HeartbeatResultData> Heartbeat(HeartbeatRequestData inRequest)
+            {
+                return Task.FromResult(new HeartbeatResultData());
+            }
             public event Action<string, int> RevisionCommitted
             {
                 add { }
@@ -322,6 +326,10 @@ namespace Elemento.Domain.Tests
 
         private sealed class RecordingTransport : IAsyncMatchTransport
         {
+            public Task<HeartbeatResultData> Heartbeat(HeartbeatRequestData inRequest)
+            {
+                return this.inner.Heartbeat(inRequest);
+            }
             private readonly IAsyncMatchTransport inner;
 
             public event Action<string, int> RevisionCommitted
@@ -372,6 +380,10 @@ namespace Elemento.Domain.Tests
 
         private sealed class ServerAssignedMatchTransport : IAsyncMatchTransport
         {
+            public Task<HeartbeatResultData> Heartbeat(HeartbeatRequestData inRequest)
+            {
+                return Task.FromResult(new HeartbeatResultData());
+            }
             private readonly string matchId;
             private MatchStateUpdateData update;
 

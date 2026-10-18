@@ -5,6 +5,7 @@ import {
   loadMatchStateUpdate,
   requireProtocolVersion,
   serve,
+  touchMatchPresence,
 } from "../_shared/server.ts";
 
 interface GetViewRequestData {
@@ -23,5 +24,7 @@ serve(async (request) => {
   if (!Number.isInteger(body.SinceRevision) || body.SinceRevision < 0) {
     return json({ error: "SinceRevision must be a non-negative integer" }, 400);
   }
-  return json(await loadMatchStateUpdate(service, body.MatchId, userId, body.SinceRevision));
+  const update = await loadMatchStateUpdate(service, body.MatchId, userId, body.SinceRevision);
+  update.OpponentLastSeenSecondsAgo = await touchMatchPresence(service, body.MatchId, userId);
+  return json(update);
 });
