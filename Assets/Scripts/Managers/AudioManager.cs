@@ -87,6 +87,7 @@ public class AudioManager : MonoBehaviour
             this.musicSources[i].ignoreListenerVolume = true;
         }
 
+        ApplySavedEffectsVolume();
         SetAudioMode(true);
         
         //dynamically create audio sources
@@ -318,5 +319,12 @@ public class AudioManager : MonoBehaviour
     {
         //PlayerData.Data.EffectsVolume = inValue;
         AudioListener.volume = inValue;
+    }
+
+    public void ApplySavedEffectsVolume()
+    {
+        SetEffectsVolume(SettingsManager.IN != null
+            ? SettingsManager.IN.EffectsVolume
+            : PlayerData.Data?.EffectsVolume ?? 0f);
     }
 }
