@@ -395,6 +395,63 @@ public class CurrentRulesRegressionTests
         Assert.That(cardsManager.PowerCardOverride, Is.EqualTo(Card.ECardType.None));
     }
 
+    [Test]
+    public void ReplaySnapshotRestore_PreservesExplicitZoneHealthState()
+    {
+        var zone = CreateZone("Replay Zone", CardData.EElementType.Fire);
+
+        zone.RestoreHealthState(7, 3, true);
+
+        Assert.That(zone.MaxHealth, Is.EqualTo(7));
+        Assert.That(zone.Health, Is.EqualTo(3));
+        Assert.That(zone.IsDestroyed, Is.True);
+
+        zone.RestoreHealthState(7, 0, false);
+
+        Assert.That(zone.MaxHealth, Is.EqualTo(7));
+        Assert.That(zone.Health, Is.Zero);
+        Assert.That(zone.IsDestroyed, Is.False);
+    }
+
+    [TestCase(1, 1, UIPlayerBoard.EPlayerType.PlayerA, UIPlayerBoard.EPlayerType.PlayerB)]
+    [TestCase(2, 0, UIPlayerBoard.EPlayerType.PlayerB, UIPlayerBoard.EPlayerType.PlayerA)]
+    public void ReplayHistorySelection_UsesCorrectPassAndPlaySeat(int currentTurnNumber,
+        int replaySeat, UIPlayerBoard.EPlayerType expectedOpponent,
+        UIPlayerBoard.EPlayerType expectedCurrentPlayer)
+    {
+        List<BoardTurn> turns = new()
+        {
+            new BoardTurn
+            {
+                BoardStates = new()
+                {
+                    new BoardState { ActivePlayer = UIPlayerBoard.EPlayerType.PlayerA },
+                    new BoardState { ActivePlayer = UIPlayerBoard.EPlayerType.PlayerB }
+                }
+            },
+            new BoardTurn
+            {
+                BoardStates = new()
+                {
+                    new BoardState { ActivePlayer = UIPlayerBoard.EPlayerType.PlayerA }
+                }
+            }
+        };
+
+        var method = typeof(GameManager).GetMethod("GetReplayStates",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null);
+        var opponentStates = (List<BoardState>)method.Invoke(null,
+            new object[] { turns, currentTurnNumber, replaySeat, true });
+        var currentPlayerStates = (List<BoardState>)method.Invoke(null,
+            new object[] { turns, currentTurnNumber, replaySeat, false });
+
+        Assert.That(opponentStates, Has.Count.EqualTo(1));
+        Assert.That(opponentStates[0].ActivePlayer, Is.EqualTo(expectedOpponent));
+        Assert.That(currentPlayerStates, Has.Count.EqualTo(1));
+        Assert.That(currentPlayerStates[0].ActivePlayer, Is.EqualTo(expectedCurrentPlayer));
+    }
+
     [TestCase(false, true, false)]
     [TestCase(true, false, true)]
     public void RefreshPlayModeAvailability_MatchesGameProgress(bool isGameInProgress,

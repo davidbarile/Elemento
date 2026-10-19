@@ -71,12 +71,13 @@ public class UIElementZone : MonoBehaviour
         SetFrozenHealth(0, false);
     }
 
-    public void SetPointsCount(int inCount)
+    public void SetPointsCount(int inCount, bool inShouldNotify = true)
     {
         this.pointsCountDisplay.SetActive(inCount > 0 && !this.IsDestroyed);
         this.pointsCount.TickToValue(inCount, SettingsManager.IN.ElementZonePointsRequiredToActivate);
 
-        this.OnElementZonePointsChanged?.Invoke(true);
+        if (inShouldNotify)
+            this.OnElementZonePointsChanged?.Invoke(true);
     }
 
     public void SubtractHealth(int inAmount)
@@ -180,7 +181,25 @@ public class UIElementZone : MonoBehaviour
         }
     }
 
-    public void CalculatePoints()
+    public void RestoreHealthState(int inMaxHealth, int inHealth, bool inIsDestroyed)
+    {
+        bool isElementZoneBombingEnabled = SettingsManager.IN.TutorialSafeElementZoneHealth > 0;
+
+        this.MaxHealth = inMaxHealth;
+        this.Health = Mathf.Max(0, inHealth);
+        this.IsDestroyed = inIsDestroyed;
+
+        if (this.IsDestroyed && this.IsActivated)
+            SetActiveState(false, false);
+
+        this.zoneHealthDisplay.SetActive(isElementZoneBombingEnabled && !this.IsDestroyed);
+        this.zoneDestroyedOverlay.SetActive(this.IsDestroyed);
+
+        if (isElementZoneBombingEnabled)
+            this.zoneHealth.SetText(this.Health, this.MaxHealth);
+    }
+
+    public void CalculatePoints(bool inShouldCheckActiveState = true)
     {
         var state = CreateStateData();
         this.Points = DomainGameRules.CalculateZonePoints(state);
@@ -188,9 +207,10 @@ public class UIElementZone : MonoBehaviour
 
         RefreshSiblingIndices();
 
-        SetPointsCount(this.FaceUpPoints);
+        SetPointsCount(this.FaceUpPoints, inShouldCheckActiveState);
 
-        GameManager.IN.CheckElementZoneActivateState(this);
+        if (inShouldCheckActiveState)
+            GameManager.IN.CheckElementZoneActivateState(this);
     }
 
     public DomainZoneStateData CreateStateData()

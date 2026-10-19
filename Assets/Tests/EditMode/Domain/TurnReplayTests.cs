@@ -66,6 +66,72 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public void AiTurn_ZoneDestructionAndStripRestack_ReplaysToExactLiveState()
+        {
+            var rules = new RulesConfigData
+            {
+                NumCardsToDeal = 0,
+                MovesPerTurn = 0,
+                TotalPointsRequiredToWin = 999
+            };
+            var simulator = new GameSimulator();
+            var state = simulator.CreateGame(107, rules);
+            simulator.EndTurn(state);
+
+            foreach (var player in state.Players)
+            {
+                player.Hand.Clear();
+                foreach (var zone in player.Zones)
+                {
+                    zone.Cards.Clear();
+                    zone.Points = 0;
+                    zone.FaceUpPoints = 0;
+                    zone.FrozenHealth = 0;
+                    zone.IsActivated = false;
+                    zone.IsDestroyed = false;
+                    zone.Health = rules.ElementZoneStartingHealth;
+                    zone.MaxHealth = rules.ElementZoneStartingHealth;
+                }
+            }
+
+            var ai = state.Players[1];
+            var opponent = state.Players[0];
+            ai.Zones[0].Cards.Add(CreateReplayCard("ai-base", points: 3));
+            ai.Zones[0].Cards.Add(CreateReplayCard("ai-cover", points: 1));
+            ai.Zones[0].Points = GameRules.CalculateZonePoints(ai.Zones[0]);
+            ai.Zones[0].FaceUpPoints = ai.Zones[0].Points;
+            ai.Hand.Add(CreateReplayCard("ai-multiplier", multiplier: 2));
+            ai.Hand.Add(CreateReplayCard("ai-bomb", bomb: 1));
+            opponent.Zones[0].Health = 1;
+            opponent.Zones[1].FrozenHealth = rules.FrozenZonesMeltAmountPerTurn + 2;
+
+            var start = state.Clone();
+            var recorder = new TurnRecorder(start.Clone(), inSimulator: simulator);
+            recorder.ApplyMove(FindPlay(simulator, recorder.State, "ai-cover", 1, -1));
+            recorder.ApplyMove(FindPlay(simulator, recorder.State, "ai-multiplier", 1, 0));
+            recorder.ApplyMove(FindPlay(simulator, recorder.State, "ai-cover", 1, 0));
+            recorder.ApplyMove(FindPlay(simulator, recorder.State, "ai-bomb", 0, 0));
+            TurnPackageData turn = recorder.EndTurn();
+            TurnReplayResult replay = new TurnReplayer().Replay(start, RoundTrip(turn));
+
+            Assert.That(replay.IsMatch, Is.True, replay.Reason);
+            Assert.That(GameStateHasher.CanonicalJson(replay.State),
+                Is.EqualTo(GameStateHasher.CanonicalJson(turn.FinalState)));
+            Assert.That(turn.FinalState.Players[0].Zones[0].IsDestroyed, Is.True);
+            Assert.That(turn.FinalState.Players[0].Zones[1].FrozenHealth, Is.GreaterThan(0));
+            Assert.That(replay.State.Players[0].Zones.Select(inZone => inZone.IsDestroyed),
+                Is.EqualTo(turn.FinalState.Players[0].Zones.Select(inZone => inZone.IsDestroyed)));
+            Assert.That(replay.State.Players[0].Zones.Select(inZone => inZone.FrozenHealth),
+                Is.EqualTo(turn.FinalState.Players[0].Zones.Select(inZone => inZone.FrozenHealth)));
+            Assert.That(replay.State.Players[1].Zones[0].Cards.Select(inCard => inCard.Id),
+                Is.EqualTo(new[] { "ai-base", "ai-multiplier", "ai-cover" }));
+            Assert.That(replay.State.Players[0].Hand.Select(inCard => inCard.Id),
+                Is.EqualTo(turn.FinalState.Players[0].Hand.Select(inCard => inCard.Id)));
+            Assert.That(replay.State.Players[1].Hand.Select(inCard => inCard.Id),
+                Is.EqualTo(turn.FinalState.Players[1].Hand.Select(inCard => inCard.Id)));
+        }
+
+        [Test]
         public void Mismatch_ReturnsCommittedStateWithoutMutatingInput()
         {
             var initial = InitialMatchFactory.Create(inSeed: 42).InitialState;
@@ -129,6 +195,30 @@ namespace Elemento.Domain.Tests
         private static TurnPackageData RoundTrip(TurnPackageData inTurn)
         {
             return NetJson.Deserialize<TurnPackageData>(NetJson.Serialize(inTurn));
+        }
+
+        private static MoveData FindPlay(GameSimulator inSimulator, GameStateData inState,
+            string inCardId, int inTargetPlayerId, int inTargetZoneId)
+        {
+            return inSimulator.GetLegalMoves(inState, inState.CurrentPlayerId).First(inMove =>
+                inMove.Type == EMoveType.PlayCard && inMove.CardId == inCardId
+                && inMove.TargetPlayerId == inTargetPlayerId
+                && inMove.TargetZoneId == inTargetZoneId);
+        }
+
+        private static CardInstanceData CreateReplayCard(string inId, int points = 0,
+            int multiplier = 0, int bomb = 0)
+        {
+            return new CardInstanceData
+            {
+                Id = inId,
+                DefinitionName = inId,
+                IsFaceUp = true,
+                Points = new[] { points, 0, 0, 0 },
+                Multipliers = new[] { multiplier, 0, 0, 0 },
+                Bombs = new[] { bomb, 0, 0, 0 },
+                Shields = new int[4]
+            };
         }
     }
 }

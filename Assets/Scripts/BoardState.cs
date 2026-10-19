@@ -48,6 +48,8 @@ public class BoardPlayer
 {
     public BoardHand Hand;
     public BoardZone[] ElementZones = new BoardZone[4];
+    public int CurrentMoveNumber;
+    public int TotalMovesTaken;
 
     public int TotalPoints
     {

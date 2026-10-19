@@ -373,7 +373,8 @@ public class GameManager : MonoBehaviour
 
                 foreach (var zone in board.ElementZones)
                 {
-                    zone.CalculatePoints();
+                    zone.CalculatePoints(false);
+                    zone.SetActiveState(false, false);
                 }
 
                 foreach (var cell in board.Hand.CardCells)
@@ -420,6 +421,9 @@ public class GameManager : MonoBehaviour
             UIAlertPanel.IN.Show(LOC.IN.Reject_HandIsFull[LOC.LI]);//"Your Hand is Full!"
             return;
         }
+
+        if (!this.IsCurrentSeatControlledByAI)
+            MeltFrozenZones();
 
         RefreshTurnAndMoveCountDisplay();
 
@@ -480,6 +484,8 @@ public class GameManager : MonoBehaviour
     {
         if (inShouldDrawCards)
         {
+            MeltFrozenZones();
+
             if (SettingsManager.IN.TutorialSafeMovesPerTurn > 0)
                 SetMovesRemaining(this.MovesRemaining);
 
@@ -504,8 +510,6 @@ public class GameManager : MonoBehaviour
             else
                 SetTurnPhase(ETurnPhase.OpponentPlaying);
         }
-
-        MeltFrozenZones();
 
         this.CurrentPlayerBoard.StartTurn();
 
@@ -848,9 +852,6 @@ public class GameManager : MonoBehaviour
                 break;
 
             case ETurnPhase.PlayerPlaying:
-
-                MeltFrozenZones();
-
                 if (this.IsCurrentSeatControlledByAI)
                 {
                     StopAllCoroutines();
@@ -891,7 +892,6 @@ public class GameManager : MonoBehaviour
 
                 if (this.IsPassAndPlay)
                 {
-                    MeltFrozenZones();
                     SetMovesRemaining(SettingsManager.IN.TutorialSafeMovesPerTurn);
                     this.endTurnButton.SetActive(SettingsManager.IN.DiscardMode != EDiscardMode.DiscardEndsTurn);
                     this.discardToEndTurnZone.SetActive(SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn);
@@ -2634,7 +2634,9 @@ public class GameManager : MonoBehaviour
             var board = this.PlayerBoards[i];
             var playerData = new BoardPlayer
             {
-                Hand = new BoardHand()
+                Hand = new BoardHand(),
+                CurrentMoveNumber = board.CurrentMoveNumber,
+                TotalMovesTaken = board.TotalMovesTaken
             };
 
             //copy cards in hand
@@ -2727,8 +2729,6 @@ public class GameManager : MonoBehaviour
 
         CleanUpGameState(false);
 
-        SetHealthOnAllElementZones();
-
         this.CurrentTurnNumber = inBoardState.TurnNumber;
         this.currentPlayerIndex = (int)inBoardState.ActivePlayer - 1;
         ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
@@ -2754,6 +2754,9 @@ public class GameManager : MonoBehaviour
         {
             var player = inBoardState.Players[i];
             var playerBoard = this.PlayerBoards[i];
+
+            playerBoard.CurrentMoveNumber = player.CurrentMoveNumber;
+            playerBoard.TotalMovesTaken = player.TotalMovesTaken;
 
             playerBoard.Hand.RefreshCardCells();
 
@@ -2782,35 +2785,31 @@ public class GameManager : MonoBehaviour
                 var zoneData = player.ElementZones[j];
                 var zone = playerBoard.ElementZones[j];
 
-                zone.SetMaxHealth(SettingsManager.IN.TutorialSafeElementZoneHealth);
-                zone.SetZoneHealth(zoneData.Health);
+                zone.RestoreHealthState(zoneData.MaxHealth, zoneData.Health,
+                    zoneData.IsDestroyed);
 
-                zone.SetFrozenHealth(zoneData.FrozenHealth, false);
-
-                if (!zone.IsDestroyed)
+                for (int k = 0; k < zoneData.Cards.Count; k++)
                 {
-                    zone.SetActiveState(zoneData.IsActivated, false);
+                    var cardData = zoneData.Cards[k];
+                    string cardId = k < zoneData.CardIds.Count ? zoneData.CardIds[k] : null;
+                    bool isFaceUp = k >= zoneData.CardFaceUpStates.Count || zoneData.CardFaceUpStates[k];
+                    bool isDraggable = !this.IsOnline || i == ((OnlineSession)this.gameSession).LocalSeat;
 
-                    for (int k = 0; k < zoneData.Cards.Count; k++)
-                    {
-                        var cardData = zoneData.Cards[k];
-                        string cardId = k < zoneData.CardIds.Count ? zoneData.CardIds[k] : null;
-                        bool isFaceUp = k >= zoneData.CardFaceUpStates.Count || zoneData.CardFaceUpStates[k];
-                        bool isDraggable = !this.IsOnline || i == ((OnlineSession)this.gameSession).LocalSeat;
+                    var zoneCard = CardsManager.SpawnCard(cardData, zone.CardCell.CardHolder,
+                        !isFaceUp, isDraggable, false, cardId);
 
-                        var zoneCard = CardsManager.SpawnCard(cardData, zone.CardCell.CardHolder,
-                            !isFaceUp, isDraggable, false, cardId);
-
-                        zone.CardCell.AddCardToCell(zoneCard);
-                        zoneCard.CardFlip.SetAnimState(isFaceUp ? UICardFlip.ECardFlipState.Front : UICardFlip.ECardFlipState.Back);
-                        zoneCard.SetDimmedDecorations(zone.CardCell.ElementType);
-                    }
-
-                    zone.CalculatePoints();
+                    zone.CardCell.AddCardToCell(zoneCard);
+                    zoneCard.CardFlip.SetAnimState(isFaceUp ? UICardFlip.ECardFlipState.Front : UICardFlip.ECardFlipState.Back);
+                    zoneCard.SetDimmedDecorations(zone.CardCell.ElementType);
                 }
+
+                zone.CalculatePoints(false);
+                zone.SetFrozenHealth(zoneData.FrozenHealth, false);
+                zone.SetActiveState(!zoneData.IsDestroyed && !zoneData.IsFrozen
+                    && zoneData.IsActivated, false);
             }
 
-            playerBoard.CalculateTotalPointsInstantly();
+            playerBoard.CalculateTotalPointsInstantly(false);
         }
 
         this.PlayerBoard.Hand.RefreshPlayerHandText();
@@ -3108,7 +3107,14 @@ public class GameManager : MonoBehaviour
             if (SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn)
                 discardPile = isPlayer ? this.DiscardToEndTurnZoneTransform : this.DiscardZoneTransform;
 
-            if (move.SourceCellIndex > -1)
+            UICardCell sourceCell = FindReplayCardCell(playerBoard, move.Data?.CardId);
+            if (sourceCell != null)
+            {
+                move.SourceCell = sourceCell;
+                move.SourceCell.SetParentCell(move.SourceCell.TopCard, false);
+                yield return null;
+            }
+            else if (move.SourceCellIndex > -1)
             {
                 var child = playerBoard.Hand.HandGrid.GetChild(move.SourceCellIndex);
                 move.SourceCell = child.GetComponent<UICardCell>();
@@ -3166,6 +3172,23 @@ public class GameManager : MonoBehaviour
         }
 
         yield return new WaitForSeconds(.5f);
+    }
+
+    private static UICardCell FindReplayCardCell(UIPlayerBoard inPlayerBoard, string inCardId)
+    {
+        if (inPlayerBoard == null || string.IsNullOrEmpty(inCardId))
+            return null;
+
+        UICardCell handCell = inPlayerBoard.Hand.CardCells.Find(
+            inCell => inCell?.TopCard?.Id == inCardId);
+        if (handCell != null)
+            return handCell;
+
+        foreach (var zone in inPlayerBoard.ElementZones)
+            if (zone.CardCell.TopCard?.Id == inCardId)
+                return zone.CardCell;
+
+        return null;
     }
     #endregion
 
@@ -3570,7 +3593,12 @@ public class GameManager : MonoBehaviour
     private IEnumerator PlaybackCo()
     {
         BoardState restoreState = CreateBoardState(false);
+        ETurnPhase restoreTurnPhase = this.TurnPhase;
+        bool wasReplayVisible = this.replayButton.activeSelf;
+        bool wasDiscardVisible = this.DiscardZone.activeSelf;
+        bool wasDiscardToEndTurnVisible = this.discardToEndTurnZone.activeSelf;
         Exception replayException = null;
+        Exception restoreException = null;
         BoardStateManager.IsDoingReplay = true;
         try
         {
@@ -3579,53 +3607,45 @@ public class GameManager : MonoBehaviour
         }
         finally
         {
-            ReleaseReplayInputLocks();
+            try
+            {
+                BoardStateManager.IsDoingReplay = true;
+                SetGameToBoardState(restoreState);
+                this.TurnPhase = restoreTurnPhase;
+                this.replayButton.SetActive(wasReplayVisible);
+                this.DiscardZone.SetActive(wasDiscardVisible);
+                this.discardToEndTurnZone.SetActive(wasDiscardToEndTurnVisible);
+            }
+            catch (Exception exception)
+            {
+                restoreException = exception;
+            }
+            finally
+            {
+                ReleaseReplayInputLocks();
+            }
         }
 
-        if (replayException == null)
-            yield break;
-
-        Debug.LogException(replayException);
-        try
-        {
-            BoardStateManager.IsDoingReplay = true;
-            SetGameToBoardState(restoreState);
-        }
-        catch (Exception restoreException)
-        {
+        if (replayException != null)
+            Debug.LogException(replayException);
+        if (restoreException != null)
             Debug.LogException(restoreException);
-        }
-        finally
-        {
-            ReleaseReplayInputLocks();
-        }
     }
 
     private IEnumerator PlaybackStepsCo()
     {
-
         var replaySeat = this.currentPlayerIndex;
-        var replayPlayerType = (EPlayerType)(replaySeat + 1);
-
-        var turnIndex = this.CurrentTurnNumber - 2;
-
-        var numCurrentTurnPlayerMoves = 0;
+        var currentPlayerStates = GetReplayStates(BoardStateManager.IN.BoardTurns,
+            this.CurrentTurnNumber, replaySeat, false);
+        var opponentStates = GetReplayStates(BoardStateManager.IN.BoardTurns,
+            this.CurrentTurnNumber, replaySeat, true);
 
         ResetMovesRemaining();
 
         SetDiscardHighlightsVisible(false);
 
-        //check if player has moved this turn. If so, skip opponent's moves
-        if (this.CurrentTurnNumber > 0
-            && this.CurrentTurnNumber <= BoardStateManager.IN.BoardTurns.Count)
-        {
-            var nextTurnStatesList = BoardStateManager.IN.BoardTurns[this.CurrentTurnNumber - 1];
-            numCurrentTurnPlayerMoves = nextTurnStatesList.BoardStates.Count;
-        }
-
-        BoardTurn statesList = null;
-
-        if (turnIndex >= 0 && turnIndex < BoardStateManager.IN.BoardTurns.Count && numCurrentTurnPlayerMoves <= 1)
+        // Check if the player has moved this turn. If so, skip the opponent's moves.
+        if (opponentStates.Count > 0 && currentPlayerStates.Count <= 1)
         {
             this.discardToEndTurnZone.SetActive(false);
 
@@ -3635,29 +3655,20 @@ public class GameManager : MonoBehaviour
 
             ResetMovesRemaining(true);
 
-            MeltFrozenZones();
-
             //replay opponent moves from last turn
-            statesList = BoardStateManager.IN.BoardTurns[turnIndex];
-            for (int i = 0; i < statesList.BoardStates.Count; i++)
+            for (int i = 0; i < opponentStates.Count; i++)
             {
-                var state = statesList.BoardStates[i];
-                var isOpponent = state.ActivePlayer != replayPlayerType;
+                var state = opponentStates[i];
 
-                if (isOpponent)
+                SetGameToBoardState(state);
+                if (state.Move != null && !state.Move.IsDealHand)
                 {
-                    //Debug.Log($"{i}/{statesList.BoardStates.Count}  OPPONENT");
-
-                    SetGameToBoardState(state);
-                    if (state.Move != null && !state.Move.IsDealHand)
-                    {
-                        BoardStateManager.IN.CurrentReplayBoardState = state;
-                        yield return DoGameStateMoveCo(state);
-                    }
-
-                    if (state.Move != null && state.Move.IsDealHand)
-                        yield return new WaitForSeconds(.2f);
+                    BoardStateManager.IN.CurrentReplayBoardState = state;
+                    yield return DoGameStateMoveCo(state);
                 }
+
+                if (state.Move != null && state.Move.IsDealHand)
+                    yield return new WaitForSeconds(.2f);
             }
 
             SetBoardZoomAnimState(EAnimState.Hide);
@@ -3667,47 +3678,42 @@ public class GameManager : MonoBehaviour
             yield return new WaitForSeconds(1f);
         }
 
-        ++turnIndex;
-
         ResetMovesRemaining(true);
 
         this.currentPlayerIndex = replaySeat;
         ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
 
-        MeltFrozenZones();
-
         //now do player moves this turn
-        if (turnIndex >= 0 && turnIndex < BoardStateManager.IN.BoardTurns.Count)
+        for (int i = 0; i < currentPlayerStates.Count; i++)
         {
-            statesList = BoardStateManager.IN.BoardTurns[turnIndex];
-            for (int i = 0; i < statesList.BoardStates.Count; i++)
+            var state = currentPlayerStates[i];
+            if (state.Move == null || state.Move.ID <= -1)
+                continue;
+
+            SetGameToBoardState(state);
+            if (!state.Move.IsDealHand)
             {
-                var state = statesList.BoardStates[i];
-
-                if (state.Move != null && state.Move.ID > -1)
-                {
-                    //Debug.Log($"{i}/{statesList.BoardStates.Count}  PLAYER");
-
-                    SetGameToBoardState(state);
-                    if (!state.Move.IsDealHand)
-                    {
-                        BoardStateManager.IN.CurrentReplayBoardState = state;
-                        yield return DoGameStateMoveCo(state);
-                    }
-                }
+                BoardStateManager.IN.CurrentReplayBoardState = state;
+                yield return DoGameStateMoveCo(state);
             }
         }
-        else
-            Debug.Log($"<color=red>PlaybackCo() turnIndex = {turnIndex} is greater than BoardStateManager.IN.BoardTurns.Count = {BoardStateManager.IN.BoardTurns.Count}</color>");
+    }
 
-        //return board state to most recent board state
-        var lastStateIndex = BoardStateManager.IN.BoardHistory.BoardStates.Count - 1;
-        var lastState = BoardStateManager.IN.BoardHistory.BoardStates[lastStateIndex];
-        SetGameToBoardState(lastState);
+    private static List<BoardState> GetReplayStates(List<BoardTurn> inBoardTurns,
+        int inCurrentTurnNumber, int inReplaySeat, bool inOpponentTurn)
+    {
+        int currentTurnIndex = inCurrentTurnNumber - 1;
+        int turnIndex = inOpponentTurn
+            ? currentTurnIndex - (inReplaySeat == 0 ? 1 : 0)
+            : currentTurnIndex;
+        if (turnIndex < 0 || turnIndex >= inBoardTurns.Count)
+            return new();
 
-        ResetMovesRemaining(true);
-        this.discardToEndTurnZone.SetActive(SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn);
-
+        var replayPlayerType = (EPlayerType)(inReplaySeat + 1);
+        return inBoardTurns[turnIndex].BoardStates.FindAll(inState =>
+            inOpponentTurn
+                ? inState.ActivePlayer != replayPlayerType
+                : inState.ActivePlayer == replayPlayerType);
     }
 
     private void Update()
