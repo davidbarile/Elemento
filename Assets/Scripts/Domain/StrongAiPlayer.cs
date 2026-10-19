@@ -17,8 +17,8 @@ namespace Elemento.Domain
         private const float mediumTemperature = 2.5f;
         private const float easyTemperature = 20f;
         private const float reorderPenalty = .35f; // Reorders must overcome this score margin.
-        private const float orderingPruneWeight = .1f;
-        private const float orderingPlanWeight = .1f;
+        private const float orderingPruneWeight = 1f;
+        private const float orderingPlanWeight = 1f;
         private const float b2MoveBonus = 20f;
         private const float rebuildStripBonus = 40f;
         private const float winningPlanBonus = 10000f;
