@@ -306,6 +306,8 @@ namespace Elemento.Tests.Domain
 
             var stripMove = ai.ChooseMove(view, new DeterministicRandom(17));
 
+            Assert.That(stripMove, Is.Not.Null);
+            Assert.That(stripMove.Type, Is.EqualTo(EMoveType.PlayCard));
             Assert.That(stripMove.CardId, Is.EqualTo("fire-points"));
             Assert.That(stripMove.SourceZoneId, Is.EqualTo(0));
             Assert.That(stripMove.TargetZoneId, Is.EqualTo(1));
@@ -844,10 +846,10 @@ namespace Elemento.Tests.Domain
                 TurnNumber = 1,
                 CurrentPlayerId = 0,
                 TurnPhase = ETurnPhase.PlayerPlaying,
-                MovesRemaining = 3,
+                MovesRemaining = 0,
                 Rules = new RulesConfigData
                 {
-                    MovesPerTurn = 3,
+                    MovesPerTurn = 0,
                     TotalPointsRequiredToWin = 1000,
                     ElementZonePointsRequiredToActivate = 100
                 },
@@ -875,6 +877,14 @@ namespace Elemento.Tests.Domain
             });
             RefreshZonePoints(stagingZone);
             view.Player.Zones.Add(stagingZone);
+            view.Opponents.Add(new OpponentViewData { Id = 1, Name = "Opponent" });
+            view.Opponents[0].Zones.Add(new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Water,
+                Health = 5,
+                MaxHealth = 5
+            });
             return view;
         }
 
