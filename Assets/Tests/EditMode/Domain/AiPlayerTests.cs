@@ -306,7 +306,7 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
-        public void StrongAi_UnlimitedPlanStripsPointToPlaceMultiplierBelowIt()
+        public void StrongAi_ThreeMovePlanStripsPointToPlaceMultiplierBelowIt()
         {
             var view = CreateMultiplierRebuildView();
             var ai = new StrongAiPlayer();
@@ -318,6 +318,7 @@ namespace Elemento.Tests.Domain
             Assert.That(stripMove.TargetZoneId, Is.EqualTo(1));
 
             MoveTopCard(view.Player.Zones[0], view.Player.Zones[1]);
+            --view.MovesRemaining;
             ++view.Revision;
             view.LegalMoves.Clear();
             view.LegalMoves.Add(new MoveData
@@ -339,6 +340,7 @@ namespace Elemento.Tests.Domain
             view.Player.Hand.Clear();
             view.Player.Zones[0].Cards.Add(multiplier);
             RefreshZonePoints(view.Player.Zones[0]);
+            --view.MovesRemaining;
             ++view.Revision;
             view.LegalMoves.Clear();
             view.LegalMoves.Add(new MoveData
@@ -859,9 +861,10 @@ namespace Elemento.Tests.Domain
                 TurnNumber = 1,
                 CurrentPlayerId = 0,
                 TurnPhase = ETurnPhase.PlayerPlaying,
+                MovesRemaining = 3,
                 Rules = new RulesConfigData
                 {
-                    MovesPerTurn = 0,
+                    MovesPerTurn = 3,
                     TotalPointsRequiredToWin = 1000,
                     ElementZonePointsRequiredToActivate = 100
                 },

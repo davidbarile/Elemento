@@ -18,8 +18,9 @@ namespace Elemento.Domain
         private const float easyTemperature = 20f;
         private const float reorderPenalty = .35f; // Reorders must overcome this score margin.
         private const float orderingPruneWeight = .1f;
-        private const float orderingPlanWeight = .05f;
+        private const float orderingPlanWeight = .1f;
         private const float b2MoveBonus = 20f;
+        private const float rebuildStripBonus = 24f;
         private const float winningPlanBonus = 10000f;
         private const int maxPlanDepth = 3;
         private const int beamWidth = 6;
@@ -282,8 +283,12 @@ namespace Elemento.Domain
                 return false;
 
             string targetKey = ZoneKey(inMove.TargetPlayerId, inMove.TargetZoneId);
-            int versionAtLastMove = snapshot.TryGetValue(targetKey, out var version) ? version : 0;
-            int currentVersion = inZoneVersions.TryGetValue(targetKey, out version) ? version : 0;
+            int versionAtLastMove = snapshot.TryGetValue(targetKey, out var snapshotVersion)
+                ? snapshotVersion
+                : 0;
+            int currentVersion = inZoneVersions.TryGetValue(targetKey, out var zoneVersion)
+                ? zoneVersion
+                : 0;
             return currentVersion == versionAtLastMove;
         }
 
@@ -585,7 +590,8 @@ namespace Elemento.Domain
 
         private static float EvaluatePileOrdering(PlayerViewData inSourceView, GameStateData inState)
         {
-            if (inSourceView.Rules.MovesPerTurn > 0 && inSourceView.MovesRemaining < maxPlanDepth)
+            if (inSourceView.Rules.MovesPerTurn > 0
+                && inSourceView.Rules.MovesPerTurn < maxPlanDepth)
                 return 0f;
 
             float value = 0f;
@@ -685,9 +691,60 @@ namespace Elemento.Domain
                 value += .5f * Math.Max(GetValue(card.Shields, elementIndex), card.WildShield);
             }
 
+            value += GetRebuildStripBonus(inView, inMove);
             if (inMove.SourceZoneId >= 0)
                 value -= reorderPenalty;
             return value;
+        }
+
+        private static float GetRebuildStripBonus(PlayerViewData inView, MoveData inMove)
+        {
+            if (inMove.Type != EMoveType.PlayCard || inMove.SourceZoneId < 0
+                || inMove.TargetPlayerId != inView.Player.Id)
+                return 0f;
+
+            var sourceZone = FindZone(inView.Player.Zones, inMove.SourceZoneId);
+            if (sourceZone == null || sourceZone.Cards.Count == 0)
+                return 0f;
+
+            var coverCard = sourceZone.Cards[sourceZone.Cards.Count - 1];
+            if (coverCard.Id != inMove.CardId)
+                return 0f;
+
+            int elementIndex = (int)sourceZone.ElementType - 1;
+            int coverPoints = Math.Max(GetValue(coverCard.Points, elementIndex),
+                coverCard.WildPoints);
+            bool canRebuildWithMultiplier = coverCard.IsFaceUp && coverPoints > 0;
+            bool canRebuildWithShield = false;
+            for (int i = 0; i < sourceZone.Cards.Count - 1; ++i)
+            {
+                var buriedCard = sourceZone.Cards[i];
+                int buriedPoints = Math.Max(GetValue(buriedCard.Points, elementIndex),
+                    buriedCard.WildPoints);
+                int buriedMultiplier = Math.Max(GetValue(buriedCard.Multipliers, elementIndex),
+                    buriedCard.WildMultiplier);
+                if (coverPoints > 0
+                    && (buriedPoints > coverPoints || buriedMultiplier > 1))
+                {
+                    canRebuildWithShield = true;
+                    break;
+                }
+            }
+
+            foreach (var handCard in inView.Player.Hand)
+            {
+                if (!GameRules.CanPlayCardInZone(handCard, sourceZone.ElementType))
+                    continue;
+
+                int multiplier = Math.Max(GetValue(handCard.Multipliers, elementIndex),
+                    handCard.WildMultiplier);
+                int shield = Math.Max(GetValue(handCard.Shields, elementIndex),
+                    handCard.WildShield);
+                if ((canRebuildWithMultiplier && multiplier > 1)
+                    || (canRebuildWithShield && shield > 0))
+                    return rebuildStripBonus;
+            }
+            return 0f;
         }
 
         private static float GetStrategicMoveValue(PlayerViewData inView, MoveData inMove)
@@ -700,11 +757,29 @@ namespace Elemento.Domain
             if (card == null || targetZone == null)
                 return 0f;
 
+            int elementIndex = (int)targetZone.ElementType - 1;
+            int bomb = Math.Max(GetValue(card.Bombs, elementIndex), card.WildBomb);
+            if (bomb <= 0)
+                return 0f;
+
             var result = GameRules.ResolveBomb(targetZone, card, inView.Rules);
             if (!IsHighValueBomb(targetZone, result))
                 return 0f;
-            return ScoreBombEffect(targetZone, result, GetTotalPoints(inView.Opponents[0].Zones),
-                inView.Rules.TotalPointsRequiredToWin);
+            return ScoreStrategicBombEffect(targetZone, result);
+        }
+
+        private static float ScoreStrategicBombEffect(ZoneStateData inBefore,
+            ZoneStateData inAfter)
+        {
+            float value = Math.Max(0, inBefore.Health - inAfter.Health)
+                + Math.Max(0, inBefore.FrozenHealth - inAfter.FrozenHealth);
+            if (!inBefore.IsDestroyed && inAfter.IsDestroyed)
+                value += zoneKillBonus;
+            if (inBefore.IsFrozen && !inAfter.IsFrozen)
+                value += zoneKillBonus;
+            if (WasMultiplierStripped(inBefore, inAfter))
+                value += multiplierStripBonus;
+            return value;
         }
 
         private static float GetDualPurposeBombPenalty(PlayerViewData inView,
@@ -739,7 +814,7 @@ namespace Elemento.Domain
 
         private static bool IsHighValueBomb(ZoneStateData inBefore, ZoneStateData inAfter)
         {
-            return !inBefore.IsDestroyed && inAfter.IsDestroyed
+            return (!inBefore.IsDestroyed && inAfter.IsDestroyed)
                 || WasMultiplierStripped(inBefore, inAfter)
                 || inBefore.IsFrozen && !inAfter.IsFrozen && inBefore.Points > 0;
         }
