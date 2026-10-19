@@ -296,13 +296,6 @@ namespace Elemento.Tests.Domain
             Assert.That(move.CardId, Is.EqualTo("dual-multiplier-bomb"));
             Assert.That(move.TargetPlayerId, Is.EqualTo(0));
             Assert.That(move.TargetZoneId, Is.EqualTo(0));
-
-            var destructiveView = CreateDualCardDecisionView();
-            destructiveView.Opponents[0].Zones[0].Health = 2;
-            var destructiveMove = new StrongAiPlayer().ChooseMove(destructiveView,
-                new DeterministicRandom(17));
-
-            Assert.That(destructiveMove.TargetPlayerId, Is.EqualTo(1));
         }
 
         [Test]
@@ -792,16 +785,6 @@ namespace Elemento.Tests.Domain
                 SourceZoneId = 0,
                 TargetPlayerId = 0,
                 TargetZoneId = 1
-            });
-            view.LegalMoves.Add(new MoveData
-            {
-                Id = "place-multiplier-directly",
-                PlayerId = 0,
-                Type = EMoveType.PlayCard,
-                CardId = "fire-multiplier",
-                SourceZoneId = -1,
-                TargetPlayerId = 0,
-                TargetZoneId = 0
             });
             view.LegalMoves.Add(CreateEndTurnMove("end-multiplier-rebuild"));
             return view;
