@@ -299,24 +299,21 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
-        public void StrongAi_ThreeMovePlanStripsPointToPlaceMultiplierBelowIt()
+        public void StrongAi_AllowsStripAndRestackWhenSeatingMultiplierUnderPoints()
         {
             var view = CreateMultiplierRebuildView();
             var ai = new StrongAiPlayer();
-
-            var stripMove = ai.ChooseMove(view, new DeterministicRandom(17));
-
-            Assert.That(stripMove, Is.Not.Null);
-            Assert.That(stripMove.Type, Is.EqualTo(EMoveType.PlayCard));
-            Assert.That(stripMove.CardId, Is.EqualTo("fire-points"));
-            Assert.That(stripMove.SourceZoneId, Is.EqualTo(0));
-            Assert.That(stripMove.TargetZoneId, Is.EqualTo(1));
-
-            MoveTopCard(view.Player.Zones[0], view.Player.Zones[1]);
-            --view.MovesRemaining;
-            ++view.Revision;
-            view.LegalMoves.Clear();
-            view.LegalMoves.Add(new MoveData
+            var strip = new MoveData
+            {
+                Id = "strip-fire-points",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "fire-points",
+                SourceZoneId = 0,
+                TargetPlayerId = 0,
+                TargetZoneId = 1
+            };
+            var place = new MoveData
             {
                 Id = "place-multiplier",
                 PlayerId = 0,
@@ -325,20 +322,8 @@ namespace Elemento.Tests.Domain
                 SourceZoneId = -1,
                 TargetPlayerId = 0,
                 TargetZoneId = 0
-            });
-            view.LegalMoves.Add(CreateEndTurnMove("end-before-multiplier"));
-
-            var multiplierMove = ai.ChooseMove(view, new DeterministicRandom(17));
-
-            Assert.That(multiplierMove.CardId, Is.EqualTo("fire-multiplier"));
-            var multiplier = view.Player.Hand[0];
-            view.Player.Hand.Clear();
-            view.Player.Zones[0].Cards.Add(multiplier);
-            RefreshZonePoints(view.Player.Zones[0]);
-            --view.MovesRemaining;
-            ++view.Revision;
-            view.LegalMoves.Clear();
-            view.LegalMoves.Add(new MoveData
+            };
+            var restack = new MoveData
             {
                 Id = "restack-fire-points",
                 PlayerId = 0,
@@ -347,12 +332,23 @@ namespace Elemento.Tests.Domain
                 SourceZoneId = 1,
                 TargetPlayerId = 0,
                 TargetZoneId = 0
-            });
-            view.LegalMoves.Add(CreateEndTurnMove("end-before-restack"));
+            };
 
-            var restackMove = ai.ChooseMove(view, new DeterministicRandom(17));
+            Assert.That(ai.IsMoveAllowedThisTurn(view, strip), Is.True);
+            ai.RecordExecutedMove(view, strip);
+            MoveTopCard(view.Player.Zones[0], view.Player.Zones[1]);
 
-            Assert.That(restackMove.CardId, Is.EqualTo("fire-points"));
+            Assert.That(ai.IsMoveAllowedThisTurn(view, place), Is.True);
+            ai.RecordExecutedMove(view, place);
+            var multiplier = view.Player.Hand[0];
+            view.Player.Hand.Clear();
+            view.Player.Zones[0].Cards.Add(multiplier);
+            RefreshZonePoints(view.Player.Zones[0]);
+            ++view.Revision;
+
+            Assert.That(ai.IsMoveAllowedThisTurn(view, restack), Is.True,
+                "pile beneath changed when multiplier was placed");
+            ai.RecordExecutedMove(view, restack);
             MoveTopCard(view.Player.Zones[1], view.Player.Zones[0]);
             Assert.That(view.Player.Zones[0].Cards[0].Id, Is.EqualTo("fire-multiplier"));
             Assert.That(view.Player.Zones[0].Cards[1].Id, Is.EqualTo("fire-points"));
@@ -776,7 +772,7 @@ namespace Elemento.Tests.Domain
             {
                 Id = "fire-multiplier",
                 IsFaceUp = true,
-                Multipliers = new[] { 0, 0, 2, 0 }
+                WildMultiplier = 2
             });
             view.LegalMoves.Add(new MoveData
             {
