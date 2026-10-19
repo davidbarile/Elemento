@@ -20,7 +20,7 @@ namespace Elemento.Domain
         private const float orderingPruneWeight = .1f;
         private const float orderingPlanWeight = .1f;
         private const float b2MoveBonus = 20f;
-        private const float rebuildStripBonus = 24f;
+        private const float rebuildStripBonus = 40f;
         private const float winningPlanBonus = 10000f;
         private const int maxPlanDepth = 3;
         private const int beamWidth = 6;
@@ -687,8 +687,18 @@ namespace Elemento.Domain
                 result.Points = GameRules.CalculateZonePoints(result);
                 value = Math.Max(0, result.Points - targetZone.Points);
                 int elementIndex = (int)targetZone.ElementType - 1;
-                value += Math.Max(GetValue(card.Multipliers, elementIndex), card.WildMultiplier);
+                int multiplier = Math.Max(GetValue(card.Multipliers, elementIndex),
+                    card.WildMultiplier);
+                value += multiplier;
                 value += .5f * Math.Max(GetValue(card.Shields, elementIndex), card.WildShield);
+                if (inMove.SourceZoneId < 0 && multiplier > 1 && targetZone.Cards.Count > 0)
+                {
+                    var topCard = targetZone.Cards[targetZone.Cards.Count - 1];
+                    int topPoints = Math.Max(GetValue(topCard.Points, elementIndex),
+                        topCard.WildPoints);
+                    if (topCard.IsFaceUp && topPoints > 0)
+                        value -= rebuildStripBonus;
+                }
             }
 
             value += GetRebuildStripBonus(inView, inMove);
