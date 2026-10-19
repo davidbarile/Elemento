@@ -238,6 +238,151 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_LocksDualCardPlayedFromHandForRestOfTurn()
+        {
+            var view = CreateDualCardDecisionView();
+            var ai = new StrongAiPlayer();
+            var handPlay = view.LegalMoves[0];
+
+            ai.RecordExecutedMove(view, handPlay);
+            ai.RecordExecutedMove(view, new MoveData
+            {
+                Id = "change-opponent-pile",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "other-bomb",
+                SourceZoneId = -1,
+                TargetPlayerId = 1,
+                TargetZoneId = 0
+            });
+            var dualCard = view.Player.Hand[0];
+            view.Player.Hand.Clear();
+            view.Player.Zones[0].Cards.Add(dualCard);
+            view.Player.Zones[0].Points = GameRules.CalculateZonePoints(view.Player.Zones[0]);
+            view.Player.Zones[0].FaceUpPoints = view.Player.Zones[0].Points;
+            ++view.Revision;
+            view.LegalMoves.Clear();
+            var bombMove = new MoveData
+            {
+                Id = "move-played-dual-as-bomb",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = dualCard.Id,
+                SourceZoneId = 0,
+                TargetPlayerId = 1,
+                TargetZoneId = 0
+            };
+            view.LegalMoves.Add(bombMove);
+            view.LegalMoves.Add(CreateEndTurnMove("end-after-dual"));
+
+            Assert.That(ai.IsMoveAllowedThisTurn(view, bombMove), Is.False);
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.Type, Is.EqualTo(EMoveType.EndTurn));
+
+            ++view.TurnNumber;
+            ++view.Revision;
+            Assert.That(ai.IsMoveAllowedThisTurn(view, bombMove), Is.True);
+        }
+
+        [Test]
+        public void StrongAi_DualCardPrefersMultiplierOverWeakEmptyZoneBomb()
+        {
+            var view = CreateDualCardDecisionView();
+            var ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo("dual-multiplier-bomb"));
+            Assert.That(move.TargetPlayerId, Is.EqualTo(0));
+            Assert.That(move.TargetZoneId, Is.EqualTo(0));
+
+            var destructiveView = CreateDualCardDecisionView();
+            destructiveView.Opponents[0].Zones[0].Health = 2;
+            var destructiveMove = new StrongAiPlayer().ChooseMove(destructiveView,
+                new DeterministicRandom(17));
+
+            Assert.That(destructiveMove.TargetPlayerId, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void StrongAi_UnlimitedPlanStripsPointToPlaceMultiplierBelowIt()
+        {
+            var view = CreateMultiplierRebuildView();
+            var ai = new StrongAiPlayer();
+
+            var stripMove = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(stripMove.CardId, Is.EqualTo("fire-points"));
+            Assert.That(stripMove.SourceZoneId, Is.EqualTo(0));
+            Assert.That(stripMove.TargetZoneId, Is.EqualTo(1));
+
+            MoveTopCard(view.Player.Zones[0], view.Player.Zones[1]);
+            ++view.Revision;
+            view.LegalMoves.Clear();
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "place-multiplier",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "fire-multiplier",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(CreateEndTurnMove("end-before-multiplier"));
+
+            var multiplierMove = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(multiplierMove.CardId, Is.EqualTo("fire-multiplier"));
+            var multiplier = view.Player.Hand[0];
+            view.Player.Hand.Clear();
+            view.Player.Zones[0].Cards.Add(multiplier);
+            RefreshZonePoints(view.Player.Zones[0]);
+            ++view.Revision;
+            view.LegalMoves.Clear();
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "restack-fire-points",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "fire-points",
+                SourceZoneId = 1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(CreateEndTurnMove("end-before-restack"));
+
+            var restackMove = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(restackMove.CardId, Is.EqualTo("fire-points"));
+            MoveTopCard(view.Player.Zones[1], view.Player.Zones[0]);
+            Assert.That(view.Player.Zones[0].Cards[0].Id, Is.EqualTo("fire-multiplier"));
+            Assert.That(view.Player.Zones[0].Cards[1].Id, Is.EqualTo("fire-points"));
+        }
+
+        [Test]
+        public void StrongAi_CoversValuablePileWithShieldInsteadOfLeavingItExposed()
+        {
+            var view = CreateShieldRebuildView();
+            var ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo("protective-shield"));
+            Assert.That(move.SourceZoneId, Is.EqualTo(-1));
+            Assert.That(move.TargetZoneId, Is.EqualTo(0));
+
+            var shieldedZone = view.Player.Zones[0].Clone();
+            shieldedZone.Cards.Add(view.Player.Hand[0].Clone());
+            RefreshZonePoints(shieldedZone);
+            var bombedZone = GameRules.ResolveBomb(shieldedZone,
+                new CardInstanceData { WildBomb = 2 }, view.Rules);
+
+            Assert.That(bombedZone.Points, Is.EqualTo(shieldedZone.Points));
+        }
+
+        [Test]
         public void StrongAi_AllowsShieldLiftWhenPileChangedBeneath()
         {
             var view = new PlayerViewData
@@ -545,6 +690,235 @@ namespace Elemento.Tests.Domain
 
             Assert.That(move.Type, Is.EqualTo(EMoveType.DiscardCard));
             Assert.That(move.CardId, Is.EqualTo("locked-card"));
+        }
+
+        private static PlayerViewData CreateDualCardDecisionView()
+        {
+            var view = new PlayerViewData
+            {
+                Revision = 1,
+                TurnNumber = 1,
+                CurrentPlayerId = 0,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                MovesRemaining = 3,
+                Rules = new RulesConfigData
+                {
+                    MovesPerTurn = 3,
+                    ElementZoneStartingHealth = 5,
+                    TotalPointsRequiredToWin = 1000
+                },
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            var fireZone = new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Fire,
+                Health = 5,
+                MaxHealth = 5,
+                Points = 5,
+                FaceUpPoints = 5
+            };
+            fireZone.Cards.Add(new CardInstanceData
+            {
+                Id = "existing-fire-points",
+                IsFaceUp = true,
+                WildPoints = 5
+            });
+            view.Player.Zones.Add(fireZone);
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "dual-multiplier-bomb",
+                IsFaceUp = true,
+                WildMultiplier = 2,
+                WildBomb = 2
+            });
+            var opponent = new OpponentViewData { Id = 1, Name = "Opponent" };
+            opponent.Zones.Add(new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Air,
+                Health = 5,
+                MaxHealth = 5
+            });
+            view.Opponents.Add(opponent);
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "play-dual-as-multiplier",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "dual-multiplier-bomb",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "play-dual-as-bomb",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "dual-multiplier-bomb",
+                SourceZoneId = -1,
+                TargetPlayerId = 1,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(CreateEndTurnMove("end-dual-decision"));
+            return view;
+        }
+
+        private static PlayerViewData CreateMultiplierRebuildView()
+        {
+            var view = CreateRebuildView();
+            view.Player.Zones[0].Cards.Add(new CardInstanceData
+            {
+                Id = "fire-points",
+                IsFaceUp = true,
+                WildPoints = 4
+            });
+            RefreshZonePoints(view.Player.Zones[0]);
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "fire-multiplier",
+                IsFaceUp = true,
+                Multipliers = new[] { 0, 0, 2, 0 }
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "strip-fire-points",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "fire-points",
+                SourceZoneId = 0,
+                TargetPlayerId = 0,
+                TargetZoneId = 1
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "place-multiplier-directly",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "fire-multiplier",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(CreateEndTurnMove("end-multiplier-rebuild"));
+            return view;
+        }
+
+        private static PlayerViewData CreateShieldRebuildView()
+        {
+            var view = CreateRebuildView();
+            view.Player.Zones[0].Cards.Add(new CardInstanceData
+            {
+                Id = "valuable-fire-points",
+                IsFaceUp = true,
+                WildPoints = 10
+            });
+            view.Player.Zones[0].Cards.Add(new CardInstanceData
+            {
+                Id = "cover-card",
+                IsFaceUp = true,
+                WildPoints = 1
+            });
+            RefreshZonePoints(view.Player.Zones[0]);
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "protective-shield",
+                IsFaceUp = true,
+                WildShield = 2
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "strip-cover",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "cover-card",
+                SourceZoneId = 0,
+                TargetPlayerId = 0,
+                TargetZoneId = 1
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "place-shield-directly",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "protective-shield",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(CreateEndTurnMove("end-shield-rebuild"));
+            return view;
+        }
+
+        private static PlayerViewData CreateRebuildView()
+        {
+            var view = new PlayerViewData
+            {
+                Revision = 1,
+                TurnNumber = 1,
+                CurrentPlayerId = 0,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                Rules = new RulesConfigData
+                {
+                    MovesPerTurn = 0,
+                    TotalPointsRequiredToWin = 1000,
+                    ElementZonePointsRequiredToActivate = 100
+                },
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            view.Player.Zones.Add(new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Fire,
+                Health = 5,
+                MaxHealth = 5
+            });
+            var stagingZone = new ZoneStateData
+            {
+                Id = 1,
+                ElementType = EElementType.Air,
+                Health = 5,
+                MaxHealth = 5
+            };
+            stagingZone.Cards.Add(new CardInstanceData
+            {
+                Id = "staging-card",
+                IsFaceUp = true,
+                WildPoints = 1
+            });
+            RefreshZonePoints(stagingZone);
+            view.Player.Zones.Add(stagingZone);
+            return view;
+        }
+
+        private static MoveData CreateEndTurnMove(string inId)
+        {
+            return new MoveData
+            {
+                Id = inId,
+                PlayerId = 0,
+                Type = EMoveType.EndTurn,
+                SourceZoneId = -1,
+                TargetPlayerId = -1,
+                TargetZoneId = -1
+            };
+        }
+
+        private static void MoveTopCard(ZoneStateData inSource, ZoneStateData inTarget)
+        {
+            int topIndex = inSource.Cards.Count - 1;
+            var card = inSource.Cards[topIndex];
+            inSource.Cards.RemoveAt(topIndex);
+            inTarget.Cards.Add(card);
+            RefreshZonePoints(inSource);
+            RefreshZonePoints(inTarget);
+        }
+
+        private static void RefreshZonePoints(ZoneStateData inZone)
+        {
+            inZone.Points = GameRules.CalculateZonePoints(inZone);
+            inZone.FaceUpPoints = GameRules.CalculateZonePoints(inZone, true);
         }
 
         private static PlayerViewData CreateRankedPointView()

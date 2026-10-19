@@ -17,6 +17,8 @@ namespace Elemento.Domain
         private const float mediumTemperature = 2.5f;
         private const float easyTemperature = 20f;
         private const float reorderPenalty = .35f; // Reorders must overcome this score margin.
+        private const float orderingPruneWeight = .1f;
+        private const float orderingPlanWeight = .05f;
         private const float b2MoveBonus = 20f;
         private const float winningPlanBonus = 10000f;
         private const int maxPlanDepth = 3;
@@ -32,6 +34,10 @@ namespace Elemento.Domain
             public int MovesRemaining;
             public int ReorderMoves;
             public Dictionary<string, HashSet<int>> LeftZonesByCard;
+            public HashSet<string> LockedCardIds;
+            public Dictionary<string, int> ZoneVersions;
+            public Dictionary<string, Dictionary<string, int>> CardMoveSnapshots;
+            public float TacticalValue;
             public float Value;
             public float OrderingValue;
             public bool FirstMoveIsB2;
@@ -43,6 +49,7 @@ namespace Elemento.Domain
             public GameStateData State;
             public bool IsReorder;
             public float PruneValue;
+            public float TacticalValue;
             public float Value;
             public float OrderingValue;
         }
@@ -75,6 +82,7 @@ namespace Elemento.Domain
         private int trackedCurrentPlayerId = int.MinValue;
         private int trackedRevision = int.MinValue;
         private int turnReorders;
+        private readonly HashSet<string> playedFromHandCardIds = new();
         private readonly Dictionary<string, HashSet<int>> leftZonesByCard = new();
         private readonly Dictionary<string, int> zoneVersions = new();
         private readonly Dictionary<string, Dictionary<string, int>> cardMoveSnapshots = new();
@@ -90,8 +98,12 @@ namespace Elemento.Domain
         {
             PrepareTurnState(inView);
             RecordMoveVersions(inMove);
+            RecordPlayedFromHand(inMove);
             if (IsTurnReorder(inMove))
+            {
                 ++this.turnReorders;
+                AddReorderHistory(this.leftZonesByCard, inMove);
+            }
         }
 
         private void PrepareTurnState(PlayerViewData inView)
@@ -101,6 +113,7 @@ namespace Elemento.Domain
                 || inView.Revision < this.trackedRevision)
             {
                 this.turnReorders = 0;
+                this.playedFromHandCardIds.Clear();
                 this.leftZonesByCard.Clear();
                 this.zoneVersions.Clear();
                 this.cardMoveSnapshots.Clear();
@@ -144,6 +157,7 @@ namespace Elemento.Domain
                 }
             }
             RecordMoveVersions(move);
+            RecordPlayedFromHand(move);
             if (IsTurnReorder(move))
             {
                 ++this.turnReorders;
@@ -195,6 +209,12 @@ namespace Elemento.Domain
                 this.cardMoveSnapshots[inMove.CardId] = new Dictionary<string, int>(this.zoneVersions);
         }
 
+        private void RecordPlayedFromHand(MoveData inMove)
+        {
+            if (IsFromHandPlay(inMove))
+                this.playedFromHandCardIds.Add(inMove.CardId);
+        }
+
         private bool IsEmptyOwnZone(int inZoneId)
         {
             if (this.currentView == null)
@@ -213,8 +233,17 @@ namespace Elemento.Domain
                 && inMove.TargetPlayerId == inMove.PlayerId;
         }
 
+        private static bool IsFromHandPlay(MoveData inMove)
+        {
+            return inMove != null && inMove.Type == EMoveType.PlayCard && inMove.SourceZoneId < 0
+                && !string.IsNullOrEmpty(inMove.CardId);
+        }
+
         private bool IsBlockedReorder(MoveData inMove)
         {
+            if (inMove != null && inMove.SourceZoneId >= 0
+                && this.playedFromHandCardIds.Contains(inMove.CardId))
+                return true;
             if (IsUnchangedReMove(inMove))
                 return true;
             if (!IsTurnReorder(inMove))
@@ -225,8 +254,14 @@ namespace Elemento.Domain
         }
 
         private static bool IsBlockedReorder(int inReorderMoves,
-            Dictionary<string, HashSet<int>> inLeftZonesByCard, MoveData inMove)
+            Dictionary<string, HashSet<int>> inLeftZonesByCard, HashSet<string> inLockedCardIds,
+            Dictionary<string, int> inZoneVersions,
+            Dictionary<string, Dictionary<string, int>> inCardMoveSnapshots, MoveData inMove)
         {
+            if (inMove.SourceZoneId >= 0 && inLockedCardIds.Contains(inMove.CardId))
+                return true;
+            if (IsUnchangedReMove(inZoneVersions, inCardMoveSnapshots, inMove))
+                return true;
             if (!IsTurnReorder(inMove))
                 return false;
             if (inReorderMoves >= maxReorderMoves)
@@ -236,6 +271,20 @@ namespace Elemento.Domain
             if (leftZones.Contains(inMove.TargetZoneId))
                 return true;
             return leftZones.Count > 0;
+        }
+
+        private static bool IsUnchangedReMove(Dictionary<string, int> inZoneVersions,
+            Dictionary<string, Dictionary<string, int>> inCardMoveSnapshots, MoveData inMove)
+        {
+            if (inMove.SourceZoneId < 0 || string.IsNullOrEmpty(inMove.CardId)
+                || inMove.TargetZoneId < 0
+                || !inCardMoveSnapshots.TryGetValue(inMove.CardId, out var snapshot))
+                return false;
+
+            string targetKey = ZoneKey(inMove.TargetPlayerId, inMove.TargetZoneId);
+            int versionAtLastMove = snapshot.TryGetValue(targetKey, out var version) ? version : 0;
+            int currentVersion = inZoneVersions.TryGetValue(targetKey, out version) ? version : 0;
+            return currentVersion == versionAtLastMove;
         }
 
         private MoveData ChooseMoveCore(PlayerViewData inView, IRandom inRandom)
@@ -279,9 +328,13 @@ namespace Elemento.Domain
                 MovesRemaining = movesRemaining,
                 ReorderMoves = this.turnReorders,
                 LeftZonesByCard = CloneReorderHistory(this.leftZonesByCard),
-                Value = EvaluateEndOfTurn(inView, state, this.turnReorders),
+                LockedCardIds = new HashSet<string>(this.playedFromHandCardIds),
+                ZoneVersions = new Dictionary<string, int>(this.zoneVersions),
+                CardMoveSnapshots = CloneMoveSnapshots(this.cardMoveSnapshots),
                 OrderingValue = EvaluatePileOrdering(inView, state)
             };
+            root.Value = EvaluateEndOfTurn(inView, state, this.turnReorders)
+                + root.OrderingValue * orderingPlanWeight;
             var frontier = new List<PlanNode> { root };
             var planChoices = new List<PlanNode>();
             PlanNode best = null;
@@ -309,6 +362,17 @@ namespace Elemento.Domain
                             leftZonesByCard = CloneReorderHistory(leftZonesByCard);
                             AddReorderHistory(leftZonesByCard, candidate.Move);
                         }
+                        var lockedCardIds = node.LockedCardIds;
+                        if (IsFromHandPlay(candidate.Move))
+                        {
+                            lockedCardIds = new HashSet<string>(lockedCardIds)
+                            {
+                                candidate.Move.CardId
+                            };
+                        }
+                        var zoneVersions = new Dictionary<string, int>(node.ZoneVersions);
+                        var cardMoveSnapshots = CloneMoveSnapshots(node.CardMoveSnapshots);
+                        RecordMoveVersions(zoneVersions, cardMoveSnapshots, candidate.Move);
                         var child = new PlanNode
                         {
                             State = candidate.State,
@@ -317,6 +381,10 @@ namespace Elemento.Domain
                                 - (candidate.Move.Type == EMoveType.PlayCard ? 1 : 0),
                             ReorderMoves = reorderMoves,
                             LeftZonesByCard = leftZonesByCard,
+                            LockedCardIds = lockedCardIds,
+                            ZoneVersions = zoneVersions,
+                            CardMoveSnapshots = cardMoveSnapshots,
+                            TacticalValue = candidate.TacticalValue,
                             Value = candidate.Value,
                             OrderingValue = candidate.OrderingValue,
                             FirstMoveIsB2 = node.FirstMove == null
@@ -401,8 +469,10 @@ namespace Elemento.Domain
                     continue;
 
                 bool isReorder = IsTurnReorder(move);
-                if (isReorder && IsBlockedReorder(inNode.ReorderMoves,
-                        inNode.LeftZonesByCard, move))
+                if (IsBlockedReorder(inNode.ReorderMoves, inNode.LeftZonesByCard,
+                        inNode.LockedCardIds, inNode.ZoneVersions, inNode.CardMoveSnapshots, move))
+                    continue;
+                if (isReorder && IsEmptyOwnZone(planningView, move.TargetZoneId))
                     continue;
                 if (isReorder && inSourceView.TurnNumber >= antiStallTurn)
                     continue;
@@ -436,9 +506,15 @@ namespace Elemento.Domain
                 candidate.State = inNode.State.Clone();
                 inSimulator.ApplyMove(candidate.State, candidate.Move);
                 int reorderMoves = inNode.ReorderMoves + (candidate.IsReorder ? 1 : 0);
+                candidate.TacticalValue = inNode.TacticalValue
+                    + GetStrategicMoveValue(planningView, candidate.Move);
                 candidate.Value = EvaluateEndOfTurn(inSourceView, candidate.State, reorderMoves);
                 candidate.OrderingValue = EvaluatePileOrdering(inSourceView, candidate.State);
+                candidate.Value += candidate.OrderingValue * orderingPlanWeight
+                    + candidate.TacticalValue;
                 candidate.PruneValue += candidate.Value - inNode.Value;
+                candidate.PruneValue += Math.Max(0f,
+                    candidate.OrderingValue - inNode.OrderingValue) * orderingPruneWeight;
                 candidates.Add(candidate);
             }
             candidates.Sort((inLeft, inRight) =>
@@ -460,6 +536,36 @@ namespace Elemento.Domain
             return clone;
         }
 
+        private static Dictionary<string, Dictionary<string, int>> CloneMoveSnapshots(
+            Dictionary<string, Dictionary<string, int>> inSnapshots)
+        {
+            var clone = new Dictionary<string, Dictionary<string, int>>();
+            foreach (var pair in inSnapshots)
+                clone[pair.Key] = new Dictionary<string, int>(pair.Value);
+            return clone;
+        }
+
+        private static void RecordMoveVersions(Dictionary<string, int> inZoneVersions,
+            Dictionary<string, Dictionary<string, int>> inCardMoveSnapshots, MoveData inMove)
+        {
+            if (inMove.SourceZoneId >= 0)
+            {
+                string sourceKey = ZoneKey(inMove.PlayerId, inMove.SourceZoneId);
+                int sourceVersion = inZoneVersions.TryGetValue(sourceKey, out var version) ? version : 0;
+                inZoneVersions[sourceKey] = sourceVersion + 1;
+            }
+            if (inMove.TargetZoneId >= 0 && inMove.TargetPlayerId >= 0)
+            {
+                string targetKey = ZoneKey(inMove.TargetPlayerId, inMove.TargetZoneId);
+                int targetVersion = inZoneVersions.TryGetValue(targetKey, out var version) ? version : 0;
+                inZoneVersions[targetKey] = targetVersion + 1;
+            }
+            if (!string.IsNullOrEmpty(inMove.CardId))
+            {
+                inCardMoveSnapshots[inMove.CardId] = new Dictionary<string, int>(inZoneVersions);
+            }
+        }
+
         private static void AddReorderHistory(Dictionary<string, HashSet<int>> inHistory,
             MoveData inMove)
         {
@@ -471,9 +577,15 @@ namespace Elemento.Domain
             leftZones.Add(inMove.SourceZoneId);
         }
 
+        private static bool IsEmptyOwnZone(PlayerViewData inView, int inZoneId)
+        {
+            var zone = FindZone(inView.Player.Zones, inZoneId);
+            return zone != null && zone.Cards.Count == 0;
+        }
+
         private static float EvaluatePileOrdering(PlayerViewData inSourceView, GameStateData inState)
         {
-            if (inSourceView.Rules.MovesPerTurn > 0)
+            if (inSourceView.Rules.MovesPerTurn > 0 && inSourceView.MovesRemaining < maxPlanDepth)
                 return 0f;
 
             float value = 0f;
@@ -489,8 +601,41 @@ namespace Elemento.Domain
                         card.WildMultiplier);
                     int shield = Math.Max(GetValue(card.Shields, elementIndex), card.WildShield);
                     value += cardsAbove * (points + multiplier * 10f);
-                    value += i * shield;
+                    if (multiplier > 1)
+                        value += multiplier * GetPointsAbove(zone, i, elementIndex);
+                    if (shield > 0)
+                    {
+                        float protectedValue = GetProtectedCardValue(zone, i, elementIndex);
+                        value += shield * protectedValue;
+                    }
                 }
+            }
+            return value;
+        }
+
+        private static int GetPointsAbove(ZoneStateData inZone, int inCardIndex,
+            int inElementIndex)
+        {
+            int points = 0;
+            for (int i = inCardIndex + 1; i < inZone.Cards.Count; ++i)
+            {
+                var card = inZone.Cards[i];
+                points += Math.Max(GetValue(card.Points, inElementIndex), card.WildPoints);
+            }
+            return points;
+        }
+
+        private static float GetProtectedCardValue(ZoneStateData inZone, int inShieldIndex,
+            int inElementIndex)
+        {
+            float value = 0f;
+            for (int i = 0; i < inShieldIndex; ++i)
+            {
+                var card = inZone.Cards[i];
+                int points = Math.Max(GetValue(card.Points, inElementIndex), card.WildPoints);
+                int multiplier = Math.Max(GetValue(card.Multipliers, inElementIndex),
+                    card.WildMultiplier);
+                value += points + multiplier * 10f;
             }
             return value;
         }
@@ -525,6 +670,7 @@ namespace Elemento.Domain
                 var result = GameRules.ResolveBomb(targetZone, card, inView.Rules);
                 value = ScoreBombEffect(targetZone, result, GetTotalPoints(inView.Opponents[0].Zones),
                     inView.Rules.TotalPointsRequiredToWin);
+                value -= GetDualPurposeBombPenalty(inView, card, targetZone, result);
             }
             else
             {
@@ -542,6 +688,60 @@ namespace Elemento.Domain
             if (inMove.SourceZoneId >= 0)
                 value -= reorderPenalty;
             return value;
+        }
+
+        private static float GetStrategicMoveValue(PlayerViewData inView, MoveData inMove)
+        {
+            if (inMove.Type != EMoveType.PlayCard || inMove.TargetPlayerId == inView.Player.Id)
+                return 0f;
+
+            var card = FindSourceCard(inView.Player, inMove);
+            var targetZone = FindTargetZone(inView, inMove.TargetPlayerId, inMove.TargetZoneId);
+            if (card == null || targetZone == null)
+                return 0f;
+
+            var result = GameRules.ResolveBomb(targetZone, card, inView.Rules);
+            if (!IsHighValueBomb(targetZone, result))
+                return 0f;
+            return ScoreBombEffect(targetZone, result, GetTotalPoints(inView.Opponents[0].Zones),
+                inView.Rules.TotalPointsRequiredToWin);
+        }
+
+        private static float GetDualPurposeBombPenalty(PlayerViewData inView,
+            CardInstanceData inCard, ZoneStateData inTargetZone, ZoneStateData inBombedZone)
+        {
+            if (IsHighValueBomb(inTargetZone, inBombedZone))
+                return 0f;
+
+            float bestMultiplierValue = 0f;
+            foreach (var zone in inView.Player.Zones)
+            {
+                if (zone.IsDestroyed || zone.IsFrozen || zone.Points <= 0
+                    || !GameRules.CanPlayCardInZone(inCard, zone.ElementType))
+                    continue;
+
+                int elementIndex = (int)zone.ElementType - 1;
+                int multiplier = Math.Max(GetValue(inCard.Multipliers, elementIndex),
+                    inCard.WildMultiplier);
+                if (multiplier <= 1)
+                    continue;
+
+                var result = zone.Clone();
+                var playedCard = inCard.Clone();
+                playedCard.IsFaceUp = true;
+                result.Cards.Add(playedCard);
+                result.Points = GameRules.CalculateZonePoints(result);
+                bestMultiplierValue = Math.Max(bestMultiplierValue,
+                    Math.Max(0, result.Points - zone.Points) + multiplier);
+            }
+            return bestMultiplierValue;
+        }
+
+        private static bool IsHighValueBomb(ZoneStateData inBefore, ZoneStateData inAfter)
+        {
+            return !inBefore.IsDestroyed && inAfter.IsDestroyed
+                || WasMultiplierStripped(inBefore, inAfter)
+                || inBefore.IsFrozen && !inAfter.IsFrozen && inBefore.Points > 0;
         }
 
         private static CardInstanceData FindSourceCard(PlayerStateData inPlayer, MoveData inMove)
@@ -796,6 +996,7 @@ namespace Elemento.Domain
             var simulatedZone = GameRules.ResolveBomb(inZone.Clone(), inCard, inView.Rules);
             outValue = ScoreBombEffect(inZone, simulatedZone, inOpponent.TotalPoints,
                 inView.Rules.TotalPointsRequiredToWin);
+            outValue -= GetDualPurposeBombPenalty(inView, inCard, inZone, simulatedZone);
             return outValue > 0f;
         }
 
@@ -856,6 +1057,8 @@ namespace Elemento.Domain
             float value = Math.Max(effectiveDamage,
                 ScorePointDelta(pointsRemoved, inCurrentPoints, inWinTarget));
             if (!inBefore.IsDestroyed && inAfter.IsDestroyed)
+                value += zoneKillBonus;
+            if (inBefore.IsFrozen && !inAfter.IsFrozen)
                 value += zoneKillBonus;
             if (WasMultiplierStripped(inBefore, inAfter))
                 value += multiplierStripBonus;
