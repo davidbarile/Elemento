@@ -17,15 +17,17 @@ namespace Elemento.Domain
         private const float mediumTemperature = 2.5f;
         private const float easyTemperature = 20f;
         private const float reorderPenalty = .35f; // Reorders must overcome this score margin.
-        private const float orderingPruneWeight = 1f;
-        private const float orderingPlanWeight = 1f;
+        private const float orderingPruneWeight = .1f;
+        private const float orderingPlanWeight = .1f;
         private const float b2MoveBonus = 20f;
         private const float rebuildStripBonus = 40f;
+        private const float expectedExposureWeight = 3f;
         private const float winningPlanBonus = 10000f;
         private const int maxPlanDepth = 3;
         private const int beamWidth = 6;
         private const int candidateWidth = 7;
         private const int maxReorderMoves = 3;
+        private const int maxExpectedBombAttacks = 2;
         private const int antiStallTurn = 100;
 
         private sealed class PlanNode
@@ -481,6 +483,8 @@ namespace Elemento.Domain
                     continue;
                 if (isReorder && inSourceView.TurnNumber >= antiStallTurn)
                     continue;
+                if (IsIncompleteExposedMultiplierStrip(planningView, move))
+                    continue;
                 if (inNode.FirstMove == null && FindMatchingMove(inSourceView.LegalMoves, move) == null)
                     continue;
 
@@ -512,7 +516,8 @@ namespace Elemento.Domain
                 inSimulator.ApplyMove(candidate.State, candidate.Move);
                 int reorderMoves = inNode.ReorderMoves + (candidate.IsReorder ? 1 : 0);
                 candidate.TacticalValue = inNode.TacticalValue
-                    + GetStrategicMoveValue(planningView, candidate.Move);
+                    + GetStrategicMoveValue(planningView, candidate.Move)
+                    + GetRebuildStripBonus(planningView, candidate.Move);
                 candidate.Value = EvaluateEndOfTurn(inSourceView, candidate.State, reorderMoves);
                 candidate.OrderingValue = EvaluatePileOrdering(inSourceView, candidate.State);
                 candidate.Value += candidate.OrderingValue * orderingPlanWeight
@@ -612,6 +617,7 @@ namespace Elemento.Domain
                     if (shield > 0)
                     {
                         float protectedValue = GetProtectedCardValue(zone, i, elementIndex);
+                        // Strong outer shields survive common weak bombs; weaker inner shields stop later attacks.
                         value += shield * protectedValue;
                     }
                 }
@@ -653,8 +659,11 @@ namespace Elemento.Domain
 
             var card = FindSourceCard(inView.Player, inMove);
             var targetZone = FindTargetZone(inView, inMove.TargetPlayerId, inMove.TargetZoneId);
-            if (card == null || targetZone == null)
+            if (card == null)
                 return inMove.SourceZoneId >= 0 ? -reorderPenalty : 0f;
+            if (targetZone == null)
+                return GetRebuildStripBonus(inView, inMove)
+                    - (inMove.SourceZoneId >= 0 ? reorderPenalty : 0f);
 
             float value;
             bool isOwnBoard = inMove.TargetPlayerId == inView.Player.Id;
@@ -696,7 +705,10 @@ namespace Elemento.Domain
                     var topCard = targetZone.Cards[targetZone.Cards.Count - 1];
                     int topPoints = Math.Max(GetValue(topCard.Points, elementIndex),
                         topCard.WildPoints);
-                    if (topCard.IsFaceUp && topPoints > 0)
+                    if (topCard.IsFaceUp && topPoints > 0
+                        && HasRebuildMovesAvailable(inView, 3)
+                        && GetExpectedZoneExposure(inView, result,
+                            GetTotalPoints(inView.Player.Zones) + result.Points - targetZone.Points) > 0f)
                         value -= rebuildStripBonus;
                 }
             }
@@ -724,6 +736,17 @@ namespace Elemento.Domain
             int elementIndex = (int)sourceZone.ElementType - 1;
             int coverPoints = Math.Max(GetValue(coverCard.Points, elementIndex),
                 coverCard.WildPoints);
+            int coverMultiplier = Math.Max(GetValue(coverCard.Multipliers, elementIndex),
+                coverCard.WildMultiplier);
+            if (sourceZone.Points <= 0
+                || GetExpectedZoneExposure(inView, sourceZone,
+                    GetTotalPoints(inView.Player.Zones)) <= 0f)
+                return 0f;
+
+            if (inMove.TargetZoneId < 0 && coverMultiplier > 1
+                && HasRebuildMovesAvailable(inView, 3))
+                return rebuildStripBonus;
+
             bool canRebuildWithMultiplier = coverCard.IsFaceUp && coverPoints > 0;
             bool canRebuildWithShield = false;
             for (int i = 0; i < sourceZone.Cards.Count - 1; ++i)
@@ -752,20 +775,54 @@ namespace Elemento.Domain
                     handCard.WildShield);
                 if ((canRebuildWithMultiplier && multiplier > 1)
                     || (canRebuildWithShield && shield > 0))
+                {
+                    if (!HasRebuildMovesAvailable(inView, 3))
+                        return 0f;
                     return rebuildStripBonus;
+                }
             }
             return 0f;
         }
 
+        private static bool HasRebuildMovesAvailable(PlayerViewData inView, int inRequiredMoves)
+        {
+            return inView.Rules.MovesPerTurn <= 0 || inView.MovesRemaining >= inRequiredMoves;
+        }
+
+        private static bool IsIncompleteExposedMultiplierStrip(PlayerViewData inView,
+            MoveData inMove)
+        {
+            if (HasRebuildMovesAvailable(inView, 3) || inMove.Type != EMoveType.PlayCard
+                || inMove.SourceZoneId < 0 || inMove.TargetZoneId >= 0
+                || inMove.TargetPlayerId != inView.Player.Id)
+                return false;
+
+            var sourceZone = FindZone(inView.Player.Zones, inMove.SourceZoneId);
+            if (sourceZone == null || sourceZone.Cards.Count == 0 || sourceZone.Points <= 0)
+                return false;
+            var topCard = sourceZone.Cards[sourceZone.Cards.Count - 1];
+            int elementIndex = (int)sourceZone.ElementType - 1;
+            int multiplier = Math.Max(GetValue(topCard.Multipliers, elementIndex),
+                topCard.WildMultiplier);
+            return topCard.Id == inMove.CardId && multiplier > 1
+                && GetExpectedZoneExposure(inView, sourceZone,
+                    GetTotalPoints(inView.Player.Zones)) > 0f;
+        }
+
         private static float GetStrategicMoveValue(PlayerViewData inView, MoveData inMove)
         {
-            if (inMove.Type != EMoveType.PlayCard || inMove.TargetPlayerId == inView.Player.Id)
+            if (inMove.Type != EMoveType.PlayCard)
                 return 0f;
 
             var card = FindSourceCard(inView.Player, inMove);
             var targetZone = FindTargetZone(inView, inMove.TargetPlayerId, inMove.TargetZoneId);
             if (card == null || targetZone == null)
                 return 0f;
+            if (inMove.TargetPlayerId == inView.Player.Id)
+            {
+                return GetShieldProtectionValue(inView, card, targetZone,
+                    GetTotalPoints(inView.Player.Zones));
+            }
 
             int elementIndex = (int)targetZone.ElementType - 1;
             int bomb = Math.Max(GetValue(card.Bombs, elementIndex), card.WildBomb);
@@ -964,33 +1021,240 @@ namespace Elemento.Domain
             if (winTarget > 0 && ownPoints >= winTarget)
                 value += winningPlanBonus;
             var planningView = CreatePlanningView(inSourceView, inState, 0);
-            value -= GetExpectedExposure(planningView, ownPoints);
+            value -= GetExpectedExposure(planningView, ownPoints) * expectedExposureWeight;
             return value - inReorderMoves * reorderPenalty;
         }
 
         private static float GetExpectedExposure(PlayerViewData inView, int inOwnPoints)
         {
-            int opponentHandSize = 0;
-            foreach (var opponent in inView.Opponents)
-                opponentHandSize += opponent.HandCount;
-
             float exposure = 0f;
             foreach (var zone in inView.Player.Zones)
+                exposure += GetExpectedZoneExposure(inView, zone, inOwnPoints);
+            return exposure;
+        }
+
+        private static float GetExpectedZoneExposure(PlayerViewData inView, ZoneStateData inZone,
+            int inOwnPoints)
+        {
+            int opponentHandSize = GetOpponentHandSize(inView);
+            if (opponentHandSize <= 0)
+                return 0f;
+
+            return GetExpectedBombExposure(inView, inZone, inOwnPoints, opponentHandSize,
+                    maxExpectedBombAttacks)
+                + GetExpectedLightningExposure(inView, inZone, inOwnPoints, opponentHandSize);
+        }
+
+        private static float GetExpectedBombExposure(PlayerViewData inView, ZoneStateData inZone,
+            int inOwnPoints, int inOpponentHandSize, int inAttacksRemaining)
+        {
+            if (inOpponentHandSize <= 0 || inAttacksRemaining <= 0)
+                return 0f;
+
+            var visibleCounts = GetVisibleNormalCardCounts(inView);
+            var bombsByStrength = new Dictionary<int, int>();
+            int unseenCount = 0;
+            int elementIndex = (int)inZone.ElementType - 1;
+            foreach (var definition in DeckDefinitionData.NormalCards)
             {
-                CardDefinitionData strongestBomb;
-                int unseenCount;
-                int threateningCount;
-                GetUnseenBombThreat(inView, zone, out strongestBomb, out unseenCount, out threateningCount);
-                if (strongestBomb == null)
+                int visible;
+                visibleCounts.TryGetValue(definition.DefinitionId, out visible);
+                int remaining = Math.Max(0, definition.ChoiceCount - visible);
+                unseenCount += remaining;
+                int bomb = Math.Max(GetValue(definition.Bombs, elementIndex), definition.WildBomb);
+                if (remaining <= 0 || bomb <= 0)
                     continue;
 
-                double probability = ProbabilityOfAtLeastOne(unseenCount, threateningCount,
-                    opponentHandSize);
-                var bombedZone = GameRules.ResolveBomb(zone, strongestBomb.CreateCard(), inView.Rules);
-                exposure += (float)probability * ScoreBombEffect(zone, bombedZone, inOwnPoints,
-                    inView.Rules.TotalPointsRequiredToWin);
+                int count;
+                bombsByStrength.TryGetValue(bomb, out count);
+                bombsByStrength[bomb] = count + remaining;
+            }
+
+            var strengths = new List<int>(bombsByStrength.Keys);
+            strengths.Sort((inLeft, inRight) => inRight.CompareTo(inLeft));
+            int handSize = Math.Min(inOpponentHandSize, unseenCount);
+            int totalBombs = 0;
+            foreach (int count in bombsByStrength.Values)
+                totalBombs += count;
+            double totalHands = GetCombination(unseenCount, handSize);
+            if (totalHands <= 0.0)
+                return 0f;
+
+            float exposure = 0f;
+            int strongerBombs = 0;
+            for (int firstIndex = 0; firstIndex < strengths.Count; ++firstIndex)
+            {
+                int firstStrength = strengths[firstIndex];
+                int firstBombs = bombsByStrength[firstStrength];
+                if (inAttacksRemaining == 1)
+                {
+                    double probability = GetNoExcludedAtLeastProbability(unseenCount, handSize,
+                        strongerBombs, firstBombs, 1, totalHands);
+                    exposure += (float)probability * ScoreBombSequence(inView, inZone,
+                        inOwnPoints, firstStrength, 0);
+                    strongerBombs += firstBombs;
+                    continue;
+                }
+
+                double sameStrengthProbability = GetNoExcludedAtLeastProbability(unseenCount,
+                    handSize, strongerBombs, firstBombs, 2, totalHands);
+                exposure += (float)sameStrengthProbability * ScoreBombSequence(inView, inZone,
+                    inOwnPoints, firstStrength, firstStrength);
+
+                int intermediateBombs = 0;
+                for (int secondIndex = firstIndex + 1; secondIndex < strengths.Count;
+                    ++secondIndex)
+                {
+                    int secondStrength = strengths[secondIndex];
+                    int secondBombs = bombsByStrength[secondStrength];
+                    double probability = GetExactlyOneAndAtLeastOneProbability(unseenCount,
+                        handSize, strongerBombs + intermediateBombs, firstBombs, secondBombs,
+                        totalHands);
+                    exposure += (float)probability * ScoreBombSequence(inView, inZone,
+                        inOwnPoints, firstStrength, secondStrength);
+                    intermediateBombs += secondBombs;
+                }
+
+                int nonBombs = unseenCount - totalBombs;
+                double oneBombProbability = firstBombs
+                    * GetCombination(nonBombs, handSize - 1) / totalHands;
+                exposure += (float)oneBombProbability * ScoreBombSequence(inView, inZone,
+                    inOwnPoints, firstStrength, 0);
+                strongerBombs += firstBombs;
             }
             return exposure;
+        }
+
+        private static float ScoreBombSequence(PlayerViewData inView, ZoneStateData inZone,
+            int inOwnPoints, int inFirstStrength, int inSecondStrength)
+        {
+            var firstResult = GameRules.ResolveBomb(inZone,
+                new CardInstanceData { WildBomb = inFirstStrength }, inView.Rules);
+            float loss = ScoreBombEffect(inZone, firstResult, inOwnPoints,
+                inView.Rules.TotalPointsRequiredToWin);
+            if (inSecondStrength <= 0)
+                return loss;
+
+            var secondResult = GameRules.ResolveBomb(firstResult,
+                new CardInstanceData { WildBomb = inSecondStrength }, inView.Rules);
+            return loss + ScoreBombEffect(firstResult, secondResult, inOwnPoints,
+                inView.Rules.TotalPointsRequiredToWin);
+        }
+
+        private static double GetNoExcludedAtLeastProbability(int inPopulation, int inDraws,
+            int inExcluded, int inSuccesses, int inMinimumSuccesses, double inTotalHands)
+        {
+            double matchingHands = 0.0;
+            int maximumSuccesses = Math.Min(inSuccesses, inDraws);
+            int otherCards = inPopulation - inExcluded - inSuccesses;
+            for (int successes = inMinimumSuccesses; successes <= maximumSuccesses; ++successes)
+            {
+                matchingHands += GetCombination(inSuccesses, successes)
+                    * GetCombination(otherCards, inDraws - successes);
+            }
+            return matchingHands / inTotalHands;
+        }
+
+        private static double GetExactlyOneAndAtLeastOneProbability(int inPopulation,
+            int inDraws, int inExcluded, int inFirstBombs, int inSecondBombs,
+            double inTotalHands)
+        {
+            double matchingHands = 0.0;
+            int otherCards = inPopulation - inExcluded - inFirstBombs - inSecondBombs;
+            int maximumSecondBombs = Math.Min(inSecondBombs, inDraws - 1);
+            for (int secondBombs = 1; secondBombs <= maximumSecondBombs; ++secondBombs)
+            {
+                matchingHands += inFirstBombs * GetCombination(inSecondBombs, secondBombs)
+                    * GetCombination(otherCards, inDraws - secondBombs - 1);
+            }
+            return matchingHands / inTotalHands;
+        }
+
+        private static float GetExpectedLightningExposure(PlayerViewData inView,
+            ZoneStateData inZone, int inOwnPoints, int inOpponentHandSize)
+        {
+            int totalPowerCards = 0;
+            int totalLightningCards = 0;
+            foreach (var definition in DeckDefinitionData.PowerCards)
+            {
+                totalPowerCards += definition.ConfigCount;
+                if (definition.WildLightning > 0)
+                    totalLightningCards += definition.ConfigCount;
+            }
+            int visiblePowerCards = 0;
+            int visibleLightningCards = 0;
+            CountVisiblePowerCards(inView.Player.Hand, ref visiblePowerCards,
+                ref visibleLightningCards);
+            foreach (var zone in inView.Player.Zones)
+                CountVisiblePowerCards(zone.Cards, ref visiblePowerCards, ref visibleLightningCards);
+            foreach (var opponent in inView.Opponents)
+            {
+                foreach (var zone in opponent.Zones)
+                    CountVisiblePowerCards(zone.Cards, ref visiblePowerCards,
+                        ref visibleLightningCards);
+            }
+
+            int cardsOutsideRandomDeck = Math.Max(0,
+                totalPowerCards - Math.Min(totalPowerCards, inView.PowerDeckCount));
+            int hiddenRandomPowerCards = Math.Min(inOpponentHandSize,
+                Math.Max(0, cardsOutsideRandomDeck - visiblePowerCards));
+            double randomProbability = ProbabilityOfAtLeastOne(
+                totalPowerCards - visiblePowerCards,
+                Math.Max(0, totalLightningCards - visibleLightningCards),
+                hiddenRandomPowerCards);
+
+            // Selected power cards do not reduce PowerDeckCount and the fair view exposes no
+            // activation history. Reserve one hidden hand slot as a possible selected card and
+            // spread that uncertainty across the three legal choices.
+            int selectedPowerSlots = inView.Rules.AllowSelectPowerCardType
+                ? Math.Min(1, inOpponentHandSize - hiddenRandomPowerCards)
+                : 0;
+            double selectedProbability = selectedPowerSlots > 0 ? 1.0 / 3.0 : 0.0;
+            double probability = 1.0
+                - (1.0 - randomProbability) * (1.0 - selectedProbability);
+            if (probability <= 0.0)
+                return 0f;
+
+            var result = GameRules.ResolveLightning(inZone,
+                new CardInstanceData { WildLightning = Math.Max(1, inView.Rules.LightningDamage) },
+                inView.Rules);
+            return (float)probability * ScoreBombEffect(inZone, result, inOwnPoints,
+                inView.Rules.TotalPointsRequiredToWin);
+        }
+
+        private static int GetOpponentHandSize(PlayerViewData inView)
+        {
+            int count = 0;
+            foreach (var opponent in inView.Opponents)
+                count += opponent.HandCount;
+            return count;
+        }
+
+        private static Dictionary<int, int> GetVisibleNormalCardCounts(PlayerViewData inView)
+        {
+            var visibleCounts = new Dictionary<int, int>();
+            CountDefinitions(inView.Player.Hand, visibleCounts);
+            foreach (var zone in inView.Player.Zones)
+                CountDefinitions(zone.Cards, visibleCounts);
+            foreach (var opponent in inView.Opponents)
+            {
+                foreach (var zone in opponent.Zones)
+                    CountDefinitions(zone.Cards, visibleCounts);
+            }
+            return visibleCounts;
+        }
+
+        private static void CountVisiblePowerCards(List<CardInstanceData> inCards,
+            ref int outPowerCards, ref int outLightningCards)
+        {
+            foreach (var card in inCards)
+            {
+                if (!card.IsPowerCard)
+                    continue;
+                ++outPowerCards;
+                if (card.WildLightning > 0)
+                    ++outLightningCards;
+            }
         }
 
         private static int GetTotalPoints(List<ZoneStateData> inZones)
@@ -1091,36 +1355,45 @@ namespace Elemento.Domain
             if (!this.useEffectBasedBombScoring)
                 return base.TryGetShieldPlayValue(inView, inCard, inZone, inOwn, out outValue);
 
-            CardDefinitionData strongestBomb;
-            int unseenCount;
-            int threateningCount;
-            GetUnseenBombThreat(inView, inZone, out strongestBomb, out unseenCount, out threateningCount);
-            int opponentHandSize = inView.Opponents.Count == 0 ? 0 : inView.Opponents[0].HandCount;
-            double threatProbability = ProbabilityOfAtLeastOne(unseenCount, threateningCount,
-                opponentHandSize);
-            if (strongestBomb == null || threatProbability <= 0.0)
-            {
-                outValue = 0f;
-                return false;
-            }
+            outValue = GetShieldProtectionValue(inView, inCard, inZone, inOwn.TotalPoints);
+            return outValue > 0f;
+        }
 
-            var bombCard = strongestBomb.CreateCard();
-            var bombedZone = GameRules.ResolveBomb(inZone, bombCard, inView.Rules);
-            float exposedLoss = ScoreBombEffect(inZone, bombedZone, inOwn.TotalPoints,
-                inView.Rules.TotalPointsRequiredToWin);
+        private static float GetShieldProtectionValue(PlayerViewData inView,
+            CardInstanceData inCard, ZoneStateData inZone, int inOwnPoints)
+        {
+            int elementIndex = (int)inZone.ElementType - 1;
+            int shield = Math.Max(GetValue(inCard.Shields, elementIndex), inCard.WildShield);
+            if (shield <= 0 || HasPointCardForZone(inView.Player.Hand, inCard.Id,
+                    inZone.ElementType, elementIndex))
+                return 0f;
 
+            int opponentHandSize = GetOpponentHandSize(inView);
+            float exposedLoss = GetExpectedBombExposure(inView, inZone, inOwnPoints,
+                opponentHandSize, 1);
             var shieldedZone = inZone.Clone();
             var shieldCard = inCard.Clone();
             shieldCard.IsFaceUp = true;
             shieldedZone.Cards.Add(shieldCard);
             shieldedZone.Points = GameRules.CalculateZonePoints(shieldedZone);
             shieldedZone.FaceUpPoints = GameRules.CalculateZonePoints(shieldedZone, true);
-            var shieldedBombedZone = GameRules.ResolveBomb(shieldedZone, bombCard, inView.Rules);
-            float shieldedLoss = ScoreBombEffect(shieldedZone, shieldedBombedZone,
-                inOwn.TotalPoints, inView.Rules.TotalPointsRequiredToWin);
+            float shieldedLoss = GetExpectedBombExposure(inView, shieldedZone, inOwnPoints,
+                opponentHandSize, 1);
+            return Math.Max(0f, exposedLoss - shieldedLoss) * expectedExposureWeight;
+        }
 
-            outValue = (float)(threatProbability * Math.Max(0f, exposedLoss - shieldedLoss));
-            return true;
+        private static bool HasPointCardForZone(List<CardInstanceData> inCards,
+            string inExcludedCardId, EElementType inElementType, int inElementIndex)
+        {
+            foreach (var card in inCards)
+            {
+                if (card.Id == inExcludedCardId || !GameRules.CanPlayCardInZone(card, inElementType))
+                    continue;
+                int points = Math.Max(GetValue(card.Points, inElementIndex), card.WildPoints);
+                if (points > 0)
+                    return true;
+            }
+            return false;
         }
 
         private static float ScorePointDelta(int inPointDelta, int inCurrentPoints, int inWinTarget)
@@ -1150,44 +1423,6 @@ namespace Elemento.Domain
             return value;
         }
 
-        private static void GetUnseenBombThreat(PlayerViewData inView, ZoneStateData inZone,
-            out CardDefinitionData outStrongestBomb, out int outUnseenCount, out int outThreateningCount)
-        {
-            var visibleCounts = new Dictionary<int, int>();
-            CountDefinitions(inView.Player.Hand, visibleCounts);
-            foreach (var zone in inView.Player.Zones)
-                CountDefinitions(zone.Cards, visibleCounts);
-            foreach (var opponent in inView.Opponents)
-            {
-                foreach (var zone in opponent.Zones)
-                    CountDefinitions(zone.Cards, visibleCounts);
-            }
-
-            int elementIndex = (int)inZone.ElementType - 1;
-            int topShield = GetTopShield(inZone, elementIndex);
-            int strongestValue = 0;
-            outStrongestBomb = null;
-            outUnseenCount = 0;
-            outThreateningCount = 0;
-            foreach (var definition in DeckDefinitionData.NormalCards)
-            {
-                int visible;
-                visibleCounts.TryGetValue(definition.DefinitionId, out visible);
-                int remaining = Math.Max(0, definition.ChoiceCount - visible);
-                outUnseenCount += remaining;
-
-                int bombValue = Math.Max(GetValue(definition.Bombs, elementIndex), definition.WildBomb);
-                if (remaining <= 0 || bombValue <= 0 || bombValue < topShield)
-                    continue;
-
-                outThreateningCount += remaining;
-                if (bombValue <= strongestValue)
-                    continue;
-                strongestValue = bombValue;
-                outStrongestBomb = definition;
-            }
-        }
-
         private static double ProbabilityOfAtLeastOne(int inPopulation, int inSuccesses, int inDraws)
         {
             int draws = Math.Min(inDraws, inPopulation);
@@ -1207,12 +1442,19 @@ namespace Elemento.Domain
             return 1.0 - probabilityOfNone;
         }
 
-        private static int GetTopShield(ZoneStateData inZone, int inElementIndex)
+        private static double GetCombination(int inPopulation, int inChosen)
         {
-            if (inZone.Cards.Count == 0)
-                return 0;
-            var topCard = inZone.Cards[inZone.Cards.Count - 1];
-            return Math.Max(GetValue(topCard.Shields, inElementIndex), topCard.WildShield);
+            if (inChosen < 0 || inChosen > inPopulation)
+                return 0.0;
+
+            int chosen = Math.Min(inChosen, inPopulation - inChosen);
+            double combinations = 1.0;
+            for (int i = 1; i <= chosen; ++i)
+            {
+                combinations *= inPopulation - chosen + i;
+                combinations /= i;
+            }
+            return combinations;
         }
 
         private static void CountDefinitions(List<CardInstanceData> inCards,

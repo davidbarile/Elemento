@@ -238,6 +238,69 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_RebuildsExposedMultiplierBelowPointsAndShields()
+        {
+            var state = CreateMultiplierOrderingState(true, 0, true);
+
+            PlayStrongAiTurn(state, out var moves);
+
+            var cards = state.Players[0].Zones[0].Cards;
+            int multiplierIndex = FindCardIndex(cards, "water-multiplier-x3");
+            int points3Index = FindCardIndex(cards, "water-points-3");
+            int points5Index = FindCardIndex(cards, "water-points-5");
+            int points4Index = FindCardIndex(cards, "water-points-4");
+            int shield1Index = FindCardIndex(cards, "water-shield-1");
+            int shield3Index = FindCardIndex(cards, "water-shield-3");
+
+            Assert.That(moves[0].CardId, Is.EqualTo("water-multiplier-x3"));
+            Assert.That(multiplierIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(points3Index, Is.GreaterThan(multiplierIndex));
+            Assert.That(points5Index, Is.GreaterThan(multiplierIndex));
+            Assert.That(points4Index, Is.GreaterThan(multiplierIndex));
+            int highestPointIndex = System.Math.Max(points3Index,
+                System.Math.Max(points5Index, points4Index));
+            Assert.That(shield1Index, Is.GreaterThan(highestPointIndex));
+            Assert.That(shield3Index, Is.GreaterThan(shield1Index),
+                "the stronger outer shield survives the more common weak bombs");
+        }
+
+        [Test]
+        public void StrongAi_BuriesMultiplierFromHandWhenPileCanBeRebuilt()
+        {
+            var state = CreateMultiplierOrderingState(false, 0, true);
+
+            PlayStrongAiTurn(state, out _);
+
+            var cards = state.Players[0].Zones[0].Cards;
+            int multiplierIndex = FindCardIndex(cards, "water-multiplier-x3");
+            Assert.That(multiplierIndex, Is.GreaterThanOrEqualTo(0));
+            Assert.That(FindCardIndex(cards, "water-points-3"), Is.GreaterThan(multiplierIndex));
+            Assert.That(FindCardIndex(cards, "water-points-5"), Is.GreaterThan(multiplierIndex));
+        }
+
+        [Test]
+        public void StrongAi_DoesNotStartMultiplierRebuildWithOnlyTwoMoves()
+        {
+            var state = CreateMultiplierOrderingState(true, 2, true);
+
+            PlayStrongAiTurn(state, out var moves);
+
+            Assert.That(moves[0].CardId, Is.Not.EqualTo("water-multiplier-x3"));
+            Assert.That(moves[0].SourceZoneId, Is.EqualTo(-1));
+        }
+
+        [Test]
+        public void StrongAi_DoesNotStripMultiplierWithoutAttackThreat()
+        {
+            var state = CreateMultiplierOrderingState(true, 0, false);
+
+            PlayStrongAiTurn(state, out var moves);
+
+            foreach (var move in moves)
+                Assert.That(move.SourceZoneId, Is.EqualTo(-1));
+        }
+
+        [Test]
         public void StrongAi_LocksDualCardPlayedFromHandForRestOfTurn()
         {
             var view = CreateDualCardDecisionView();
@@ -786,6 +849,141 @@ namespace Elemento.Tests.Domain
             });
             view.LegalMoves.Add(CreateEndTurnMove("end-multiplier-rebuild"));
             return view;
+        }
+
+        private static GameStateData CreateMultiplierOrderingState(bool inMultiplierOnPile,
+            int inMovesPerTurn, bool inHasThreat)
+        {
+            var state = new GameStateData
+            {
+                MatchId = "strong-ai-multiplier-ordering",
+                TurnNumber = 1,
+                CurrentPlayerId = 0,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                MovesRemaining = inMovesPerTurn > 0 ? inMovesPerTurn : 99,
+                WinnerPlayerId = -1,
+                Rules = new RulesConfigData
+                {
+                    NumCardsToDeal = 0,
+                    MaxCardsInHand = 7,
+                    MovesPerTurn = inMovesPerTurn,
+                    ElementZonePointsRequiredToActivate = 100,
+                    TotalPointsRequiredToWin = 1000,
+                    MaxCardsPerZone = 20,
+                    DiscardMode = EDiscardMode.None
+                },
+                Random = new RandomStateData { State = 1 }
+            };
+            var ai = new PlayerStateData { Id = 0, Name = "AI" };
+            var waterZone = new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Water,
+                Health = 5,
+                MaxHealth = 5
+            };
+            waterZone.Cards.Add(CreateWaterPointCard("water-points-3", 3));
+            waterZone.Cards.Add(CreateWaterPointCard("water-points-5", 5));
+            if (inMultiplierOnPile)
+                waterZone.Cards.Add(CreateWaterMultiplierCard());
+            RefreshZonePoints(waterZone);
+            ai.Zones.Add(waterZone);
+            ai.Zones.Add(new ZoneStateData
+            {
+                Id = 1,
+                ElementType = EElementType.Air,
+                Health = 5,
+                MaxHealth = 5
+            });
+            if (!inMultiplierOnPile)
+                ai.Hand.Add(CreateWaterMultiplierCard());
+            ai.Hand.Add(CreateWaterPointCard("water-points-4", 4));
+            ai.Hand.Add(CreateWaterShieldCard("water-shield-1", 1));
+            ai.Hand.Add(CreateWaterShieldCard("water-shield-3", 3));
+            state.Players.Add(ai);
+
+            var opponent = new PlayerStateData { Id = 1, Name = "Opponent" };
+            opponent.Zones.Add(new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Water,
+                Health = 5,
+                MaxHealth = 5
+            });
+            if (inHasThreat)
+            {
+                for (int i = 0; i < 7; ++i)
+                    opponent.Hand.Add(new CardInstanceData { Id = "opponent-card-" + i });
+            }
+            state.Players.Add(opponent);
+
+            int powerDeckCount = 37;
+            for (int i = 0; i < powerDeckCount; ++i)
+            {
+                state.PowerDeck.Add(new CardInstanceData
+                {
+                    Id = "power-card-" + i,
+                    IsPowerCard = true
+                });
+            }
+            return state;
+        }
+
+        private static CardInstanceData CreateWaterPointCard(string inId, int inPoints)
+        {
+            return new CardInstanceData
+            {
+                Id = inId,
+                IsFaceUp = true,
+                Points = new[] { 0, 0, 0, inPoints }
+            };
+        }
+
+        private static CardInstanceData CreateWaterMultiplierCard()
+        {
+            return new CardInstanceData
+            {
+                Id = "water-multiplier-x3",
+                IsFaceUp = true,
+                Multipliers = new[] { 0, 0, 0, 3 }
+            };
+        }
+
+        private static CardInstanceData CreateWaterShieldCard(string inId, int inShield)
+        {
+            return new CardInstanceData
+            {
+                Id = inId,
+                IsFaceUp = true,
+                Shields = new[] { 0, 0, 0, inShield }
+            };
+        }
+
+        private static void PlayStrongAiTurn(GameStateData inState, out List<MoveData> outMoves)
+        {
+            var simulator = new GameSimulator();
+            var ai = new StrongAiPlayer();
+            var random = new DeterministicRandom(17);
+            outMoves = new List<MoveData>();
+            while (inState.CurrentPlayerId == 0 && inState.WinnerPlayerId < 0)
+            {
+                var move = ai.ChooseMove(simulator.GetPlayerView(inState, 0), random);
+                Assert.That(move, Is.Not.Null);
+                outMoves.Add(move.Clone());
+                simulator.ApplyMove(inState, move);
+                Assert.That(outMoves.Count, Is.LessThanOrEqualTo(20),
+                    "Strong AI must finish the deterministic turn");
+            }
+        }
+
+        private static int FindCardIndex(List<CardInstanceData> inCards, string inCardId)
+        {
+            for (int i = 0; i < inCards.Count; ++i)
+            {
+                if (inCards[i].Id == inCardId)
+                    return i;
+            }
+            return -1;
         }
 
         private static PlayerViewData CreateShieldRebuildView()
