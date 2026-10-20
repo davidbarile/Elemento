@@ -625,6 +625,18 @@ public class AIMoveCalculator
             }
         }
 
+        bool hasElementBombMove = this.BombMoves.Exists(move =>
+            move.SourceCell.TopCard.Data.WildBomb <= 0
+            && move.SourceCell.TopCard.Data.IsBombOrCombo);
+        if (hasElementBombMove)
+        {
+            foreach (var move in this.BombMoves)
+            {
+                move.Value -= move.SourceCell.TopCard.Data.WildBomb
+                    * Elemento.Domain.LegacyAiPlayer.WildcardBombFlexibilityCost;
+            }
+        }
+
         #region Sort and Return best move
 
         if (this.isLookingForDiscard)

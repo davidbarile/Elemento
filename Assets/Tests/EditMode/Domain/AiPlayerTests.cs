@@ -100,6 +100,30 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_EquivalentBombsPreservesWildcardBomb()
+        {
+            var view = CreateBombPreferenceView(EElementType.Air);
+            var ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo("element-bomb"));
+            Assert.That(move.TargetZoneId, Is.Zero);
+        }
+
+        [Test]
+        public void StrongAi_WildcardBombHitsHighValueTargetWhenElementBombCannot()
+        {
+            var view = CreateBombPreferenceView(EElementType.Earth);
+            var ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo("wild-bomb"));
+            Assert.That(move.TargetZoneId, Is.Zero);
+        }
+
+        [Test]
         public void StrongAi_HiddenCardOrderDoesNotChangeDeterministicChoice()
         {
             var simulator = new GameSimulator();
@@ -1227,6 +1251,90 @@ namespace Elemento.Tests.Domain
                 SourceZoneId = -1,
                 TargetPlayerId = 1,
                 TargetZoneId = 0
+            });
+            return view;
+        }
+
+        private static PlayerViewData CreateBombPreferenceView(EElementType inElementBombType)
+        {
+            var view = new PlayerViewData
+            {
+                CurrentPlayerId = 0,
+                MovesRemaining = 1,
+                Rules = new RulesConfigData
+                {
+                    MovesPerTurn = 1,
+                    ElementZoneStartingHealth = 5,
+                    ElementZonePointsRequiredToActivate = 10,
+                    TotalPointsRequiredToWin = 1000
+                },
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            view.Player.Zones.Add(new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Air,
+                Health = 5,
+                MaxHealth = 5
+            });
+            view.Opponents.Add(new OpponentViewData { Id = 1, Name = "Opponent" });
+            view.Opponents[0].Zones.Add(new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Air,
+                Health = 1,
+                MaxHealth = 5
+            });
+            view.Opponents[0].Zones.Add(new ZoneStateData
+            {
+                Id = 1,
+                ElementType = EElementType.Earth,
+                Health = 5,
+                MaxHealth = 5
+            });
+
+            var elementBombs = new int[4];
+            elementBombs[(int)inElementBombType - 1] = 1;
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "wild-bomb",
+                DefinitionName = "Wild Bomb",
+                WildBomb = 1,
+                Points = new int[4],
+                Multipliers = new int[4],
+                Bombs = new int[4],
+                Shields = new int[4]
+            });
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "element-bomb",
+                DefinitionName = "Element Bomb",
+                Points = new int[4],
+                Multipliers = new int[4],
+                Bombs = elementBombs,
+                Shields = new int[4]
+            });
+
+            int elementTargetZoneId = inElementBombType == EElementType.Air ? 0 : 1;
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "wild-bomb-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "wild-bomb",
+                SourceZoneId = -1,
+                TargetPlayerId = 1,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "element-bomb-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "element-bomb",
+                SourceZoneId = -1,
+                TargetPlayerId = 1,
+                TargetZoneId = elementTargetZoneId
             });
             return view;
         }

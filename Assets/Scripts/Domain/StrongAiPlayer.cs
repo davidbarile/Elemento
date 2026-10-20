@@ -713,6 +713,8 @@ namespace Elemento.Domain
                 }
             }
 
+            if (!card.IsPowerCard && (!isOwnBoard || targetZone.IsFrozen))
+                value -= GetWildcardBombFlexibilityCost(inView, card);
             value += GetRebuildStripBonus(inView, inMove);
             if (inMove.SourceZoneId >= 0)
                 value -= reorderPenalty;
@@ -818,10 +820,12 @@ namespace Elemento.Domain
             var targetZone = FindTargetZone(inView, inMove.TargetPlayerId, inMove.TargetZoneId);
             if (card == null || targetZone == null)
                 return 0f;
+            float wildcardBombCost = GetWildcardBombFlexibilityCost(inView, card);
             if (inMove.TargetPlayerId == inView.Player.Id)
             {
                 return GetShieldProtectionValue(inView, card, targetZone,
-                    GetTotalPoints(inView.Player.Zones));
+                    GetTotalPoints(inView.Player.Zones))
+                    - (targetZone.IsFrozen ? wildcardBombCost : 0f);
             }
 
             int elementIndex = (int)targetZone.ElementType - 1;
@@ -831,8 +835,8 @@ namespace Elemento.Domain
 
             var result = GameRules.ResolveBomb(targetZone, card, inView.Rules);
             if (!IsHighValueBomb(targetZone, result))
-                return 0f;
-            return ScoreStrategicBombEffect(targetZone, result);
+                return -wildcardBombCost;
+            return ScoreStrategicBombEffect(targetZone, result) - wildcardBombCost;
         }
 
         private static float ScoreStrategicBombEffect(ZoneStateData inBefore,
@@ -1346,6 +1350,7 @@ namespace Elemento.Domain
             outValue = ScoreBombEffect(inZone, simulatedZone, inOpponent.TotalPoints,
                 inView.Rules.TotalPointsRequiredToWin);
             outValue -= GetDualPurposeBombPenalty(inView, inCard, inZone, simulatedZone);
+            outValue -= GetWildcardBombFlexibilityCost(inView, inCard);
             return outValue > 0f;
         }
 

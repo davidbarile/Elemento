@@ -46,6 +46,7 @@ namespace Elemento.Domain
     public class LegacyAiPlayer : IAiPlayer
     {
         private const float winningMoveValue = 99999f;
+        public const float WildcardBombFlexibilityCost = .25f;
 
         private sealed class ScoredMove
         {
@@ -482,8 +483,46 @@ namespace Elemento.Domain
 
             modifier *= .3f;
             modifier = Math.Max(1f, modifier);
-            outValue = bombPoints * modifier;
+            outValue = bombPoints * modifier
+                - GetWildcardBombFlexibilityCost(inView, inCard);
             return true;
+        }
+
+        protected static float GetWildcardBombFlexibilityCost(PlayerViewData inView,
+            CardInstanceData inCard)
+        {
+            if (inCard.WildBomb <= 0)
+                return 0f;
+
+            foreach (var move in inView.LegalMoves)
+            {
+                if (move.Type != EMoveType.PlayCard || move.SourceZoneId >= 0
+                    || move.CardId == inCard.Id)
+                    continue;
+
+                var card = FindCard(inView.Player.Hand, move.CardId);
+                var targetZone = FindTargetZone(inView, move.TargetPlayerId, move.TargetZoneId);
+                bool isOwnBoard = move.TargetPlayerId == inView.Player.Id;
+                if (card == null || card.WildBomb > 0 || targetZone == null
+                    || (isOwnBoard && !targetZone.IsFrozen))
+                    continue;
+
+                int elementIndex = GetElementIndex(targetZone.ElementType);
+                int bomb = GetValue(card.Bombs, elementIndex);
+                if (bomb <= 0)
+                    continue;
+                if (targetZone.Cards.Count > 0)
+                {
+                    var topCard = targetZone.Cards[targetZone.Cards.Count - 1];
+                    int shield = Math.Max(GetValue(topCard.Shields, elementIndex),
+                        topCard.WildShield);
+                    if (bomb < shield)
+                        continue;
+                }
+
+                return inCard.WildBomb * WildcardBombFlexibilityCost;
+            }
+            return 0f;
         }
 
         private static float ScoreActivation(PlayerViewData inView, IRandom inRandom,
