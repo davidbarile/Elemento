@@ -178,6 +178,56 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_ActivationChoosesHealForDestroyedBaseAgainstWeakPile()
+        {
+            var view = CreatePowerRecoveryView(false, true, false);
+            var ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.Type, Is.EqualTo(EMoveType.ActivateZone));
+            Assert.That(move.PowerCardType, Is.EqualTo(EPowerCardType.Heal));
+        }
+
+        [Test]
+        public void StrongAi_UsesHealForDestroyedBaseAgainstWeakPile()
+        {
+            var view = CreatePowerRecoveryView(false, false, true);
+            var ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo("heal"));
+            Assert.That(move.TargetPlayerId, Is.EqualTo(0));
+            Assert.That(move.TargetZoneId, Is.Zero);
+        }
+
+        [Test]
+        public void StrongAi_ActivationCanChooseLightningForThreateningMultiplierPile()
+        {
+            var view = CreatePowerRecoveryView(true, true, false);
+            var ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.Type, Is.EqualTo(EMoveType.ActivateZone));
+            Assert.That(move.PowerCardType, Is.EqualTo(EPowerCardType.Lightning));
+        }
+
+        [Test]
+        public void StrongAi_CanUseLightningForThreateningMultiplierPile()
+        {
+            var view = CreatePowerRecoveryView(true, false, true);
+            var ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo("lightning"));
+            Assert.That(move.TargetPlayerId, Is.EqualTo(1));
+            Assert.That(move.TargetZoneId, Is.Zero);
+        }
+
+        [Test]
         public void StrongAi_HardDifficultyMatchesDefault()
         {
             var view = CreateWholeTurnPlanningView();
@@ -1133,6 +1183,185 @@ namespace Elemento.Tests.Domain
         {
             inZone.Points = GameRules.CalculateZonePoints(inZone);
             inZone.FaceUpPoints = GameRules.CalculateZonePoints(inZone, true);
+        }
+
+        private static PlayerViewData CreatePowerRecoveryView(bool inDangerousOpponent,
+            bool inAddActivationMoves, bool inAddPowerCards)
+        {
+            var view = new PlayerViewData
+            {
+                CurrentPlayerId = 0,
+                TurnPhase = ETurnPhase.PlayerPlaying,
+                MovesRemaining = 1,
+                Rules = new RulesConfigData
+                {
+                    AllowSelectPowerCardType = true,
+                    MovesPerTurn = 1,
+                    ElementZoneStartingHealth = 5,
+                    FrozenZoneHealth = 5,
+                    LightningDamage = 5,
+                    ElementZonePointsRequiredToActivate = 10,
+                    TotalPointsRequiredToWin = 50
+                },
+                Player = new PlayerStateData { Id = 0, Name = "AI" }
+            };
+            view.Player.Zones.Add(new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Air,
+                Health = 0,
+                MaxHealth = 5,
+                IsDestroyed = true
+            });
+            var activationZone = new ZoneStateData
+            {
+                Id = 1,
+                ElementType = EElementType.Earth,
+                Health = 5,
+                MaxHealth = 5,
+                IsActivated = inAddActivationMoves
+            };
+            if (inAddActivationMoves)
+            {
+                activationZone.Cards.Add(new CardInstanceData
+                {
+                    Id = "activation-points",
+                    IsFaceUp = true,
+                    Points = new[] { 0, 10, 0, 0 }
+                });
+                RefreshZonePoints(activationZone);
+            }
+            view.Player.Zones.Add(activationZone);
+            view.Player.Zones.Add(new ZoneStateData
+            {
+                Id = 2,
+                ElementType = EElementType.Fire,
+                Health = 5,
+                MaxHealth = 5
+            });
+            view.Player.Zones.Add(new ZoneStateData
+            {
+                Id = 3,
+                ElementType = EElementType.Water,
+                Health = 5,
+                MaxHealth = 5
+            });
+
+            var opponent = new OpponentViewData { Id = 1, Name = "Opponent" };
+            var threatenedZone = new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Air,
+                Health = 5,
+                MaxHealth = 5
+            };
+            threatenedZone.Cards.Add(new CardInstanceData
+            {
+                Id = "opponent-points",
+                IsFaceUp = true,
+                Points = new[] { inDangerousOpponent ? 3 : 1, 0, 0, 0 }
+            });
+            if (inDangerousOpponent)
+            {
+                threatenedZone.Cards.Add(new CardInstanceData
+                {
+                    Id = "opponent-multiplier",
+                    IsFaceUp = true,
+                    Multipliers = new[] { 3, 0, 0, 0 }
+                });
+            }
+            RefreshZonePoints(threatenedZone);
+            opponent.Zones.Add(threatenedZone);
+            opponent.Zones.Add(new ZoneStateData
+            {
+                Id = 1,
+                ElementType = EElementType.Earth,
+                Health = 5,
+                MaxHealth = 5
+            });
+            opponent.Zones.Add(new ZoneStateData
+            {
+                Id = 2,
+                ElementType = EElementType.Fire,
+                Health = 5,
+                MaxHealth = 5
+            });
+            opponent.Zones.Add(new ZoneStateData
+            {
+                Id = 3,
+                ElementType = EElementType.Water,
+                Health = 5,
+                MaxHealth = 5
+            });
+            view.Opponents.Add(opponent);
+
+            if (inAddActivationMoves)
+            {
+                view.LegalMoves.Add(new MoveData
+                {
+                    Id = "activate-heal",
+                    PlayerId = 0,
+                    Type = EMoveType.ActivateZone,
+                    SourceZoneId = 1,
+                    TargetPlayerId = 0,
+                    TargetZoneId = 1,
+                    PowerCardType = EPowerCardType.Heal
+                });
+                view.LegalMoves.Add(new MoveData
+                {
+                    Id = "activate-freeze",
+                    PlayerId = 0,
+                    Type = EMoveType.ActivateZone,
+                    SourceZoneId = 1,
+                    TargetPlayerId = 0,
+                    TargetZoneId = 1,
+                    PowerCardType = EPowerCardType.Freeze
+                });
+                view.LegalMoves.Add(new MoveData
+                {
+                    Id = "activate-lightning",
+                    PlayerId = 0,
+                    Type = EMoveType.ActivateZone,
+                    SourceZoneId = 1,
+                    TargetPlayerId = 0,
+                    TargetZoneId = 1,
+                    PowerCardType = EPowerCardType.Lightning
+                });
+            }
+
+            if (inAddPowerCards)
+            {
+                var heal = DeckDefinitionData.CreatePowerCard(EPowerCardType.Heal);
+                heal.Id = "heal";
+                heal.WildZoneHeal = 5;
+                view.Player.Hand.Add(heal);
+                var lightning = DeckDefinitionData.CreatePowerCard(EPowerCardType.Lightning);
+                lightning.Id = "lightning";
+                lightning.WildLightning = 5;
+                view.Player.Hand.Add(lightning);
+                view.LegalMoves.Add(new MoveData
+                {
+                    Id = "heal-move",
+                    PlayerId = 0,
+                    Type = EMoveType.PlayCard,
+                    CardId = "heal",
+                    SourceZoneId = -1,
+                    TargetPlayerId = 0,
+                    TargetZoneId = 0
+                });
+                view.LegalMoves.Add(new MoveData
+                {
+                    Id = "lightning-move",
+                    PlayerId = 0,
+                    Type = EMoveType.PlayCard,
+                    CardId = "lightning",
+                    SourceZoneId = -1,
+                    TargetPlayerId = 1,
+                    TargetZoneId = 0
+                });
+            }
+
+            return view;
         }
 
         private static PlayerViewData CreateRankedPointView()

@@ -131,7 +131,7 @@ namespace Elemento.Domain
 
                     if (card.IsPowerCard)
                     {
-                        float value = ScorePowerCard(card, targetZone, isOwnBoard, opponent);
+                        float value = ScorePowerCard(inView, card, targetZone, isOwnBoard, opponent);
                         if (value > 0f)
                             AddCandidate(candidates, legalMove, value, ref order);
                         continue;
@@ -355,9 +355,14 @@ namespace Elemento.Domain
             AddCandidate(inCandidates, inMove, shieldPlayValue, ref inOrder);
         }
 
-        private static float ScorePowerCard(CardInstanceData inCard, ZoneStateData inZone,
-            bool inIsOwnBoard, BoardAnalysis inOpponent)
+        private static float ScorePowerCard(PlayerViewData inView, CardInstanceData inCard,
+            ZoneStateData inZone, bool inIsOwnBoard, BoardAnalysis inOpponent)
         {
+            float recoveryValue;
+            if (TryGetRecoveryPowerCardValue(inView, inCard, inZone, inIsOwnBoard,
+                    out recoveryValue))
+                return recoveryValue;
+
             float value = 100f;
             if (inIsOwnBoard)
             {
@@ -389,6 +394,214 @@ namespace Elemento.Domain
                 value = 0f;
 
             return value;
+        }
+
+        protected static bool TryGetRecoveryPowerCardValue(PlayerViewData inView,
+            CardInstanceData inCard, ZoneStateData inZone, bool inIsOwnBoard,
+            out float outValue)
+        {
+            outValue = 0f;
+            if (!HasDestroyedZone(inView.Player.Zones))
+                return false;
+
+            if (inCard.WildZoneHeal > 0 && inIsOwnBoard)
+            {
+                if (!GameRules.CanHealZone(inZone, inCard, inView.Rules, true))
+                    return false;
+                outValue = 100f + GetHealRecoveryValue(inView, inZone);
+                return true;
+            }
+
+            if (inCard.WildLightning <= 0 || inIsOwnBoard
+                || !GameRules.CanLightningZone(inZone, inCard, inView.Rules, false))
+                return false;
+
+            outValue = 100f + GetLightningThreatValue(inView, inCard, inZone);
+            return true;
+        }
+
+        protected static bool TryGetRecoveryPowerTypeValue(PlayerViewData inView,
+            EPowerCardType inType, out float outValue)
+        {
+            outValue = 0f;
+            if (!HasDestroyedZone(inView.Player.Zones)
+                || inType != EPowerCardType.Heal && inType != EPowerCardType.Lightning)
+                return false;
+
+            var card = DeckDefinitionData.CreatePowerCard(inType);
+            if (card == null)
+                return false;
+            if (inType == EPowerCardType.Heal)
+                card.WildZoneHeal = inView.Rules.ElementZoneStartingHealth;
+            else
+                card.WildLightning = inView.Rules.LightningDamage;
+
+            bool found = false;
+            if (inType == EPowerCardType.Heal)
+            {
+                foreach (var zone in inView.Player.Zones)
+                {
+                    float value;
+                    if (!TryGetRecoveryPowerCardValue(inView, card, zone, true, out value))
+                        continue;
+                    outValue = Math.Max(outValue, value);
+                    found = true;
+                }
+                return found;
+            }
+
+            foreach (var opponent in inView.Opponents)
+            {
+                foreach (var zone in opponent.Zones)
+                {
+                    float value;
+                    if (!TryGetRecoveryPowerCardValue(inView, card, zone, false, out value))
+                        continue;
+                    outValue = Math.Max(outValue, value);
+                    found = true;
+                }
+            }
+            return found;
+        }
+
+        private static bool TryChooseRecoveryPowerCardType(PlayerViewData inView,
+            out EPowerCardType outType, out float outValue)
+        {
+            float healValue;
+            float lightningValue;
+            bool canHeal = TryGetRecoveryPowerTypeValue(inView, EPowerCardType.Heal,
+                out healValue);
+            bool canLightning = TryGetRecoveryPowerTypeValue(inView, EPowerCardType.Lightning,
+                out lightningValue);
+            if (!canHeal && !canLightning)
+            {
+                outType = EPowerCardType.None;
+                outValue = 0f;
+                return false;
+            }
+
+            if (canLightning && (!canHeal || lightningValue > healValue))
+            {
+                outType = EPowerCardType.Lightning;
+                outValue = lightningValue;
+                return true;
+            }
+
+            outType = EPowerCardType.Heal;
+            outValue = healValue;
+            return true;
+        }
+
+        private static float GetHealRecoveryValue(PlayerViewData inView,
+            ZoneStateData inZone)
+        {
+            int restoredHealth = Math.Max(0,
+                inView.Rules.ElementZoneStartingHealth - inZone.Health);
+            float value = restoredHealth * 2f;
+            if (!inZone.IsDestroyed)
+                return value;
+
+            int destroyedZones = 0;
+            foreach (var zone in inView.Player.Zones)
+            {
+                if (zone.IsDestroyed)
+                    ++destroyedZones;
+            }
+
+            int aliveZones = inView.Player.Zones.Count - destroyedZones;
+            value += 30f + destroyedZones * 10f;
+            if (aliveZones <= 1)
+                value += 70f;
+            else if (aliveZones == 2)
+                value += 35f;
+            value += GetExclusiveElementHandValue(inView.Player.Hand,
+                inZone.ElementType) * 2f;
+            return value;
+        }
+
+        private static float GetExclusiveElementHandValue(List<CardInstanceData> inHand,
+            EElementType inElementType)
+        {
+            int elementIndex = GetElementIndex(inElementType);
+            float value = 0f;
+            foreach (var card in inHand)
+            {
+                if (card.IsPowerCard || !GameRules.CanPlayCardInZone(card, inElementType))
+                    continue;
+
+                bool fitsAnotherElement = false;
+                for (int i = 0; i < 4; ++i)
+                {
+                    var elementType = (EElementType)(i + 1);
+                    if (elementType != inElementType
+                        && GameRules.CanPlayCardInZone(card, elementType))
+                    {
+                        fitsAnotherElement = true;
+                        break;
+                    }
+                }
+                if (fitsAnotherElement)
+                    continue;
+
+                value += Math.Max(GetValue(card.Points, elementIndex), card.WildPoints);
+                value += Math.Max(GetValue(card.Multipliers, elementIndex),
+                    card.WildMultiplier) * 3f;
+                value += Math.Max(GetValue(card.Shields, elementIndex), card.WildShield);
+            }
+            return value;
+        }
+
+        private static float GetLightningThreatValue(PlayerViewData inView,
+            CardInstanceData inCard, ZoneStateData inZone)
+        {
+            var result = GameRules.ResolveLightning(inZone, inCard, inView.Rules);
+            int pointsRemoved = Math.Max(0, inZone.Points - result.Points);
+            int cardsRemoved = Math.Max(0, inZone.Cards.Count - result.Cards.Count);
+            int healthDamage = Math.Max(0, inZone.Health - result.Health);
+            int frozenDamage = Math.Max(0, inZone.FrozenHealth - result.FrozenHealth);
+            int elementIndex = GetElementIndex(inZone.ElementType);
+            float value = pointsRemoved * 2f + cardsRemoved
+                + (healthDamage + frozenDamage) * 2f;
+
+            for (int i = result.Cards.Count; i < inZone.Cards.Count; ++i)
+            {
+                var removedCard = inZone.Cards[i];
+                int multiplier = Math.Max(GetValue(removedCard.Multipliers, elementIndex),
+                    removedCard.WildMultiplier);
+                value += Math.Max(0, multiplier - 1) * 12f;
+            }
+
+            int activationTarget = inView.Rules.ElementZonePointsRequiredToActivate;
+            if (activationTarget > 0 && inZone.Points >= activationTarget * .8f)
+                value += 20f + pointsRemoved;
+
+            int opponentPoints = 0;
+            int opponentAliveZones = 0;
+            foreach (var opponent in inView.Opponents)
+            {
+                foreach (var zone in opponent.Zones)
+                {
+                    opponentPoints += zone.Points;
+                    if (!zone.IsDestroyed)
+                        ++opponentAliveZones;
+                }
+            }
+            int winTarget = inView.Rules.TotalPointsRequiredToWin;
+            if (winTarget > 0 && opponentPoints >= winTarget * .8f)
+                value += 25f + pointsRemoved;
+            if (!inZone.IsDestroyed && result.IsDestroyed)
+                value += opponentAliveZones <= 1 ? 1000f : 30f;
+            return value;
+        }
+
+        private static bool HasDestroyedZone(List<ZoneStateData> inZones)
+        {
+            foreach (var zone in inZones)
+            {
+                if (zone.IsDestroyed)
+                    return true;
+            }
+            return false;
         }
 
         protected virtual bool TryGetPointPlayValue(PlayerViewData inView, CardInstanceData inCard,
@@ -698,6 +911,18 @@ namespace Elemento.Domain
                 {
                     choices.Sort((inFirst, inSecond) => inSecond.Value.CompareTo(inFirst.Value));
                     outType = choices[0].Type;
+                }
+
+                if (inView.Rules.AllowSelectPowerCardType && inOwn.DestroyedZones > 0)
+                {
+                    EPowerCardType recoveryType;
+                    float recoveryValue;
+                    if (TryChooseRecoveryPowerCardType(inView, out recoveryType,
+                            out recoveryValue))
+                    {
+                        outType = recoveryType;
+                        useValue = Math.Max(useValue, 50f + (recoveryValue - 100f) * .1f);
+                    }
                 }
             }
 

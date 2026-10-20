@@ -655,7 +655,11 @@ namespace Elemento.Domain
         private static float GetB2PruneValue(PlayerViewData inView, MoveData inMove)
         {
             if (inMove.Type == EMoveType.ActivateZone)
-                return 1f;
+            {
+                float recoveryValue;
+                return TryGetRecoveryPowerTypeValue(inView, inMove.PowerCardType,
+                    out recoveryValue) ? recoveryValue : 1f;
+            }
 
             var card = FindSourceCard(inView.Player, inMove);
             var targetZone = FindTargetZone(inView, inMove.TargetPlayerId, inMove.TargetZoneId);
@@ -669,6 +673,11 @@ namespace Elemento.Domain
             bool isOwnBoard = inMove.TargetPlayerId == inView.Player.Id;
             if (card.IsPowerCard)
             {
+                float recoveryValue;
+                if (TryGetRecoveryPowerCardValue(inView, card, targetZone, isOwnBoard,
+                        out recoveryValue))
+                    return recoveryValue;
+
                 ZoneStateData result;
                 if (card.WildZoneHeal > 0)
                     result = GameRules.ResolveHeal(targetZone, inView.Rules);
@@ -813,6 +822,12 @@ namespace Elemento.Domain
 
         private static float GetStrategicMoveValue(PlayerViewData inView, MoveData inMove)
         {
+            if (inMove.Type == EMoveType.ActivateZone)
+            {
+                float recoveryValue;
+                return TryGetRecoveryPowerTypeValue(inView, inMove.PowerCardType,
+                    out recoveryValue) ? recoveryValue - 100f : 0f;
+            }
             if (inMove.Type != EMoveType.PlayCard)
                 return 0f;
 
@@ -820,8 +835,13 @@ namespace Elemento.Domain
             var targetZone = FindTargetZone(inView, inMove.TargetPlayerId, inMove.TargetZoneId);
             if (card == null || targetZone == null)
                 return 0f;
+            bool isOwnBoard = inMove.TargetPlayerId == inView.Player.Id;
+            float recoveryPowerValue;
+            if (card.IsPowerCard && TryGetRecoveryPowerCardValue(inView, card, targetZone,
+                    isOwnBoard, out recoveryPowerValue))
+                return recoveryPowerValue - 100f;
             float wildcardBombCost = GetWildcardBombFlexibilityCost(inView, card);
-            if (inMove.TargetPlayerId == inView.Player.Id)
+            if (isOwnBoard)
             {
                 return GetShieldProtectionValue(inView, card, targetZone,
                     GetTotalPoints(inView.Player.Zones))
