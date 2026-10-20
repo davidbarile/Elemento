@@ -60,6 +60,8 @@ public class CurrentRulesRegressionTests
         UIWinLosePanel.IN = null;
         AudioManager.IN = null;
         BoardStateManager.IN = null;
+        if (CardsManager.IN != null)
+            CardsManager.IN.DestroyAllCards(false);
         CardsManager.IN = null;
         GameManager.IN = null;
         SettingsManager.IN = null;
@@ -416,6 +418,87 @@ public class CurrentRulesRegressionTests
         Assert.That(zone.IsDestroyed, Is.False);
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public void CaptureAfterHandToZoneMove_DeduplicatesStaleHandEntry(bool inAllowUndo)
+    {
+        UIPlayerBoard board = ConfigureSnapshotGame(out CardsManager cardsManager);
+        this.settings.AllowUndo = inAllowUndo;
+        CardData cardData = CreateSnapshotCardData();
+        Card card = CreateSnapshotCard("card-00000043", cardData,
+            board.Hand.CardCells[0].CardHolder);
+        cardsManager.SpawnedCards.Add(card);
+        board.Hand.CardCells[0].Cards.Add(card);
+
+        this.gameManager.SaveBoardState(null, board.Hand.CardCells[0], inCardId: card.Id);
+
+        board.ElementZones[1].CardCell.Cards.Add(card);
+        LogAssert.Expect(LogType.Warning,
+            new Regex("Repaired capture board snapshot.*zones take precedence"));
+        this.gameManager.SaveBoardState(board.Hand.CardCells[0],
+            board.ElementZones[1].CardCell, inCardId: card.Id);
+
+        List<BoardState> boardStates = BoardStateManager.IN.BoardHistory.BoardStates;
+        BoardState capturedState = boardStates[boardStates.Count - 1];
+        Assert.That(capturedState.Players[0].Hand.CardIds, Does.Not.Contain(card.Id));
+        Assert.That(capturedState.Players[0].ElementZones[1].CardIds,
+            Is.EqualTo(new[] { card.Id }));
+        AssertBoardStateIdsAreUnique(capturedState);
+    }
+
+    [Test]
+    public void CaptureAfterUndoRestore_HasUniqueCardIds()
+    {
+        UIPlayerBoard board = ConfigureSnapshotGame(out CardsManager cardsManager);
+        this.settings.AllowUndo = true;
+        CardData cardData = CreateSnapshotCardData();
+        const string cardId = "card-00000043";
+        Card card = CreateSnapshotCard(cardId, cardData,
+            board.Hand.CardCells[0].CardHolder);
+        cardsManager.SpawnedCards.Add(card);
+        board.Hand.CardCells[0].Cards.Add(card);
+
+        this.gameManager.SaveBoardState(null, board.Hand.CardCells[0], inCardId: card.Id);
+        board.ElementZones[1].CardCell.Cards.Add(card);
+        LogAssert.Expect(LogType.Warning,
+            new Regex("Repaired capture board snapshot.*zones take precedence"));
+        this.gameManager.SaveBoardState(board.Hand.CardCells[0],
+            board.ElementZones[1].CardCell, inCardId: card.Id);
+
+        this.gameManager.HandleUndoButtonPress();
+        BoardState capturedState = InvokeCreateBoardState();
+
+        Assert.That(capturedState.Players[0].Hand.CardIds,
+            Is.EqualTo(new[] { cardId }));
+        Assert.That(capturedState.Players[0].ElementZones[1].CardIds, Is.Empty);
+        AssertBoardStateIdsAreUnique(capturedState);
+    }
+
+    [Test]
+    public void ReplayFinallyRestore_WithExistingCardIdsRebuildsEachCardOnce()
+    {
+        UIPlayerBoard board = ConfigureSnapshotGame(out CardsManager cardsManager);
+        CardData cardData = CreateSnapshotCardData();
+        const string cardId = "card-00000043";
+        Card existingCard = CreateSnapshotCard(cardId, cardData,
+            board.Hand.CardCells[0].CardHolder);
+        cardsManager.SpawnedCards.Add(existingCard);
+        board.Hand.CardCells[0].Cards.Add(existingCard);
+        BoardState restoreState = CreateSnapshotState(cardData, cardId, true, true);
+
+        LogAssert.Expect(LogType.Warning,
+            new Regex("Repaired restore board snapshot.*zones take precedence"));
+        Assert.DoesNotThrow(() => this.gameManager.SetGameToBoardState(restoreState));
+
+        Assert.That(cardsManager.SpawnedCards.ConvertAll(inCard => inCard.Id),
+            Is.EqualTo(new[] { cardId }));
+        Assert.That(board.Hand.CardCells[0].Cards, Is.Empty);
+        Assert.That(board.ElementZones[1].CardCell.Cards.ConvertAll(inCard => inCard.Id),
+            Is.EqualTo(new[] { cardId }));
+        Assert.That(BoardStateManager.IsSettingState, Is.False);
+        AssertBoardStateIdsAreUnique(restoreState);
+    }
+
     [Test]
     public void ReplayButtonPlan_AfterAiTurnStartsAndPlaysAiMovesInOrder()
     {
@@ -711,6 +794,145 @@ public class CurrentRulesRegressionTests
         SetField(zone, "frozenOverlay", CreateGameObject(name + " Frozen Overlay", zoneObject.transform));
 
         return zone;
+    }
+
+    private UIPlayerBoard ConfigureSnapshotGame(out CardsManager outCardsManager)
+    {
+        outCardsManager = CreateComponent<CardsManager>("Snapshot Cards Manager");
+        CardsManager.IN = outCardsManager;
+
+        var boardStateManager = CreateComponent<BoardStateManager>("Snapshot Board State Manager");
+        boardStateManager.BoardHistory = new BoardTurn();
+        boardStateManager.BoardTurns = new();
+        BoardStateManager.IN = boardStateManager;
+
+        UIPlayerBoard board = CreateBoard("Snapshot Board", new int[4]);
+        board.PlayerType = UIPlayerBoard.EPlayerType.PlayerA;
+        board.AiOutputBubble = CreateGameObject("AI Output", board.transform);
+        SetField(board, "aiOutputText", CreateText("AI Output Text", board.transform));
+
+        var hand = CreateComponent<UIHand>("Snapshot Hand", board.transform);
+        var handGrid = CreateUiComponent<HorizontalLayoutGroup>("Snapshot Hand Grid", hand.transform);
+        hand.HandGrid = handGrid.GetComponent<RectTransform>();
+        for (int i = 0; i < 4; i++)
+        {
+            var cell = CreateComponent<UICardCell>($"Snapshot Hand Cell {i}", handGrid.transform);
+            cell.CellType = UICardCell.ECellType.Hand;
+            cell.PlayerType = UIPlayerBoard.EPlayerType.PlayerA;
+            cell.CardHolder = cell.transform;
+        }
+        hand.RefreshCardCells();
+        SetField(hand, "orderedCardCells", new List<UICardCell>(hand.CardCells));
+        board.Hand = hand;
+
+        foreach (var zone in board.ElementZones)
+        {
+            zone.PlayerType = UIPlayerBoard.EPlayerType.PlayerA;
+            zone.CardCell.PlayerType = UIPlayerBoard.EPlayerType.PlayerA;
+        }
+
+        var deck = CreateComponent<UICardCell>("Snapshot Deck");
+        deck.CellType = UICardCell.ECellType.Deck;
+        deck.CardHolder = deck.transform;
+        this.gameManager.Deck = deck;
+        this.gameManager.PlayerBoards = new[] { board };
+        this.gameManager.CurrentTurnNumber = 1;
+        this.gameManager.TurnPhase = GameManager.ETurnPhase.PlayerPlaying;
+        this.gameManager.DiscardZone = CreateGameObject("Discard Zone");
+        SetField(this.gameManager, "discardPileHighlight", CreateGameObject("Discard Highlight"));
+        SetField(this.gameManager, "playerTurnText", CreateText("Player Turn", null));
+        SetField(this.gameManager, "turnAndMoveCountText", CreateText("Turn Count", null));
+        SetField(this.gameManager, "gameSession", new LocalAiSession());
+
+        LOC.IN.OpponentX = new[] { "Opponent {0}" };
+        LOC.IN.YourTurn = new[] { "Your Turn" };
+        LOC.IN.YourTurnAuto = new[] { "Your Turn" };
+        LOC.IN.TurnAndMoveCount = new[] { "Turn {0} Move {1} Total {2}" };
+
+        return board;
+    }
+
+    private Card CreateSnapshotCard(string inCardId, CardData inCardData, Transform inParent)
+    {
+        var card = CreateComponent<Card>("Snapshot Card", inParent);
+        var flip = card.gameObject.AddComponent<UICardFlip>();
+        SetField(flip, "animState", UICardFlip.ECardFlipState.Front);
+        card.Data = inCardData;
+        card.CardFlip = flip;
+        SetField(card, "<Id>k__BackingField", inCardId);
+        return card;
+    }
+
+    private static CardData CreateSnapshotCardData()
+    {
+        var cardData = new CardData
+        {
+            Name = "Earth Shield",
+            PrefabName = "Card - Power Heal Zone",
+            IsPowerCard = true
+        };
+        cardData.Bombs[1] = 1;
+        return cardData;
+    }
+
+    private static BoardState CreateSnapshotState(CardData inCardData, string inCardId,
+        bool inIncludeHand, bool inIncludeZone)
+    {
+        var player = new BoardPlayer { Hand = new BoardHand() };
+        for (int i = 0; i < player.ElementZones.Length; i++)
+        {
+            player.ElementZones[i] = new BoardZone
+            {
+                ElementType = (CardData.EElementType)(i + 1)
+            };
+        }
+
+        if (inIncludeHand)
+        {
+            player.Hand.Cards.Add(inCardData);
+            player.Hand.CardIds.Add(inCardId);
+            player.Hand.CardFaceUpStates.Add(true);
+        }
+        if (inIncludeZone)
+        {
+            BoardZone zone = player.ElementZones[1];
+            zone.Cards.Add(inCardData);
+            zone.CardIds.Add(inCardId);
+            zone.CardFaceUpStates.Add(true);
+        }
+
+        return new BoardState
+        {
+            TurnNumber = 1,
+            ActivePlayer = UIPlayerBoard.EPlayerType.PlayerA,
+            Players = new() { player }
+        };
+    }
+
+    private BoardState InvokeCreateBoardState()
+    {
+        var method = typeof(GameManager).GetMethod("CreateBoardState",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null);
+        return (BoardState)method.Invoke(this.gameManager, new object[] { false });
+    }
+
+    private static void AssertBoardStateIdsAreUnique(BoardState inBoardState)
+    {
+        HashSet<string> ids = new();
+        AssertIds(inBoardState.Deck.CardIds);
+        foreach (var player in inBoardState.Players)
+        {
+            AssertIds(player.Hand.CardIds);
+            foreach (var zone in player.ElementZones)
+                AssertIds(zone.CardIds);
+        }
+
+        void AssertIds(IEnumerable<string> inIds)
+        {
+            foreach (string id in inIds)
+                Assert.That(ids.Add(id), Is.True, $"Duplicate card id: {id}");
+        }
     }
 
     private void AddCard(UIElementZone zone, int points, int multiplier)

@@ -355,12 +355,12 @@ public class GameManager : MonoBehaviour
             if (!BoardStateManager.IsDoingReplay && !this.isOnlineReplayActive)
                 StopAllCoroutines();
 
+            CardsManager.IN.DestroyAllCards(inShouldRecycleCards);
+
             foreach (var board in this.PlayerBoards)
             {
                 board.Reset();
             }
-
-            CardsManager.IN.DestroyAllCards(inShouldRecycleCards);
 
             foreach (var board in this.PlayerBoards)
             {
@@ -2679,33 +2679,90 @@ public class GameManager : MonoBehaviour
             boardState.Players.Add(playerData);
         }
 
-        ValidateBoardStateIds(boardState);
+        TryRepairBoardStateIds(boardState, "capture");
         return boardState;
     }
 
-    // Catches a duplicate at capture time; the stack trace names the caller that recorded it.
-    [System.Diagnostics.Conditional("UNITY_EDITOR")]
-    [System.Diagnostics.Conditional("DEVELOPMENT_BUILD")]
-    private static void ValidateBoardStateIds(BoardState inBoardState)
+    private static bool TryRepairBoardStateIds(BoardState inBoardState, string inContext)
     {
-        Dictionary<string, string> locations = new();
-        CheckIds(inBoardState.Deck.CardIds, "Deck");
+        if (inBoardState == null || inBoardState.Deck == null || inBoardState.Players == null)
+        {
+            Debug.LogError($"Cannot apply {inContext} board snapshot because required state is missing.");
+            return false;
+        }
+
+        HashSet<string> retainedIds = new();
+        int duplicateCount = 0;
+        string firstDuplicate = null;
+
+        // Zones are authoritative once a play completes, so retain them before stale hand entries.
         for (int i = 0; i < inBoardState.Players.Count; i++)
         {
             var player = inBoardState.Players[i];
-            CheckIds(player.Hand.CardIds, $"P{i} hand");
+            if (player == null || player.Hand == null || player.ElementZones == null)
+            {
+                Debug.LogError($"Cannot apply {inContext} board snapshot because player {i} state is missing.");
+                return false;
+            }
+
             for (int k = 0; k < player.ElementZones.Length; k++)
-                CheckIds(player.ElementZones[k].CardIds, $"P{i} zone {k}");
+            {
+                var zone = player.ElementZones[k];
+                if (zone == null)
+                {
+                    Debug.LogError($"Cannot apply {inContext} board snapshot because P{i} zone {k} state is missing.");
+                    return false;
+                }
+
+                RepairCards(zone.Cards, zone.CardIds, zone.CardFaceUpStates, $"P{i} zone {k}");
+            }
         }
 
-        void CheckIds(List<string> inIds, string inLocation)
+        for (int i = 0; i < inBoardState.Players.Count; i++)
         {
-            foreach (string id in inIds)
+            var player = inBoardState.Players[i];
+            RepairCards(player.Hand.Cards, player.Hand.CardIds,
+                player.Hand.CardFaceUpStates, $"P{i} hand");
+        }
+
+        RepairCards(inBoardState.Deck.Cards, inBoardState.Deck.CardIds,
+            inBoardState.Deck.CardFaceUpStates, "Deck");
+
+        if (duplicateCount > 0)
+        {
+            Debug.LogWarning($"Repaired {inContext} board snapshot by removing {duplicateCount} duplicate card placement(s); zones take precedence. First duplicate was {firstDuplicate}.");
+        }
+
+        return true;
+
+        void RepairCards(List<CardData> inCards, List<string> inIds,
+            List<bool> inFaceUpStates, string inLocation)
+        {
+            if (inCards == null || inIds == null || inFaceUpStates == null)
+                return;
+
+            while (inIds.Count > inCards.Count)
+                inIds.RemoveAt(inIds.Count - 1);
+            while (inFaceUpStates.Count > inCards.Count)
+                inFaceUpStates.RemoveAt(inFaceUpStates.Count - 1);
+
+            for (int i = 0; i < inCards.Count;)
             {
-                if (locations.TryGetValue(id, out string firstLocation))
-                    Debug.LogError($"Board snapshot has card id '{id}' in {firstLocation} and {inLocation}.");
-                else
-                    locations[id] = inLocation;
+                string id = i < inIds.Count ? inIds[i] : null;
+                if (string.IsNullOrEmpty(id) || retainedIds.Add(id))
+                {
+                    ++i;
+                    continue;
+                }
+
+                ++duplicateCount;
+                if (firstDuplicate == null)
+                    firstDuplicate = $"'{id}' in {inLocation}";
+                inCards.RemoveAt(i);
+                if (i < inIds.Count)
+                    inIds.RemoveAt(i);
+                if (i < inFaceUpStates.Count)
+                    inFaceUpStates.RemoveAt(i);
             }
         }
     }
@@ -2725,9 +2782,12 @@ public class GameManager : MonoBehaviour
 
     private void ApplyBoardState(BoardState inBoardState, bool inShouldPlay)
     {
-        BoardStateManager.IN.CurrentReplayBoardState = inBoardState;
+        if (!TryRepairBoardStateIds(inBoardState, "restore"))
+            return;
 
         CleanUpGameState(false);
+
+        BoardStateManager.IN.CurrentReplayBoardState = inBoardState;
 
         this.CurrentTurnNumber = inBoardState.TurnNumber;
         this.currentPlayerIndex = (int)inBoardState.ActivePlayer - 1;

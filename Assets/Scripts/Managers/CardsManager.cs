@@ -420,11 +420,11 @@ public class CardsManager : MonoBehaviour
 
     public void DestroyAllCards(bool inShouldRecycleData)
     {
-        while (this.SpawnedCards.Count > 0)
-        {
-            var card = this.SpawnedCards[0];
-            this.SpawnedCards.RemoveAt(0);
+        List<Card> cards = new(this.SpawnedCards);
+        this.SpawnedCards.Clear();
 
+        foreach (var card in cards)
+        {
             if (card != null)
                 card.DestroySelf(inShouldRecycleData);
         }
