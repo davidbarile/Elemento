@@ -652,7 +652,7 @@ public class CurrentRulesRegressionTests
         this.settings.AllowUndo = true;
         UIAlertPanel.IN = null;
         UIWaitingForOpponentPanel.IN = null;
-        this.gameManager.PlayerBoards = new[] { CreateComponent<UIPlayerBoard>("Player Board") };
+        this.gameManager.PlayerBoards = new[] { CreateBoard("Player Board", Array.Empty<int>()) };
         this.gameManager.TurnPhase = GameManager.ETurnPhase.PlayerPlaying;
         SetField(this.gameManager, "<IsGameInProgress>k__BackingField", true);
 
