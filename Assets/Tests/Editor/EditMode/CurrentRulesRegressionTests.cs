@@ -616,6 +616,79 @@ public class CurrentRulesRegressionTests
         Assert.That(callbackMethod.ReturnType, Is.EqualTo(typeof(void)));
     }
 
+    [TestCase(true, true, false, false, false, true, TestName = "UndoVisibility_VsAiLocalHumanTurn_Shows")]
+    [TestCase(true, false, false, false, true, false, TestName = "UndoVisibility_AiTurn_Hides")]
+    [TestCase(true, true, false, false, true, false, TestName = "UndoVisibility_AiSeatGuard_Hides")]
+    [TestCase(true, false, false, false, false, false, TestName = "UndoVisibility_OnlineOpponentTurn_Hides")]
+    [TestCase(true, true, false, true, false, false, TestName = "UndoVisibility_WaitingOverlay_Hides")]
+    [TestCase(true, true, true, false, false, false, TestName = "UndoVisibility_Replay_Hides")]
+    [TestCase(true, true, false, false, false, true, TestName = "UndoVisibility_PassAndPlayActiveSeat_Shows")]
+    [TestCase(false, true, false, false, false, false, TestName = "UndoVisibility_AllowUndoOff_Hides")]
+    public void UndoVisibility_MatchesLocalHumanTurn(bool inAllowUndo, bool inIsLocalHumanTurn,
+        bool inIsReplaying, bool inIsWaitingForOpponent, bool inIsAiSeat, bool inExpected)
+    {
+        var method = typeof(GameManager).GetMethod("ShouldShowUndoControls",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null);
+
+        bool actual = (bool)method.Invoke(null, new object[]
+        {
+            inAllowUndo,
+            inIsLocalHumanTurn,
+            inIsReplaying,
+            inIsWaitingForOpponent,
+            inIsAiSeat
+        });
+
+        Assert.That(actual, Is.EqualTo(inExpected));
+    }
+
+    [TestCase("Main.unity")]
+    [TestCase("Main 1.unity")]
+    public void UndoSceneBinding_UsesUndoOnlyParentOutsideReplayHierarchy(string inSceneName)
+    {
+        string scenePath = Path.Combine(Application.dataPath, "Scenes", inSceneName);
+        string[] documents = Regex.Split(File.ReadAllText(scenePath), @"(?m)(?=^--- !u!)");
+        string gameManagerDocument = Array.Find(documents,
+            inDocument => inDocument.Contains("undoButtonParent:") && inDocument.Contains("undoButton:"));
+        Assert.That(gameManagerDocument, Is.Not.Null);
+
+        string undoParentId = GetSerializedReference(gameManagerDocument, "undoButtonParent");
+        string undoButtonId = GetSerializedReference(gameManagerDocument, "undoButton");
+        Assert.That(GetGameObjectName(documents, undoParentId), Is.EqualTo("Undo Button Parent"));
+
+        string undoButtonDocument = FindDocument(documents, undoButtonId);
+        string undoButtonGameObjectId = GetGameObjectReference(undoButtonDocument);
+        Assert.That(GetGameObjectName(documents, undoButtonGameObjectId), Is.EqualTo("Undo Button"));
+
+        string replayButtonDocument = Array.Find(documents,
+            inDocument => Regex.IsMatch(inDocument, @"(?m)^  m_Name: Replay Button\r?$"));
+        Assert.That(replayButtonDocument, Is.Not.Null);
+        string replayButtonId = Regex.Match(replayButtonDocument,
+            @"(?m)^--- !u!1 &(?<id>\d+)").Groups["id"].Value;
+        string replayTransformDocument = Array.Find(documents, inDocument =>
+            Regex.IsMatch(inDocument, @"(?m)^--- !u!224 &\d+\r?$")
+            && inDocument.Contains($"m_GameObject: {{fileID: {replayButtonId}}}"));
+        Assert.That(replayTransformDocument, Is.Not.Null);
+
+        HashSet<string> visitedTransformIds = new();
+        string transformDocument = replayTransformDocument;
+        while (true)
+        {
+            string parentTransformId = Regex.Match(transformDocument,
+                @"(?m)^  m_Father: \{fileID: (?<id>\d+)\}\r?$").Groups["id"].Value;
+            if (parentTransformId == "0")
+                break;
+
+            Assert.That(visitedTransformIds.Add(parentTransformId), Is.True,
+                $"Scene {inSceneName} contains a transform-parent cycle.");
+            transformDocument = FindDocument(documents, parentTransformId, 224);
+            string ancestorGameObjectId = GetGameObjectReference(transformDocument);
+            Assert.That(ancestorGameObjectId, Is.Not.EqualTo(undoParentId),
+                $"Scene {inSceneName} would hide Replay when Undo is hidden.");
+        }
+    }
+
     [TestCase(false, true, false)]
     [TestCase(true, false, true)]
     public void RefreshPlayModeAvailability_MatchesGameProgress(bool isGameInProgress,
@@ -1113,6 +1186,39 @@ public class CurrentRulesRegressionTests
             BindingFlags.Static | BindingFlags.NonPublic);
         Assert.That(method, Is.Not.Null);
         method.Invoke(null, null);
+    }
+
+    private static string GetSerializedReference(string inDocument, string inFieldName)
+    {
+        Match match = Regex.Match(inDocument,
+            $@"(?m)^  {Regex.Escape(inFieldName)}: \{{fileID: (?<id>\d+)\}}\r?$");
+        Assert.That(match.Success, Is.True);
+        return match.Groups["id"].Value;
+    }
+
+    private static string GetGameObjectName(string[] inDocuments, string inGameObjectId)
+    {
+        string document = FindDocument(inDocuments, inGameObjectId, 1);
+        Match match = Regex.Match(document, @"(?m)^  m_Name: (?<name>[^\r\n]+)\r?$");
+        Assert.That(match.Success, Is.True);
+        return match.Groups["name"].Value;
+    }
+
+    private static string GetGameObjectReference(string inDocument)
+    {
+        Match match = Regex.Match(inDocument,
+            @"(?m)^  m_GameObject: \{fileID: (?<id>\d+)\}\r?$");
+        Assert.That(match.Success, Is.True);
+        return match.Groups["id"].Value;
+    }
+
+    private static string FindDocument(string[] inDocuments, string inObjectId, int inClassId = -1)
+    {
+        string classPattern = inClassId < 0 ? @"\d+" : inClassId.ToString();
+        string document = Array.Find(inDocuments, inDocument => Regex.IsMatch(inDocument,
+            $@"(?m)^--- !u!{classPattern} &{Regex.Escape(inObjectId)}\r?$"));
+        Assert.That(document, Is.Not.Null);
+        return document;
     }
 
     private void InvokeShowWinLosePanel(bool inPlayerWon, string inMessage)

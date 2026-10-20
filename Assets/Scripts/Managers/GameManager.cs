@@ -333,7 +333,7 @@ public class GameManager : MonoBehaviour
         this.IsGameInProgress = inIsGameInProgress;
 
         if (!inIsGameInProgress)
-            UIWaitingForOpponentPanel.IN?.Hide();
+            SetWaitingForOpponentVisibility(false);
 
         if (UISettingsPanel.IN != null)
             UISettingsPanel.IN.RefreshPlayModeAvailability(inIsGameInProgress);
@@ -909,7 +909,7 @@ public class GameManager : MonoBehaviour
 
     private void ConfigureSession()
     {
-        UIWaitingForOpponentPanel.IN?.Hide();
+        SetWaitingForOpponentVisibility(false);
 
         if (this.onlineClient != null)
         {
@@ -980,7 +980,7 @@ public class GameManager : MonoBehaviour
         ClearOnlineReplayHistory();
         UIOnlineLobbyPanel.IN.ReleaseMatch();
         this.gameSession = null;
-        UIWaitingForOpponentPanel.IN?.Hide();
+        SetWaitingForOpponentVisibility(false);
     }
 
     public void AbortOnlineRecovery()
@@ -1006,7 +1006,7 @@ public class GameManager : MonoBehaviour
         CancelInvoke();
         CleanUpGameState();
         UISeatHandoffPanel.IN.Hide();
-        UIWaitingForOpponentPanel.IN?.Hide();
+        SetWaitingForOpponentVisibility(false);
         this.isHandoffPending = false;
         this.beginTurnButton.SetActive(false);
         this.endTurnButton.SetActive(false);
@@ -1022,6 +1022,7 @@ public class GameManager : MonoBehaviour
         this.pendingOnlineUpdate = null;
         this.pendingOnlineTurns.Clear();
         ClearOnlineReplayHistory();
+        RefreshUndoControls();
         this.opponentPresenceTracker?.Observe(
             this.onlineClient?.CurrentState?.OpponentLastSeenSecondsAgo ?? -1);
 
@@ -1186,12 +1187,13 @@ public class GameManager : MonoBehaviour
         OnlineReplayHistoryData latestOpponentHistory = null;
         this.isOnlineReplayActive = true;
         this.skipOnlineReplay = false;
-        UIWaitingForOpponentPanel.IN?.Hide();
+        SetWaitingForOpponentVisibility(false);
         GameManager.IsDoingReplay = true;
         GameManager.IsApplyingRemoteUpdate = true;
         Move.ShouldRecordMoves = false;
         SetReplayButtonVisibility(false);
         SetOnlineReplayButton(true);
+        RefreshUndoControls();
 
         try
         {
@@ -1231,6 +1233,7 @@ public class GameManager : MonoBehaviour
             Time.timeScale = this.gameSpeed;
             ReleaseReplayInputLocks();
             SetOnlineReplayButton(false);
+            RefreshUndoControls();
         }
 
         if (latestOpponentHistory != null)
@@ -1711,6 +1714,7 @@ public class GameManager : MonoBehaviour
         Move.ShouldRecordMoves = false;
         SetOnlineReplayButton(true);
         SetReplayButtonVisibility(false);
+        RefreshUndoControls();
         try
         {
             DomainGameStateData state = inStartState.Clone();
@@ -1735,6 +1739,7 @@ public class GameManager : MonoBehaviour
             this.onlineReplayCoroutine = null;
             Time.timeScale = this.gameSpeed;
             ReleaseReplayInputLocks();
+            RefreshUndoControls();
             SetOnlineReplayButton(false);
             RefreshOnlineControls();
         }
@@ -1752,6 +1757,7 @@ public class GameManager : MonoBehaviour
         ReleaseReplayInputLocks();
         if (this.speedUpOpponentTurnButton != null)
             SetOnlineReplayButton(false);
+        RefreshUndoControls();
     }
 
     private static IEnumerator RunReplayStepCo(IEnumerator inStep, Action<Exception> inFailed)
@@ -2008,6 +2014,7 @@ public class GameManager : MonoBehaviour
             this.DiscardZone.SetActive(false);
             this.speedUpOpponentTurnButton.SetActive(false);
             SetReplayButtonVisibility(false);
+            RefreshUndoControls();
             return;
         }
 
@@ -2049,10 +2056,21 @@ public class GameManager : MonoBehaviour
 
         panel.SetOpponentAway(this.opponentPresenceTracker?.IsAway ?? false);
 
-        if (shouldShow && !panel.IsShowing)
-            panel.Show();
-        else if (!shouldShow && panel.IsShowing)
-            panel.Hide();
+        SetWaitingForOpponentVisibility(shouldShow);
+    }
+
+    private void SetWaitingForOpponentVisibility(bool inIsVisible)
+    {
+        UIWaitingForOpponentPanel panel = UIWaitingForOpponentPanel.IN;
+        if (panel != null)
+        {
+            if (inIsVisible && !panel.IsShowing)
+                panel.Show();
+            else if (!inIsVisible && panel.IsShowing)
+                panel.Hide();
+        }
+
+        RefreshUndoControls();
     }
 
     private bool TryRecordOnlineMove(Move inMove, out TurnActionData outAction,
@@ -2293,6 +2311,7 @@ public class GameManager : MonoBehaviour
         ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
         RefreshPassAndPlayHandVisibility();
         BeginHumanDrawPhase();
+        RefreshUndoControls();
     }
 
     private void RefreshPassAndPlayHandVisibility()
@@ -3078,12 +3097,24 @@ public class GameManager : MonoBehaviour
         if (this.undoButtonParent == null)
             return;
 
-        bool isAllowed = SettingsManager.IN != null && SettingsManager.IN.AllowUndo;
+        bool isLocalHumanTurn = this.IsGameInProgress && this.IsPlayersTurn;
+        bool isReplaying = GameManager.IsDoingReplay || BoardStateManager.IsDoingReplay
+            || this.isOnlineReplayActive;
+        bool isWaitingForOpponent = UIWaitingForOpponentPanel.IN?.IsShowing == true;
+        bool isAllowed = ShouldShowUndoControls(SettingsManager.IN != null && SettingsManager.IN.AllowUndo,
+            isLocalHumanTurn, isReplaying, isWaitingForOpponent, this.IsCurrentSeatControlledByAI);
         this.undoButtonParent.SetActive(isAllowed);
         if (this.undoButton != null)
             this.undoButton.interactable = isAllowed && this.undoHistory.CanUndo
                 && !GameManager.ShouldBlockInput && !UIDraggable.ShouldBlockInput
-                && this.IsPlayersTurn && !this.IsCurrentSeatControlledByAI && IsHumanPlayingPhase();
+                && IsHumanPlayingPhase();
+    }
+
+    private static bool ShouldShowUndoControls(bool inAllowUndo, bool inIsLocalHumanTurn,
+        bool inIsReplaying, bool inIsWaitingForOpponent, bool inIsAiSeat)
+    {
+        return inAllowUndo && inIsLocalHumanTurn && !inIsReplaying
+            && !inIsWaitingForOpponent && !inIsAiSeat;
     }
 
     private static void ShowUndoBlockedHint(Elemento.Domain.ETurnUndoCheckpoint inCheckpoint)
@@ -3660,6 +3691,7 @@ public class GameManager : MonoBehaviour
         Exception replayException = null;
         Exception restoreException = null;
         BoardStateManager.IsDoingReplay = true;
+        RefreshUndoControls();
         try
         {
             yield return RunReplayStepCo(PlaybackStepsCo(inReplayPlan),
@@ -3683,6 +3715,7 @@ public class GameManager : MonoBehaviour
             finally
             {
                 ReleaseReplayInputLocks();
+                RefreshUndoControls();
             }
         }
 
