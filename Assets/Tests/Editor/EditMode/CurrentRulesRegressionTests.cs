@@ -1,11 +1,14 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Elemento.Domain;
 using Elemento.Domain.Net;
 using NUnit.Framework;
 using TMPro;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
@@ -413,19 +416,20 @@ public class CurrentRulesRegressionTests
         Assert.That(zone.IsDestroyed, Is.False);
     }
 
-    [TestCase(1, 1, UIPlayerBoard.EPlayerType.PlayerA, UIPlayerBoard.EPlayerType.PlayerB)]
-    [TestCase(2, 0, UIPlayerBoard.EPlayerType.PlayerB, UIPlayerBoard.EPlayerType.PlayerA)]
-    public void ReplayHistorySelection_UsesCorrectPassAndPlaySeat(int currentTurnNumber,
-        int replaySeat, UIPlayerBoard.EPlayerType expectedOpponent,
-        UIPlayerBoard.EPlayerType expectedCurrentPlayer)
+    [Test]
+    public void ReplayButtonPlan_AfterAiTurnStartsAndPlaysAiMovesInOrder()
     {
+        var aiFirstMoveState = CreateReplayMoveState(UIPlayerBoard.EPlayerType.PlayerA,
+            UIPlayerBoard.EPlayerType.PlayerB, 10, "ai-first");
+        var aiSecondMoveState = CreateReplayMoveState(UIPlayerBoard.EPlayerType.PlayerA,
+            UIPlayerBoard.EPlayerType.PlayerB, 11, "ai-second");
+        var liveState = new BoardState { ActivePlayer = UIPlayerBoard.EPlayerType.PlayerA };
         List<BoardTurn> turns = new()
         {
             new BoardTurn
             {
                 BoardStates = new()
                 {
-                    new BoardState { ActivePlayer = UIPlayerBoard.EPlayerType.PlayerA },
                     new BoardState { ActivePlayer = UIPlayerBoard.EPlayerType.PlayerB }
                 }
             },
@@ -433,23 +437,100 @@ public class CurrentRulesRegressionTests
             {
                 BoardStates = new()
                 {
-                    new BoardState { ActivePlayer = UIPlayerBoard.EPlayerType.PlayerA }
+                    aiFirstMoveState,
+                    aiSecondMoveState,
+                    liveState
                 }
             }
         };
 
-        var method = typeof(GameManager).GetMethod("GetReplayStates",
+        var method = typeof(GameManager).GetMethod("TryCreateReplayPlan",
             BindingFlags.Static | BindingFlags.NonPublic);
         Assert.That(method, Is.Not.Null);
-        var opponentStates = (List<BoardState>)method.Invoke(null,
-            new object[] { turns, currentTurnNumber, replaySeat, true });
-        var currentPlayerStates = (List<BoardState>)method.Invoke(null,
-            new object[] { turns, currentTurnNumber, replaySeat, false });
+        object[] arguments = { turns, 2, 0, null };
 
-        Assert.That(opponentStates, Has.Count.EqualTo(1));
-        Assert.That(opponentStates[0].ActivePlayer, Is.EqualTo(expectedOpponent));
-        Assert.That(currentPlayerStates, Has.Count.EqualTo(1));
-        Assert.That(currentPlayerStates[0].ActivePlayer, Is.EqualTo(expectedCurrentPlayer));
+        bool shouldStart = (bool)method.Invoke(null, arguments);
+        object replayPlan = arguments[3];
+        var opponentStates = GetField<List<BoardState>>(replayPlan, "OpponentStates");
+        var currentPlayerStates = GetField<List<BoardState>>(replayPlan, "CurrentPlayerStates");
+
+        Assert.That(shouldStart, Is.True);
+        Assert.That(GetField<int>(replayPlan, "ReplaySeat"), Is.Zero);
+        Assert.That(GetField<bool>(replayPlan, "ShouldReplayOpponent"), Is.True);
+        Assert.That(opponentStates, Is.EqualTo(new[] { aiFirstMoveState, aiSecondMoveState }));
+        Assert.That(opponentStates.ConvertAll(inState => inState.Move.Data.CardId),
+            Is.EqualTo(new[] { "ai-first", "ai-second" }));
+        Assert.That(currentPlayerStates, Is.Empty);
+        Assert.That(turns[1].BoardStates[2], Is.SameAs(liveState));
+    }
+
+    [Test]
+    public void ReplayButtonPlan_PassAndPlayUsesMovesOwnedByCurrentSeat()
+    {
+        var playerAMoveState = CreateReplayMoveState(UIPlayerBoard.EPlayerType.PlayerA,
+            UIPlayerBoard.EPlayerType.PlayerA, 20, "player-a");
+        var playerBMoveState = CreateReplayMoveState(UIPlayerBoard.EPlayerType.PlayerA,
+            UIPlayerBoard.EPlayerType.PlayerB, 21, "player-b");
+        List<BoardTurn> turns = new()
+        {
+            new BoardTurn
+            {
+                BoardStates = new() { playerAMoveState, playerBMoveState }
+            }
+        };
+        var method = typeof(GameManager).GetMethod("TryCreateReplayPlan",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null);
+        object[] arguments = { turns, 1, 1, null };
+
+        bool shouldStart = (bool)method.Invoke(null, arguments);
+        object replayPlan = arguments[3];
+
+        Assert.That(shouldStart, Is.True);
+        Assert.That(GetField<int>(replayPlan, "ReplaySeat"), Is.EqualTo(1));
+        Assert.That(GetField<bool>(replayPlan, "ShouldReplayOpponent"), Is.False);
+        Assert.That(GetField<List<BoardState>>(replayPlan, "CurrentPlayerStates"),
+            Is.EqualTo(new[] { playerBMoveState }));
+    }
+
+    [TestCase("Main.unity")]
+    [TestCase("Main 1.unity")]
+    public void ReplayButtonSceneBinding_TargetsExistingPublicParameterlessMethod(string inSceneName)
+    {
+        string scenePath = Path.Combine(Application.dataPath, "Scenes", inSceneName);
+        string[] documents = Regex.Split(File.ReadAllText(scenePath), @"(?m)(?=^--- !u!)");
+        string gameObjectDocument = Array.Find(documents,
+            inDocument => Regex.IsMatch(inDocument, @"(?m)^  m_Name: Replay Button\r?$"));
+        Assert.That(gameObjectDocument, Is.Not.Null);
+
+        string gameObjectId = Regex.Match(gameObjectDocument,
+            @"(?m)^--- !u!1 &(?<id>\d+)").Groups["id"].Value;
+        string buttonDocument = Array.Find(documents, inDocument =>
+            inDocument.Contains($"m_GameObject: {{fileID: {gameObjectId}}}")
+            && inDocument.Contains("m_OnClick:"));
+        Assert.That(buttonDocument, Is.Not.Null);
+
+        Match callback = Regex.Match(buttonDocument,
+            @"(?ms)m_Target: \{fileID: (?<target>\d+)\}.*?m_TargetAssemblyTypeName: (?<type>[^,\r\n]+),.*?m_MethodName: (?<method>[^\r\n]+).*?m_Mode: (?<mode>\d+)");
+        Assert.That(callback.Success, Is.True);
+        Assert.That(callback.Groups["mode"].Value, Is.EqualTo("1"));
+
+        string targetId = callback.Groups["target"].Value;
+        string targetDocument = Array.Find(documents, inDocument =>
+            Regex.IsMatch(inDocument, $@"(?m)^--- !u!114 &{targetId}\r?$"));
+        Assert.That(targetDocument, Is.Not.Null);
+        string scriptGuid = Regex.Match(targetDocument,
+            @"m_Script: \{fileID: 11500000, guid: (?<guid>[a-f0-9]+),").Groups["guid"].Value;
+        string scriptPath = AssetDatabase.GUIDToAssetPath(scriptGuid);
+        var script = AssetDatabase.LoadAssetAtPath<MonoScript>(scriptPath);
+        Type targetType = script?.GetClass();
+        Assert.That(targetType, Is.Not.Null);
+        Assert.That(targetType.Name, Is.EqualTo(callback.Groups["type"].Value));
+
+        MethodInfo callbackMethod = targetType.GetMethod(callback.Groups["method"].Value,
+            BindingFlags.Instance | BindingFlags.Public, null, Type.EmptyTypes, null);
+        Assert.That(callbackMethod, Is.Not.Null);
+        Assert.That(callbackMethod.ReturnType, Is.EqualTo(typeof(void)));
     }
 
     [TestCase(false, true, false)]
@@ -818,6 +899,24 @@ public class CurrentRulesRegressionTests
             BindingFlags.Instance | BindingFlags.NonPublic);
         Assert.That(method, Is.Not.Null);
         method.Invoke(this.gameManager, new object[] { inPlayerWon, inMessage });
+    }
+
+    private static BoardState CreateReplayMoveState(UIPlayerBoard.EPlayerType inSnapshotPlayer,
+        UIPlayerBoard.EPlayerType inMovePlayer, int inMoveId, string inCardId)
+    {
+        return new BoardState
+        {
+            ActivePlayer = inSnapshotPlayer,
+            Move = new Move
+            {
+                ID = inMoveId,
+                Data = new MoveData
+                {
+                    PlayerId = (int)inMovePlayer,
+                    CardId = inCardId
+                }
+            }
+        };
     }
 
     private static void SetField(object target, string fieldName, object value)

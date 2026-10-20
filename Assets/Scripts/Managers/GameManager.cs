@@ -3076,7 +3076,7 @@ public class GameManager : MonoBehaviour
         //Debug.Log($"<color=yellow>GameManager.IsDoingReplay = { GameManager.IsDoingReplay}</color>");
 
         var move = inBoardState.Move;
-        var playerIndex = (int)inBoardState.ActivePlayer - 1;
+        var playerIndex = (int)GetReplayMovePlayerType(inBoardState) - 1;
         var playerBoard = this.PlayerBoards[playerIndex];
         var isPlayer = playerIndex == 0;
 
@@ -3581,16 +3581,16 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-        if (BoardStateManager.IN.BoardTurns.Count > 0
-            && BoardStateManager.IN.BoardHistory.BoardStates.Count > 0)
-        {
-            StopAllCoroutines();
+        if (BoardStateManager.IN == null
+            || !TryCreateReplayPlan(BoardStateManager.IN.BoardTurns,
+                this.CurrentTurnNumber, this.currentPlayerIndex, out ReplayPlan replayPlan))
+            return;
 
-            StartCoroutine(PlaybackCo());
-        }
+        StopAllCoroutines();
+        StartCoroutine(PlaybackCo(replayPlan));
     }
 
-    private IEnumerator PlaybackCo()
+    private IEnumerator PlaybackCo(ReplayPlan inReplayPlan)
     {
         BoardState restoreState = CreateBoardState(false);
         ETurnPhase restoreTurnPhase = this.TurnPhase;
@@ -3602,7 +3602,7 @@ public class GameManager : MonoBehaviour
         BoardStateManager.IsDoingReplay = true;
         try
         {
-            yield return RunReplayStepCo(PlaybackStepsCo(),
+            yield return RunReplayStepCo(PlaybackStepsCo(inReplayPlan),
                 inException => replayException = inException);
         }
         finally
@@ -3632,20 +3632,13 @@ public class GameManager : MonoBehaviour
             Debug.LogException(restoreException);
     }
 
-    private IEnumerator PlaybackStepsCo()
+    private IEnumerator PlaybackStepsCo(ReplayPlan inReplayPlan)
     {
-        var replaySeat = this.currentPlayerIndex;
-        var currentPlayerStates = GetReplayStates(BoardStateManager.IN.BoardTurns,
-            this.CurrentTurnNumber, replaySeat, false);
-        var opponentStates = GetReplayStates(BoardStateManager.IN.BoardTurns,
-            this.CurrentTurnNumber, replaySeat, true);
-
         ResetMovesRemaining();
 
         SetDiscardHighlightsVisible(false);
 
-        // Check if the player has moved this turn. If so, skip the opponent's moves.
-        if (opponentStates.Count > 0 && currentPlayerStates.Count <= 1)
+        if (inReplayPlan.ShouldReplayOpponent)
         {
             this.discardToEndTurnZone.SetActive(false);
 
@@ -3656,19 +3649,14 @@ public class GameManager : MonoBehaviour
             ResetMovesRemaining(true);
 
             //replay opponent moves from last turn
-            for (int i = 0; i < opponentStates.Count; i++)
+            for (int i = 0; i < inReplayPlan.OpponentStates.Count; i++)
             {
-                var state = opponentStates[i];
+                var state = inReplayPlan.OpponentStates[i];
 
                 SetGameToBoardState(state);
-                if (state.Move != null && !state.Move.IsDealHand)
-                {
-                    BoardStateManager.IN.CurrentReplayBoardState = state;
-                    yield return DoGameStateMoveCo(state);
-                }
-
-                if (state.Move != null && state.Move.IsDealHand)
-                    yield return new WaitForSeconds(.2f);
+                SetReplayMovePlayer(state);
+                BoardStateManager.IN.CurrentReplayBoardState = state;
+                yield return DoGameStateMoveCo(state);
             }
 
             SetBoardZoomAnimState(EAnimState.Hide);
@@ -3680,40 +3668,91 @@ public class GameManager : MonoBehaviour
 
         ResetMovesRemaining(true);
 
-        this.currentPlayerIndex = replaySeat;
+        this.currentPlayerIndex = inReplayPlan.ReplaySeat;
         ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
 
         //now do player moves this turn
-        for (int i = 0; i < currentPlayerStates.Count; i++)
+        for (int i = 0; i < inReplayPlan.CurrentPlayerStates.Count; i++)
         {
-            var state = currentPlayerStates[i];
-            if (state.Move == null || state.Move.ID <= -1)
-                continue;
+            var state = inReplayPlan.CurrentPlayerStates[i];
 
             SetGameToBoardState(state);
-            if (!state.Move.IsDealHand)
-            {
-                BoardStateManager.IN.CurrentReplayBoardState = state;
-                yield return DoGameStateMoveCo(state);
-            }
+            SetReplayMovePlayer(state);
+            BoardStateManager.IN.CurrentReplayBoardState = state;
+            yield return DoGameStateMoveCo(state);
         }
     }
 
-    private static List<BoardState> GetReplayStates(List<BoardTurn> inBoardTurns,
-        int inCurrentTurnNumber, int inReplaySeat, bool inOpponentTurn)
+    private static bool TryCreateReplayPlan(List<BoardTurn> inBoardTurns,
+        int inCurrentTurnNumber, int inReplaySeat, out ReplayPlan outReplayPlan)
     {
+        outReplayPlan = null;
+        if (inBoardTurns == null)
+            return false;
+
         int currentTurnIndex = inCurrentTurnNumber - 1;
-        int turnIndex = inOpponentTurn
-            ? currentTurnIndex - (inReplaySeat == 0 ? 1 : 0)
-            : currentTurnIndex;
-        if (turnIndex < 0 || turnIndex >= inBoardTurns.Count)
+        int opponentTurnIndex = currentTurnIndex - (inReplaySeat == 0 ? 1 : 0);
+        EPlayerType replayPlayerType = (EPlayerType)(inReplaySeat + 1);
+        List<BoardState> currentPlayerStates = GetReplayMoveStates(inBoardTurns,
+            currentTurnIndex, replayPlayerType, false);
+        List<BoardState> opponentStates = GetReplayMoveStates(inBoardTurns,
+            opponentTurnIndex, replayPlayerType, true);
+        if (opponentTurnIndex != currentTurnIndex)
+            opponentStates.AddRange(GetReplayMoveStates(inBoardTurns,
+                currentTurnIndex, replayPlayerType, true));
+        bool shouldReplayOpponent = currentPlayerStates.Count == 0;
+        if (shouldReplayOpponent && opponentStates.Count == 0)
+            return false;
+
+        outReplayPlan = new ReplayPlan
+        {
+            ReplaySeat = inReplaySeat,
+            ShouldReplayOpponent = shouldReplayOpponent,
+            OpponentStates = opponentStates,
+            CurrentPlayerStates = currentPlayerStates
+        };
+        return true;
+    }
+
+    private static List<BoardState> GetReplayMoveStates(List<BoardTurn> inBoardTurns,
+        int inTurnIndex, EPlayerType inReplayPlayerType, bool inOpponentTurn)
+    {
+        if (inTurnIndex < 0 || inTurnIndex >= inBoardTurns.Count
+            || inBoardTurns[inTurnIndex]?.BoardStates == null)
             return new();
 
-        var replayPlayerType = (EPlayerType)(inReplaySeat + 1);
-        return inBoardTurns[turnIndex].BoardStates.FindAll(inState =>
-            inOpponentTurn
-                ? inState.ActivePlayer != replayPlayerType
-                : inState.ActivePlayer == replayPlayerType);
+        return inBoardTurns[inTurnIndex].BoardStates.FindAll(inState =>
+        {
+            if (inState?.Move == null || inState.Move.ID < 0 || inState.Move.IsDealHand)
+                return false;
+
+            EPlayerType movePlayerType = GetReplayMovePlayerType(inState);
+            return inOpponentTurn
+                ? movePlayerType != inReplayPlayerType
+                : movePlayerType == inReplayPlayerType;
+        });
+    }
+
+    private static EPlayerType GetReplayMovePlayerType(BoardState inState)
+    {
+        int playerId = inState.Move?.Data?.PlayerId ?? 0;
+        return playerId >= (int)EPlayerType.PlayerA && playerId <= (int)EPlayerType.PlayerD
+            ? (EPlayerType)playerId
+            : inState.ActivePlayer;
+    }
+
+    private void SetReplayMovePlayer(BoardState inState)
+    {
+        this.currentPlayerIndex = (int)GetReplayMovePlayerType(inState) - 1;
+        ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
+    }
+
+    private sealed class ReplayPlan
+    {
+        public int ReplaySeat;
+        public bool ShouldReplayOpponent;
+        public List<BoardState> OpponentStates = new();
+        public List<BoardState> CurrentPlayerStates = new();
     }
 
     private void Update()
