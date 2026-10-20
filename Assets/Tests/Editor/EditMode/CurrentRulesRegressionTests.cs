@@ -616,16 +616,18 @@ public class CurrentRulesRegressionTests
         Assert.That(callbackMethod.ReturnType, Is.EqualTo(typeof(void)));
     }
 
-    [TestCase(true, true, false, false, false, true, TestName = "UndoVisibility_VsAiLocalHumanTurn_Shows")]
-    [TestCase(true, false, false, false, true, false, TestName = "UndoVisibility_AiTurn_Hides")]
-    [TestCase(true, true, false, false, true, false, TestName = "UndoVisibility_AiSeatGuard_Hides")]
-    [TestCase(true, false, false, false, false, false, TestName = "UndoVisibility_OnlineOpponentTurn_Hides")]
-    [TestCase(true, true, false, true, false, false, TestName = "UndoVisibility_WaitingOverlay_Hides")]
-    [TestCase(true, true, true, false, false, false, TestName = "UndoVisibility_Replay_Hides")]
-    [TestCase(true, true, false, false, false, true, TestName = "UndoVisibility_PassAndPlayActiveSeat_Shows")]
-    [TestCase(false, true, false, false, false, false, TestName = "UndoVisibility_AllowUndoOff_Hides")]
+    [TestCase(true, true, true, false, false, false, true, TestName = "UndoVisibility_VsAiLocalHumanTurnWithUndo_Shows")]
+    [TestCase(true, true, false, false, false, false, false, TestName = "UndoVisibility_NothingToUndo_Hides")]
+    [TestCase(true, true, false, false, false, false, false, TestName = "UndoVisibility_CheckpointBlocked_Hides")]
+    [TestCase(true, false, true, false, false, true, false, TestName = "UndoVisibility_AiTurn_Hides")]
+    [TestCase(true, true, true, false, false, true, false, TestName = "UndoVisibility_AiSeatGuard_Hides")]
+    [TestCase(true, false, true, false, false, false, false, TestName = "UndoVisibility_OnlineOpponentTurn_Hides")]
+    [TestCase(true, true, true, false, true, false, false, TestName = "UndoVisibility_WaitingOverlay_Hides")]
+    [TestCase(true, true, true, true, false, false, false, TestName = "UndoVisibility_Replay_Hides")]
+    [TestCase(true, true, true, false, false, false, true, TestName = "UndoVisibility_PassAndPlayActiveSeat_Shows")]
+    [TestCase(false, true, true, false, false, false, false, TestName = "UndoVisibility_AllowUndoOff_Hides")]
     public void UndoVisibility_MatchesLocalHumanTurn(bool inAllowUndo, bool inIsLocalHumanTurn,
-        bool inIsReplaying, bool inIsWaitingForOpponent, bool inIsAiSeat, bool inExpected)
+        bool inCanUndo, bool inIsReplaying, bool inIsWaitingForOpponent, bool inIsAiSeat, bool inExpected)
     {
         var method = typeof(GameManager).GetMethod("ShouldShowUndoControls",
             BindingFlags.Static | BindingFlags.NonPublic);
@@ -635,12 +637,57 @@ public class CurrentRulesRegressionTests
         {
             inAllowUndo,
             inIsLocalHumanTurn,
+            inCanUndo,
             inIsReplaying,
             inIsWaitingForOpponent,
             inIsAiSeat
         });
 
         Assert.That(actual, Is.EqualTo(inExpected));
+    }
+
+    [Test]
+    public void UndoControls_LastUndoHidesWithoutAlertAndNewRecordShowsAgain()
+    {
+        this.settings.AllowUndo = true;
+        UIAlertPanel.IN = null;
+        UIWaitingForOpponentPanel.IN = null;
+        this.gameManager.PlayerBoards = new[] { CreateComponent<UIPlayerBoard>("Player Board") };
+        this.gameManager.TurnPhase = GameManager.ETurnPhase.PlayerPlaying;
+        SetField(this.gameManager, "<IsGameInProgress>k__BackingField", true);
+
+        GameObject undoParent = CreateGameObject("Undo Button Parent");
+        Button undoButton = CreateUiComponent<Button>("Undo Button", undoParent.transform);
+        undoButton.gameObject.SetActive(true);
+        SetField(this.gameManager, "undoButtonParent", undoParent);
+        SetField(this.gameManager, "undoButton", undoButton);
+
+        var history = GetField<TurnUndoHistory<BoardState>>(this.gameManager, "undoHistory");
+        history.BeginTurn(ETurnUndoCheckpoint.Draw);
+        history.Record(new BoardState());
+        InvokeRefreshUndoControls();
+
+        Assert.That(undoParent.activeSelf, Is.True);
+        Assert.That(undoButton.interactable, Is.True);
+
+        GameManager.IsDoingActivateSequence = true;
+        InvokeRefreshUndoControls();
+        this.gameManager.HandleUndoButtonPress();
+
+        Assert.That(undoParent.activeSelf, Is.True);
+        Assert.That(undoButton.interactable, Is.True);
+        Assert.That(history.CanUndo, Is.True);
+
+        GameManager.IsDoingActivateSequence = false;
+        Assert.DoesNotThrow(() => this.gameManager.HandleUndoButtonPress());
+        Assert.That(undoParent.activeSelf, Is.False);
+        Assert.That(UIAlertPanel.IN, Is.Null);
+
+        history.Record(new BoardState());
+        InvokeRefreshUndoControls();
+
+        Assert.That(undoParent.activeSelf, Is.True);
+        Assert.That(undoButton.interactable, Is.True);
     }
 
     [TestCase("Main.unity")]
@@ -1186,6 +1233,14 @@ public class CurrentRulesRegressionTests
             BindingFlags.Static | BindingFlags.NonPublic);
         Assert.That(method, Is.Not.Null);
         method.Invoke(null, null);
+    }
+
+    private void InvokeRefreshUndoControls()
+    {
+        var method = typeof(GameManager).GetMethod("RefreshUndoControls",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null);
+        method.Invoke(this.gameManager, null);
     }
 
     private static string GetSerializedReference(string inDocument, string inFieldName)

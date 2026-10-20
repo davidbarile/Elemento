@@ -274,6 +274,7 @@ public class GameManager : MonoBehaviour
 
         this.currentPlayerIndex = 0;
         this.previousPlayerIndex = -1;
+        RefreshUndoControls();
         ApplyViewingSeat(this.gameSession.GetViewingSeat(this.currentPlayerIndex));
         this.CurrentTurnNumber = 0;
 
@@ -2929,10 +2930,8 @@ public class GameManager : MonoBehaviour
             || !this.IsPlayersTurn || this.IsCurrentSeatControlledByAI || !IsHumanPlayingPhase())
             return;
 
-        if (!this.undoHistory.TryPop(out BoardState boardState,
-            out Elemento.Domain.ETurnUndoCheckpoint blockedBy))
+        if (!this.undoHistory.TryPop(out BoardState boardState, out _))
         {
-            ShowUndoBlockedHint(blockedBy);
             RefreshUndoControls();
             return;
         }
@@ -2940,7 +2939,6 @@ public class GameManager : MonoBehaviour
         if (this.IsOnline && (this.onlineTurnRecorder == null || !this.onlineTurnRecorder.Undo()))
         {
             this.undoHistory.Record(boardState);
-            ShowUndoBlockedHint(Elemento.Domain.ETurnUndoCheckpoint.None);
             RefreshUndoControls();
             return;
         }
@@ -2957,7 +2955,6 @@ public class GameManager : MonoBehaviour
             || GameManager.IsDoingReplay || BoardStateManager.IsDoingReplay)
             return;
 
-        bool didBlockMoves = SettingsManager.IN.AllowUndo && this.undoHistory.CanUndo;
         this.undoHistory.SetCheckpoint(inCheckpoint);
         if (inCheckpoint == Elemento.Domain.ETurnUndoCheckpoint.RevealHiddenCard
             && this.isGameInitialized && this.IsPlayersTurn && IsHumanPlayingPhase())
@@ -2966,8 +2963,6 @@ public class GameManager : MonoBehaviour
             if (!this.IsOnline)
                 BoardStateManager.IN.AddBoardState(this.lastCreatedBoardState);
         }
-        if (didBlockMoves)
-            ShowUndoBlockedHint(inCheckpoint);
         RefreshUndoControls();
     }
 
@@ -2986,8 +2981,6 @@ public class GameManager : MonoBehaviour
             BoardStateManager.IN.RemoveLastBoardState();
 
         TryHighlightDiscardPile();
-        if (!this.undoHistory.CanUndo)
-            ShowUndoBlockedHint(this.undoHistory.Checkpoint);
         if (this.IsOnline)
             RefreshOnlineControls();
         ValidateUndoCardState(inBoardState);
@@ -3101,45 +3094,19 @@ public class GameManager : MonoBehaviour
         bool isReplaying = GameManager.IsDoingReplay || BoardStateManager.IsDoingReplay
             || this.isOnlineReplayActive;
         bool isWaitingForOpponent = UIWaitingForOpponentPanel.IN?.IsShowing == true;
-        bool isAllowed = ShouldShowUndoControls(SettingsManager.IN != null && SettingsManager.IN.AllowUndo,
-            isLocalHumanTurn, isReplaying, isWaitingForOpponent, this.IsCurrentSeatControlledByAI);
-        this.undoButtonParent.SetActive(isAllowed);
+        bool shouldShow = ShouldShowUndoControls(SettingsManager.IN != null && SettingsManager.IN.AllowUndo,
+            isLocalHumanTurn, this.undoHistory.CanUndo, isReplaying, isWaitingForOpponent,
+            this.IsCurrentSeatControlledByAI);
+        this.undoButtonParent.SetActive(shouldShow);
         if (this.undoButton != null)
-            this.undoButton.interactable = isAllowed && this.undoHistory.CanUndo
-                && !GameManager.ShouldBlockInput && !UIDraggable.ShouldBlockInput
-                && IsHumanPlayingPhase();
+            this.undoButton.interactable = true;
     }
 
     private static bool ShouldShowUndoControls(bool inAllowUndo, bool inIsLocalHumanTurn,
-        bool inIsReplaying, bool inIsWaitingForOpponent, bool inIsAiSeat)
+        bool inCanUndo, bool inIsReplaying, bool inIsWaitingForOpponent, bool inIsAiSeat)
     {
-        return inAllowUndo && inIsLocalHumanTurn && !inIsReplaying
+        return inAllowUndo && inIsLocalHumanTurn && inCanUndo && !inIsReplaying
             && !inIsWaitingForOpponent && !inIsAiSeat;
-    }
-
-    private static void ShowUndoBlockedHint(Elemento.Domain.ETurnUndoCheckpoint inCheckpoint)
-    {
-        string[] message = null;
-        switch (inCheckpoint)
-        {
-            case Elemento.Domain.ETurnUndoCheckpoint.Draw:
-                message = LOC.IN.UndoPastDraw;
-                break;
-            case Elemento.Domain.ETurnUndoCheckpoint.RevealHiddenCard:
-                message = LOC.IN.UndoPastReveal;
-                break;
-            case Elemento.Domain.ETurnUndoCheckpoint.ActivateDeck:
-                message = LOC.IN.UndoPastActivateDeck;
-                break;
-            case Elemento.Domain.ETurnUndoCheckpoint.ChoosePowerCard:
-                message = LOC.IN.UndoPastPowerChoice;
-                break;
-            case Elemento.Domain.ETurnUndoCheckpoint.EndTurn:
-                message = LOC.IN.UndoTurnLocked;
-                break;
-        }
-        if (message != null)
-            UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(message));
     }
 
     private IEnumerator DoGameStateMoveCo(BoardState inBoardState)
