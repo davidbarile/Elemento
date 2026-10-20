@@ -281,7 +281,7 @@ public class GameManager : MonoBehaviour
         ResetMovesRemaining();
 
         RefreshTurnAndMoveCountDisplay();
-        SetReplayButtonVisibility(false);
+        RefreshReplayButton();
 
         if (UITutorialPanel.IsTutorialMode)
             SetBoardZoomAnimState(EAnimState.Showing);
@@ -823,6 +823,35 @@ public class GameManager : MonoBehaviour
         this.replayButton.SetActive(inIsVisible);
     }
 
+    private void RefreshReplayButton()
+    {
+        if (this.replayButton == null)
+            return;
+
+        bool isAvailableForCurrentTurn = this.IsGameInProgress && this.IsPlayersTurn
+            && (this.IsOnline || IsHumanPlayingPhase())
+            && (!this.IsOnline || (!this.isOnlineMovePending
+                && UIOnlineLobbyPanel.IN?.IsRecoveryPending != true));
+        bool isReplaying = GameManager.IsDoingReplay || BoardStateManager.IsDoingReplay
+            || this.isOnlineReplayActive;
+        bool hasReplayable = this.IsOnline
+            ? this.onlineReplayStartState != null && this.onlineReplayTurns.Count > 0
+                && HasOnlineReplayMoves()
+            : BoardStateManager.IN != null
+                && TryCreateReplayPlan(BoardStateManager.IN.BoardTurns,
+                    this.CurrentTurnNumber, this.currentPlayerIndex, out _);
+        bool isWaitingForOpponent = UIWaitingForOpponentPanel.IN?.IsShowing == true;
+        SetReplayButtonVisibility(ShouldShowReplayButton(isAvailableForCurrentTurn,
+            isReplaying, hasReplayable, isWaitingForOpponent));
+    }
+
+    private static bool ShouldShowReplayButton(bool inIsAvailableForCurrentTurn,
+        bool inIsReplaying, bool inHasReplayable, bool inIsWaitingForOpponent)
+    {
+        return inIsAvailableForCurrentTurn && !inIsReplaying && inHasReplayable
+            && !inIsWaitingForOpponent;
+    }
+
     private void SetTurnPhase(ETurnPhase inTurnPhase)
     {
         this.TurnPhase = inTurnPhase;
@@ -831,7 +860,6 @@ public class GameManager : MonoBehaviour
         this.beginTurnButton.SetActive(false);
         this.endTurnButton.SetActive(false);
         this.discardToEndTurnZone.SetActive(false);
-        SetReplayButtonVisibility(false);
 
         SetDiscardHighlightsVisible(false);
 
@@ -858,9 +886,6 @@ public class GameManager : MonoBehaviour
                     StopAllCoroutines();
                     StartCoroutine(OpponentsTurnCo(true, false));
                 }
-
-                if (this.CurrentTurnNumber > 1)
-                    SetReplayButtonVisibility(true);
 
                 SetMovesRemaining(SettingsManager.IN.TutorialSafeMovesPerTurn);
                 this.endTurnButton.SetActive(SettingsManager.IN.DiscardMode != EDiscardMode.DiscardEndsTurn);
@@ -905,6 +930,7 @@ public class GameManager : MonoBehaviour
                 break;
         }
 
+        RefreshReplayButton();
         RefreshUndoControls();
     }
 
@@ -1013,7 +1039,6 @@ public class GameManager : MonoBehaviour
         this.endTurnButton.SetActive(false);
         this.discardToEndTurnZone.SetActive(false);
         this.speedUpOpponentTurnButton.SetActive(false);
-        SetReplayButtonVisibility(false);
         this.TurnPhase = ETurnPhase.None;
         this.isOnlineMovePending = false;
         this.isOnlineLeavePending = false;
@@ -1097,8 +1122,8 @@ public class GameManager : MonoBehaviour
         this.pendingOnlineTurns.Enqueue(inTurn);
         if (this.onlineReplayCoroutine == null)
         {
+            ClearOnlineReplayHistory();
             this.onlineReplayStartState = this.onlineRenderedState?.Clone();
-            this.onlineReplayTurns.Clear();
             if (inTurn.Seat != this.onlineClient.LocalSeat)
                 PersistOnlineReplayHistory(this.onlineReplayStartState, inTurn);
             this.onlineReplayCoroutine = StartCoroutine(ReplayPendingOnlineTurnsCo());
@@ -1192,7 +1217,7 @@ public class GameManager : MonoBehaviour
         GameManager.IsDoingReplay = true;
         GameManager.IsApplyingRemoteUpdate = true;
         Move.ShouldRecordMoves = false;
-        SetReplayButtonVisibility(false);
+        RefreshReplayButton();
         SetOnlineReplayButton(true);
         RefreshUndoControls();
 
@@ -1214,6 +1239,7 @@ public class GameManager : MonoBehaviour
                     LogOnlineReplayMismatch(turn, replay.Reason, replay.ActualHash);
 
                 this.onlineReplayTurns.Add(turn);
+                RefreshReplayButton();
                 if (turn.Seat != this.onlineClient.LocalSeat)
                 {
                     latestOpponentHistory = new OnlineReplayHistoryData
@@ -1234,6 +1260,7 @@ public class GameManager : MonoBehaviour
             Time.timeScale = this.gameSpeed;
             ReleaseReplayInputLocks();
             SetOnlineReplayButton(false);
+            RefreshReplayButton();
             RefreshUndoControls();
         }
 
@@ -1600,6 +1627,7 @@ public class GameManager : MonoBehaviour
     {
         this.onlineReplayStartState = null;
         this.onlineReplayTurns.Clear();
+        RefreshReplayButton();
     }
 
     private void PersistOnlineReplayHistory(DomainGameStateData inStartState, TurnPackageData inTurn)
@@ -1635,6 +1663,7 @@ public class GameManager : MonoBehaviour
 
             this.onlineReplayStartState = history.StartState.Clone();
             this.onlineReplayTurns.Add(history.Turn);
+            RefreshReplayButton();
             RefreshOnlineControls();
         }
         catch (Exception exception)
@@ -1684,6 +1713,7 @@ public class GameManager : MonoBehaviour
         ClearOnlineReplayHistory();
         this.onlineReplayStartState = this.onlineTurnStartState.Clone();
         this.onlineReplayTurns.Add(inTurn);
+        RefreshReplayButton();
     }
 
     private bool HasOnlineReplayMoves()
@@ -1714,7 +1744,7 @@ public class GameManager : MonoBehaviour
         GameManager.IsApplyingRemoteUpdate = true;
         Move.ShouldRecordMoves = false;
         SetOnlineReplayButton(true);
-        SetReplayButtonVisibility(false);
+        RefreshReplayButton();
         RefreshUndoControls();
         try
         {
@@ -1740,6 +1770,7 @@ public class GameManager : MonoBehaviour
             this.onlineReplayCoroutine = null;
             Time.timeScale = this.gameSpeed;
             ReleaseReplayInputLocks();
+            RefreshReplayButton();
             RefreshUndoControls();
             SetOnlineReplayButton(false);
             RefreshOnlineControls();
@@ -2014,7 +2045,7 @@ public class GameManager : MonoBehaviour
             this.discardToEndTurnZone.SetActive(false);
             this.DiscardZone.SetActive(false);
             this.speedUpOpponentTurnButton.SetActive(false);
-            SetReplayButtonVisibility(false);
+            RefreshReplayButton();
             RefreshUndoControls();
             return;
         }
@@ -2032,8 +2063,6 @@ public class GameManager : MonoBehaviour
             && SettingsManager.IN.DiscardMode == EDiscardMode.DiscardEndsTurn);
         this.DiscardZone.SetActive(canMove
             && SettingsManager.IN.DiscardMode == EDiscardMode.AllowDiscard);
-        SetReplayButtonVisibility(!isRecoveryPending && this.IsPlayersTurn && !this.isOnlineMovePending
-            && !this.isOnlineReplayActive && HasOnlineReplayMoves());
         SetOnlineReplayButton(this.isOnlineReplayActive);
         if (isRecoveryPending)
             this.playerTurnText.text =
@@ -2041,6 +2070,7 @@ public class GameManager : MonoBehaviour
         else if (this.isOnlineMovePending)
             this.playerTurnText.text =
                 LocalizationManager.GetOnlineText(LOC.IN.OnlineSendingTurn);
+        RefreshReplayButton();
         RefreshUndoControls();
     }
 
@@ -2071,6 +2101,7 @@ public class GameManager : MonoBehaviour
                 panel.Hide();
         }
 
+        RefreshReplayButton();
         RefreshUndoControls();
     }
 
@@ -2331,9 +2362,6 @@ public class GameManager : MonoBehaviour
         ++this.CurrentTurnNumber;
 
         this.PlayerBoard.CurrentMoveNumber = 0;
-
-        if (this.CurrentTurnNumber > 1)
-            SetReplayButtonVisibility(true);
 
         this.PlayerBoard.Hand.RefreshPlayerHandText();
     }
@@ -2631,6 +2659,7 @@ public class GameManager : MonoBehaviour
         if (!this.IsOnline)
             BoardStateManager.IN.AddBoardState(boardState);
 
+        RefreshReplayButton();
         RefreshUndoControls();
     }
 
@@ -2983,6 +3012,8 @@ public class GameManager : MonoBehaviour
         TryHighlightDiscardPile();
         if (this.IsOnline)
             RefreshOnlineControls();
+        else
+            RefreshReplayButton();
         ValidateUndoCardState(inBoardState);
         RefreshUndoControls();
     }
@@ -3255,8 +3286,7 @@ public class GameManager : MonoBehaviour
         ++inPlayerBoard.CurrentMoveNumber;
         ++inPlayerBoard.TotalMovesTaken;
 
-        if (!GameManager.IsDoingReplay)
-            SetReplayButtonVisibility(this.IsPlayersTurn);
+        RefreshReplayButton();
 
         RefreshTurnAndMoveCountDisplay();
     }
@@ -3633,7 +3663,8 @@ public class GameManager : MonoBehaviour
 
         if (this.IsOnline)
         {
-            if (this.onlineReplayStartState != null && this.onlineReplayTurns.Count > 0)
+            if (this.onlineReplayStartState != null && this.onlineReplayTurns.Count > 0
+                && HasOnlineReplayMoves())
                 this.onlineReplayCoroutine = StartCoroutine(ReplayOnlineHistoryCo(
                     this.onlineReplayStartState.Clone(), new List<TurnPackageData>(this.onlineReplayTurns)));
             return;
@@ -3652,12 +3683,12 @@ public class GameManager : MonoBehaviour
     {
         BoardState restoreState = CreateBoardState(false);
         ETurnPhase restoreTurnPhase = this.TurnPhase;
-        bool wasReplayVisible = this.replayButton.activeSelf;
         bool wasDiscardVisible = this.DiscardZone.activeSelf;
         bool wasDiscardToEndTurnVisible = this.discardToEndTurnZone.activeSelf;
         Exception replayException = null;
         Exception restoreException = null;
         BoardStateManager.IsDoingReplay = true;
+        RefreshReplayButton();
         RefreshUndoControls();
         try
         {
@@ -3671,7 +3702,6 @@ public class GameManager : MonoBehaviour
                 BoardStateManager.IsDoingReplay = true;
                 SetGameToBoardState(restoreState);
                 this.TurnPhase = restoreTurnPhase;
-                this.replayButton.SetActive(wasReplayVisible);
                 this.DiscardZone.SetActive(wasDiscardVisible);
                 this.discardToEndTurnZone.SetActive(wasDiscardToEndTurnVisible);
             }
@@ -3682,6 +3712,7 @@ public class GameManager : MonoBehaviour
             finally
             {
                 ReleaseReplayInputLocks();
+                RefreshReplayButton();
                 RefreshUndoControls();
             }
         }
