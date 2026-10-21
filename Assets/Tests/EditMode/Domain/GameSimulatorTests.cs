@@ -156,6 +156,19 @@ namespace Elemento.Domain.Tests
         }
 
         [Test]
+        public void GetLegalMoves_FrozenZoneTopCardCannotBeMoved()
+        {
+            var simulator = new GameSimulator();
+            var state = CreateEmptyState(simulator);
+            var zone = state.Players[0].Zones[0];
+            zone.Cards.Add(CreateCard("frozenTop", points: 2));
+            zone.FrozenHealth = state.Rules.FrozenZoneHealth;
+
+            foreach (var move in simulator.GetLegalMoves(state, 0))
+                Assert.That(move.CardId, Is.Not.EqualTo("frozenTop"));
+        }
+
+        [Test]
         public void ApplyMove_LightningIgnoresShieldAndRemovesTopCards()
         {
             var simulator = new GameSimulator();

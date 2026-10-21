@@ -292,6 +292,8 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
         var cell = this.transform.GetComponentInParent<UICardCell>();
         if (cell == null || (cell.PlayerType != GameManager.IN.CurrentPlayer && !this.IsAnimateDragging)) return;
 
+        if (cell.CellType == UICardCell.ECellType.ElementZone && cell.ElementZone.IsFrozen) return;
+
         if (UITutorialPanel.IsTutorialMode && cell.CellType != UICardCell.ECellType.Deck && GameManager.IN.IsPlayersTurn)
         {
             bool allowInteract = UITutorialPanel.IN.InteractableCardCells.Contains(cell) && !UITutorialPanel.IN.ShouldBlockInput;

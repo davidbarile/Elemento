@@ -80,7 +80,7 @@ namespace Elemento.Domain
 
             foreach (var sourceZone in player.Zones)
             {
-                if (sourceZone.Cards.Count == 0)
+                if (sourceZone.Cards.Count == 0 || sourceZone.IsFrozen)
                     continue;
 
                 var card = sourceZone.Cards[sourceZone.Cards.Count - 1];
