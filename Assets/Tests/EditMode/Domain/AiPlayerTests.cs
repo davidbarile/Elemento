@@ -364,14 +364,83 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
-        public void StrongAi_DoesNotStripMultiplierWithoutAttackThreat()
+        public void StrongAi_RebuildsMultiplierPileWithoutAttackThreat()
         {
             var state = CreateMultiplierOrderingState(true, 0, false);
 
-            PlayStrongAiTurn(state, out var moves);
+            PlayStrongAiTurn(state, out _);
 
+            var cards = state.Players[0].Zones[0].Cards;
+            int multiplierIndex = FindCardIndex(cards, "water-multiplier-x3");
+            Assert.That(FindCardIndex(cards, "water-points-3"), Is.GreaterThan(multiplierIndex));
+            Assert.That(FindCardIndex(cards, "water-points-5"), Is.GreaterThan(multiplierIndex));
+        }
+
+        [Test]
+        public void StrongAi_HardRebuildsFullPileInProtectionOrder()
+        {
+            var state = CreateMultiplierOrderingState(false, 0, true);
+            state.Players[0].Hand.Add(new CardInstanceData
+            {
+                Id = "water-multiplier-x2",
+                IsFaceUp = true,
+                Multipliers = new[] { 0, 0, 0, 2 }
+            });
+
+            PlayStrongAiTurn(state, out _);
+
+            var ids = new List<string>();
+            foreach (var card in state.Players[0].Zones[0].Cards)
+                ids.Add(card.Id);
+            Assert.That(ids, Is.EqualTo(new[]
+            {
+                "water-multiplier-x3", "water-multiplier-x2", "water-points-5", "water-points-4",
+                "water-points-3", "water-shield-1", "water-shield-3"
+            }));
+        }
+
+        [TestCase(EAiDifficulty.Easy, 1)]
+        [TestCase(EAiDifficulty.Medium, 2)]
+        public void StrongAi_RebuildStripLimitedByDifficulty(EAiDifficulty inDifficulty, int inMaxStrip)
+        {
+            var state = CreateMultiplierOrderingState(true, 0, true);
+
+            PlayStrongAiTurn(state, out var moves, inDifficulty);
+
+            int run = 0;
             foreach (var move in moves)
-                Assert.That(move.SourceZoneId, Is.EqualTo(-1));
+            {
+                bool isStrip = move.SourceZoneId >= 0 && move.TargetZoneId < 0;
+                run = isStrip ? run + 1 : 0;
+                Assert.That(run, Is.LessThanOrEqualTo(inMaxStrip));
+            }
+        }
+
+        [Test]
+        public void StrongAi_BuriesHandMultiplierUnderShieldedPointPile()
+        {
+            var state = CreateMultiplierOrderingState(false, 0, true);
+            var ai = state.Players[0];
+            ai.Hand.Clear();
+            var fireZone = new ZoneStateData { Id = 2, ElementType = EElementType.Fire, Health = 5, MaxHealth = 5 };
+            fireZone.Cards.Add(new CardInstanceData { Id = "fire-points-3", IsFaceUp = true, Points = new[] { 0, 0, 3, 0 } });
+            fireZone.Cards.Add(new CardInstanceData { Id = "fire-points-4", IsFaceUp = true, Points = new[] { 0, 0, 4, 0 } });
+            fireZone.Cards.Add(new CardInstanceData { Id = "fire-shield", IsFaceUp = true, Shields = new[] { 0, 0, 2, 0 } });
+            RefreshZonePoints(fireZone);
+            ai.Zones.Add(fireZone);
+            ai.Hand.Add(new CardInstanceData
+            {
+                Id = "fire-x2",
+                IsFaceUp = true,
+                Multipliers = new[] { 0, 0, 2, 0 }
+            });
+
+            PlayStrongAiTurn(state, out _);
+
+            var cards = fireZone.Cards;
+            Assert.That(cards[0].Id, Is.EqualTo("fire-x2"));
+            Assert.That(cards[cards.Count - 1].Id, Is.EqualTo("fire-shield"));
+            Assert.That(fireZone.Points, Is.EqualTo(14));
         }
 
         [Test]
@@ -1033,10 +1102,11 @@ namespace Elemento.Tests.Domain
             };
         }
 
-        private static void PlayStrongAiTurn(GameStateData inState, out List<MoveData> outMoves)
+        private static void PlayStrongAiTurn(GameStateData inState, out List<MoveData> outMoves,
+            EAiDifficulty inDifficulty = EAiDifficulty.Hard)
         {
             var simulator = new GameSimulator();
-            var ai = new StrongAiPlayer();
+            var ai = new StrongAiPlayer(new StrongAiOptions { Difficulty = inDifficulty });
             var random = new DeterministicRandom(17);
             outMoves = new List<MoveData>();
             while (inState.CurrentPlayerId == 0 && inState.WinnerPlayerId < 0)
