@@ -122,7 +122,7 @@ Settings debug menu can clear that user's server records, clear local pending re
 Supabase table editor. Clearing every user's records additionally requires the caller's UUID in
 the comma-separated `AI_GAME_ADMIN_USER_IDS` Edge Function secret.
 
-Apply `0008_ai_game_telemetry.sql`, deploy `record-ai-game` and `clear-ai-games`, set the admin
+Apply `20261021061500_0008_ai_game_telemetry.sql`, deploy `record-ai-game` and `clear-ai-games`, set the admin
 secret, then run `functions/smoke-test.sh`. The smoke test verifies upload, owner deletion, and
 rejection of a non-admin all-record deletion.
 
@@ -143,7 +143,7 @@ without changing the revision/idempotency storage model.
 
 ## Deploy and verify presence
 
-Apply migrations through 0007_presence.sql before deploying the new heartbeat function and
+Apply migrations through `20261018070321_0007_presence.sql` before deploying the new heartbeat function and
 updated get-view and submit-turn functions. Redeploy create-match and join-match as well to pick
 up the shared response field default. Run functions/smoke-test.sh against the deployed test
 project; it checks unknown/recent presence, nonmember heartbeat rejection, unchanged revision,
