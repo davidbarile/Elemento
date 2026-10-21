@@ -56,6 +56,23 @@ import sys
 kind, fixture_path, harness_create_path, harness_submit_path, *args = sys.argv[1:]
 if kind == "profile":
     value = [{"id": args[0], "username": args[1]}]
+elif kind == "ai_game":
+    value = {
+        "Game": {
+            "SchemaVersion": 1,
+            "ClientGameId": args[0].replace("-", ""),
+            "Status": "completed",
+            "StartedAtUtc": "2026-10-20T00:00:00.0000000Z",
+            "EndedAtUtc": "2026-10-20T00:01:00.0000000Z",
+            "AppVersion": "smoke-test",
+            "BuildGuid": "smoke-build",
+            "AiImplementation": "strong",
+            "Snapshots": [],
+            "Diagnostics": [],
+        },
+    }
+elif kind == "clear_ai":
+    value = {"Scope": args[0]}
 elif kind == "create":
     if os.path.isfile(harness_create_path):
         with open(harness_create_path, encoding="utf-8") as source:
@@ -273,5 +290,16 @@ old_heartbeat_body=${old_heartbeat_response%$'\n'*}
 [[ $old_heartbeat_status == 426 ]] || { echo "expected heartbeat HTTP 426, got $old_heartbeat_status" >&2; exit 1; }
 assert_json "$old_heartbeat_body" Error update_required
 assert_json "$old_heartbeat_body" ProtocolVersion 2
+
+stored_ai_game=$(call_function record-ai-game "$token0" "$(make_json ai_game "$user0")")
+assert_json "$stored_ai_game" stored true
+cleared_ai_games=$(call_function clear-ai-games "$token0" "$(make_json clear_ai owner)")
+assert_json "$cleared_ai_games" deleted 1
+
+unauthorized_clear=$(call_function_with_status clear-ai-games "$token1" "$(make_json clear_ai all)")
+unauthorized_clear_status=${unauthorized_clear##*$'\n'}
+unauthorized_clear_body=${unauthorized_clear%$'\n'*}
+[[ $unauthorized_clear_status == 403 ]] || { echo "expected clear-all HTTP 403, got $unauthorized_clear_status" >&2; exit 1; }
+assert_json "$unauthorized_clear_body" error "this user is not authorized to clear all AI games"
 
 echo "Protocol v2 smoke test passed for match $match_id"

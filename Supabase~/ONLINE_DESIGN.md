@@ -113,6 +113,19 @@ inactivity; when pg_cron is installed it runs hourly.
 RLS is enabled on state and turn storage without anon/authenticated policies. Edge Functions use
 the service role; clients never write match tables directly.
 
+## VS-AI telemetry
+
+Local VS-AI games keep an atomic recovery journal and queue completed, interrupted, quit,
+abandoned, restarted, and corrupt sessions for upload. The `record-ai-game` Edge Function binds
+each payload to the authenticated anonymous user; clients have no direct table access. The hidden
+Settings debug menu can clear that user's server records, clear local pending records, or open the
+Supabase table editor. Clearing every user's records additionally requires the caller's UUID in
+the comma-separated `AI_GAME_ADMIN_USER_IDS` Edge Function secret.
+
+Apply `0008_ai_game_telemetry.sql`, deploy `record-ai-game` and `clear-ai-games`, set the admin
+secret, then run `functions/smoke-test.sh`. The smoke test verifies upload, owner deletion, and
+rejection of a non-admin all-record deletion.
+
 Every request carries ProtocolVersion. Versions other than 2 receive HTTP 426:
 
     {

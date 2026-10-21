@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using DG.Tweening;
 using Elemento.Domain.Net;
 using Elemento.Networking.Supabase;
+using Elemento.Telemetry;
 using DomainCardInstanceData = Elemento.Domain.CardInstanceData;
 using DomainGameStateData = Elemento.Domain.GameStateData;
 using DomainGameRules = Elemento.Domain.GameRules;
@@ -128,6 +129,7 @@ public class GameManager : MonoBehaviour
     public bool IsPassAndPlay => this.gameSession != null && this.gameSession.GameMode == Elemento.Domain.EGameMode.PassAndPlay;
     public bool IsOnline => this.gameSession is OnlineSession;
     public bool IsGameInProgress { get; private set; }
+    public AiGameTelemetryService AiGameTelemetry => this.aiGameTelemetry;
     private bool IsOnlineInputBlocked => this.IsOnline && (this.isOnlineMovePending || this.isOnlineLeavePending
         || this.isOnlineReplayActive || this.onlineTurnRecorder == null || this.onlineTurnRecorder.IsComplete
         || UIOnlineLobbyPanel.IN?.IsRecoveryPending == true || !this.IsPlayersTurn
@@ -175,6 +177,7 @@ public class GameManager : MonoBehaviour
     private readonly Queue<TurnPackageData> pendingOnlineTurns = new();
     private readonly Elemento.Domain.TurnUndoHistory<BoardState> undoHistory = new();
     private OpponentPresenceTracker opponentPresenceTracker;
+    private AiGameTelemetryService aiGameTelemetry;
 
     private BoardState lastCreatedBoardState;
 
@@ -199,6 +202,17 @@ public class GameManager : MonoBehaviour
         CardsManager.IN.GenerateAllCardDatasFromScriptableObjects();
 
         SaveManager.IN.LoadGame();
+
+        try
+        {
+            this.aiGameTelemetry = new AiGameTelemetryService();
+            this.aiGameTelemetry.Initialize();
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("AI game telemetry initialization failed: " + exception.Message);
+            this.aiGameTelemetry = null;
+        }
 
         ConfigureSession();
 
@@ -233,6 +247,8 @@ public class GameManager : MonoBehaviour
 
     public void RestartGame()
     {
+        RecordCurrentAiGameSnapshot("restarted");
+        this.aiGameTelemetry?.Complete("restarted");
         ConfigureSession();
         if (SettingsManager.IN.PlayMode == EPlayMode.Multiplayer && !OnlineMatchContext.IsActive)
         {
@@ -2222,6 +2238,7 @@ public class GameManager : MonoBehaviour
 
     private void OnDestroy()
     {
+        this.aiGameTelemetry?.Dispose();
         if (this.onlineClient == null)
             return;
         this.onlineClient.StateChanged -= HandleOnlineStateChanged;
@@ -2233,6 +2250,8 @@ public class GameManager : MonoBehaviour
 
     private void OnApplicationPause(bool inIsPaused)
     {
+        if (inIsPaused)
+            RecordCurrentAiGameSnapshot("paused");
         this.isApplicationPaused = inIsPaused;
         if (!inIsPaused)
             ResumeOnlineAfterInterruption();
@@ -2240,6 +2259,8 @@ public class GameManager : MonoBehaviour
 
     private void OnApplicationFocus(bool inHasFocus)
     {
+        if (!inHasFocus)
+            RecordCurrentAiGameSnapshot("focus_lost");
         this.isApplicationPaused = !inHasFocus;
         if (inHasFocus)
             ResumeOnlineAfterInterruption();
@@ -2513,6 +2534,12 @@ public class GameManager : MonoBehaviour
 
     private void ShowWinLosePanel(bool playerWon, string message)
     {
+        if (ShouldRecordAiGame())
+        {
+            RecordCurrentAiGameSnapshot("completed");
+            this.aiGameTelemetry?.Complete("completed", playerWon, message);
+        }
+
         SetGameInProgress(false);
         BoardStateManager.IsDoingReplay = false;
 
@@ -2658,6 +2685,9 @@ public class GameManager : MonoBehaviour
 
         if (!this.IsOnline)
             BoardStateManager.IN.AddBoardState(boardState);
+
+        RecordAiGameSnapshot(boardState, recordedMove.Data,
+            inIsDealHand ? "deal" : "move");
 
         RefreshReplayButton();
         RefreshUndoControls();
@@ -3541,6 +3571,8 @@ public class GameManager : MonoBehaviour
 
     private void ReturnHomeFromGame()
     {
+        RecordCurrentAiGameSnapshot("abandoned");
+        this.aiGameTelemetry?.Complete("abandoned");
         SetGameInProgress(false);
         CancelOnlineReplay();
         GameManager.IsApplyingRemoteUpdate = false;
@@ -3563,6 +3595,60 @@ public class GameManager : MonoBehaviour
 
         UISplashScreen.IN.Show();
         UIGameBoard.IN.Hide();
+    }
+
+    private void OnApplicationQuit()
+    {
+        RecordCurrentAiGameSnapshot("quit");
+        this.aiGameTelemetry?.Complete("quit");
+    }
+
+    private bool ShouldRecordAiGame()
+    {
+        return this.IsGameInProgress && !this.IsOnline && !this.IsPassAndPlay
+            && !UITutorialPanel.IsTutorialMode;
+    }
+
+    private void RecordCurrentAiGameSnapshot(string inReason)
+    {
+        if (!ShouldRecordAiGame() || !this.isGameInitialized)
+            return;
+
+        try
+        {
+            RecordAiGameSnapshot(CreateBoardState(false), null, inReason);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("AI game telemetry state capture failed: " + exception.Message);
+        }
+    }
+
+    private void RecordAiGameSnapshot(BoardState inState, DomainMoveData inMove, string inReason)
+    {
+        if (!ShouldRecordAiGame() || inState == null)
+            return;
+
+        try
+        {
+            var context = new AiGameContextData
+            {
+                AppVersion = Application.version,
+                BuildGuid = Application.buildGUID,
+                UnityVersion = Application.unityVersion,
+                Platform = Application.platform.ToString(),
+                AiImplementation = SettingsManager.IN.UseLegacyAi ? "legacy" : "strong",
+                AiDifficulty = (int)SettingsManager.IN.AiDifficulty,
+                RandomSeed = this.randomSeed,
+                Rules = UnityDomainMapper.CreateRules(SettingsManager.IN, this.PlayerBoards,
+                    CardsManager.IN.CardSpawnBatchSize)
+            };
+            this.aiGameTelemetry?.RecordSnapshot(context, inState, inMove, inReason);
+        }
+        catch (Exception exception)
+        {
+            Debug.LogWarning("AI game telemetry state capture failed: " + exception.Message);
+        }
     }
 
     public void HandlePlayGameButtonPress()

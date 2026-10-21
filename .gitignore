@@ -228,3 +228,6 @@ DerivedData/
 timeline.xctimeline
 playground.xcworkspace
 Supabase~/functions/fixtures/generated-first-turn/
+
+# Keep the project's Supabase source despite global backup-file "*~" rules.
+!/Supabase~/

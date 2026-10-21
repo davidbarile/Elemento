@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Elemento.Networking.Supabase;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -31,6 +32,11 @@ public class UISettingsPanel : UIPanelBase
     public bool IsResettingData;
 
     private bool isInitialized;
+    private bool isDebugAccessInitialized;
+    private int debugTitleTapCount;
+    private float lastDebugTitleTapTime;
+    private GameObject aiGameDebugMenu;
+    private TextMeshProUGUI settingsTitleText;
 
     private void Start()
     {
@@ -132,6 +138,7 @@ public class UISettingsPanel : UIPanelBase
 
         this.playModeLockedNote.localizedTexts = LOC.IN.ReturnHomeToChangeMode;
         playModeLockedText.text = LOC.IN.ReturnHomeToChangeMode[LOC.LI];
+        InitializeDebugAccess();
         return true;
     }
 
@@ -357,6 +364,10 @@ public class UISettingsPanel : UIPanelBase
 
     public override void Hide()
     {
+        this.debugTitleTapCount = 0;
+        if (this.aiGameDebugMenu != null)
+            this.aiGameDebugMenu.SetActive(false);
+
         GameManager.IN.SetGamePaused(false);
 
         LocalizationManager.OnLanguageChanged -= RefreshDropdownsLanguage;
@@ -414,5 +425,193 @@ public class UISettingsPanel : UIPanelBase
         this.SkinSelectPanel.RefreshDropdowns(inLanguageIndex);
 
         SetSliderValuesToSettings();
+    }
+
+    public void HandleDebugTitlePress()
+    {
+        if (Time.unscaledTime - this.lastDebugTitleTapTime > 4f)
+            this.debugTitleTapCount = 0;
+
+        this.lastDebugTitleTapTime = Time.unscaledTime;
+        this.debugTitleTapCount++;
+        if (this.debugTitleTapCount < 10)
+            return;
+
+        this.debugTitleTapCount = 0;
+        ShowAiGameDebugMenu();
+    }
+
+    private void InitializeDebugAccess()
+    {
+        if (this.isDebugAccessInitialized)
+            return;
+
+        foreach (var text in GetComponentsInChildren<TextMeshProUGUI>(true))
+        {
+            if (text.name == "Title Text")
+            {
+                this.settingsTitleText = text;
+                break;
+            }
+        }
+
+        if (this.settingsTitleText == null)
+        {
+            Debug.LogWarning("Settings debug access could not find Title Text.", this);
+            return;
+        }
+
+        Button titleButton = this.settingsTitleText.GetComponent<Button>();
+        if (titleButton == null)
+            titleButton = this.settingsTitleText.gameObject.AddComponent<Button>();
+        titleButton.transition = Selectable.Transition.None;
+        titleButton.targetGraphic = this.settingsTitleText;
+        titleButton.onClick.AddListener(HandleDebugTitlePress);
+        this.isDebugAccessInitialized = true;
+    }
+
+    private void ShowAiGameDebugMenu()
+    {
+        if (this.aiGameDebugMenu == null)
+            BuildAiGameDebugMenu();
+
+        TextMeshProUGUI title = this.aiGameDebugMenu.transform.Find("Title")
+            ?.GetComponent<TextMeshProUGUI>();
+        if (title != null)
+        {
+            string userId = GameManager.IN?.AiGameTelemetry?.UserId;
+            title.text = "AI Game Debug\n<font-weight=400><size=22>Supabase user: "
+                + (string.IsNullOrEmpty(userId) ? "created on first upload" : userId) + "</size></font-weight>";
+        }
+
+        this.aiGameDebugMenu.SetActive(true);
+        this.aiGameDebugMenu.transform.SetAsLastSibling();
+    }
+
+    private void BuildAiGameDebugMenu()
+    {
+        Transform parent = this.settingsTitleText.transform.parent;
+        this.aiGameDebugMenu = new GameObject("AI Game Debug Menu",
+            typeof(RectTransform), typeof(CanvasRenderer), typeof(Image),
+            typeof(VerticalLayoutGroup));
+        var rect = (RectTransform)this.aiGameDebugMenu.transform;
+        rect.SetParent(parent, false);
+        rect.anchorMin = new Vector2(.5f, .5f);
+        rect.anchorMax = new Vector2(.5f, .5f);
+        rect.pivot = new Vector2(.5f, .5f);
+        rect.anchoredPosition = Vector2.zero;
+        rect.sizeDelta = new Vector2(760, 650);
+
+        var background = this.aiGameDebugMenu.GetComponent<Image>();
+        background.color = new Color(.05f, .05f, .05f, .98f);
+
+        var layout = this.aiGameDebugMenu.GetComponent<VerticalLayoutGroup>();
+        layout.padding = new RectOffset(45, 45, 30, 30);
+        layout.spacing = 14;
+        layout.childAlignment = TextAnchor.UpperCenter;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+
+        CreateDebugText("Title", 100, 34);
+        CreateDebugButton("Clear This Installation's Server Games",
+            () => ConfirmClearServerAiGames(false));
+        CreateDebugButton("Clear All Server AI Games",
+            () => ConfirmClearServerAiGames(true));
+        CreateDebugButton("Clear Local Pending AI Games", ConfirmClearLocalAiGames);
+        CreateDebugButton("Open Supabase Database", () => Application.OpenURL(SupabaseConfig.DashboardUrl));
+        CreateDebugButton("Close", () => this.aiGameDebugMenu.SetActive(false));
+    }
+
+    private TextMeshProUGUI CreateDebugText(string inName, float inHeight, float inFontSize)
+    {
+        var textObject = new GameObject(inName, typeof(RectTransform),
+            typeof(CanvasRenderer), typeof(TextMeshProUGUI), typeof(LayoutElement));
+        textObject.transform.SetParent(this.aiGameDebugMenu.transform, false);
+        var text = textObject.GetComponent<TextMeshProUGUI>();
+        text.font = this.settingsTitleText.font;
+        text.fontSize = inFontSize;
+        text.color = Color.white;
+        text.alignment = TextAlignmentOptions.Center;
+        text.textWrappingMode = TextWrappingModes.NoWrap;
+        textObject.GetComponent<LayoutElement>().preferredHeight = inHeight;
+        return text;
+    }
+
+    private void CreateDebugButton(string inLabel, Action inOnPress)
+    {
+        var buttonObject = new GameObject(inLabel, typeof(RectTransform),
+            typeof(CanvasRenderer), typeof(Image), typeof(Button), typeof(LayoutElement));
+        buttonObject.transform.SetParent(this.aiGameDebugMenu.transform, false);
+        var image = buttonObject.GetComponent<Image>();
+        image.color = new Color(.22f, .22f, .22f, 1f);
+        var button = buttonObject.GetComponent<Button>();
+        button.targetGraphic = image;
+        button.onClick.AddListener(() => inOnPress());
+        buttonObject.GetComponent<LayoutElement>().preferredHeight = 78;
+
+        TextMeshProUGUI label = CreateDebugText(inLabel + " Label", 78, 27);
+        label.transform.SetParent(buttonObject.transform, false);
+        var labelRect = (RectTransform)label.transform;
+        labelRect.anchorMin = Vector2.zero;
+        labelRect.anchorMax = Vector2.one;
+        labelRect.offsetMin = new Vector2(12, 4);
+        labelRect.offsetMax = new Vector2(-12, -4);
+        label.text = inLabel;
+        UnityEngine.Object.Destroy(label.GetComponent<LayoutElement>());
+    }
+
+    private void ConfirmClearServerAiGames(bool inAllGames)
+    {
+        if (GameManager.IN?.AiGameTelemetry == null)
+        {
+            ShowDebugStatus("AI game telemetry is unavailable.", true);
+            return;
+        }
+
+        string target = inAllGames ? "every saved AI game on the server"
+            : "the server games owned by this installation";
+        UIConfirmPanel.IN.transform.SetAsLastSibling();
+        UIConfirmPanel.IN.Show("Clear AI Games?", "Permanently delete " + target + "?",
+            async () =>
+            {
+                GameManager.IN.SetGamePaused(true);
+                try
+                {
+                    int deleted = await GameManager.IN.AiGameTelemetry.ClearServerAsync(inAllGames);
+                    ShowDebugStatus("Deleted " + deleted + " saved AI game(s).", false);
+                }
+                catch (Exception exception)
+                {
+                    ShowDebugStatus("Clear failed: " + exception.Message, true);
+                }
+            }, () => GameManager.IN.SetGamePaused(true), "Cancel", "Delete");
+    }
+
+    private void ConfirmClearLocalAiGames()
+    {
+        if (GameManager.IN?.AiGameTelemetry == null)
+        {
+            ShowDebugStatus("AI game telemetry is unavailable.", true);
+            return;
+        }
+
+        UIConfirmPanel.IN.transform.SetAsLastSibling();
+        UIConfirmPanel.IN.Show("Clear Local AI Games?",
+            "Delete the active recovery journal and all uploads pending on this device?",
+            () =>
+            {
+                GameManager.IN.SetGamePaused(true);
+                GameManager.IN.AiGameTelemetry.ClearLocal();
+                ShowDebugStatus("Local pending AI games cleared.", false);
+            }, () => GameManager.IN.SetGamePaused(true), "Cancel", "Delete");
+    }
+
+    private static void ShowDebugStatus(string inMessage, bool inIsError)
+    {
+        UIAlertPanel.IN.transform.SetAsLastSibling();
+        UIAlertPanel.IN.Show(inMessage, 4f, inIsError
+            ? UIAlertPanel.EAlertMode.Warning : UIAlertPanel.EAlertMode.Notification);
     }
 }
