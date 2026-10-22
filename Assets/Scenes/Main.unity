@@ -11361,8 +11361,8 @@ MonoBehaviour:
   - Join Match
   - Unirse a Partida
   OnlineActiveGames:
-  - Active games
-  - Partidas activas
+  - Active Games
+  - Partidas Activas
   OnlineMatchCodeFormat:
   - 'Code: {0}'
   - "C\xF3digo: {0}"
@@ -11371,13 +11371,13 @@ MonoBehaviour:
   - vs {0}
   OnlineRejoin:
   - Rejoin
-  - Volver a entrar
+  - Volver a Entrar
   OnlineForfeit:
   - Forfeit
   - Abandonar
   OnlineForfeitTitle:
-  - Forfeit game?
-  - "\xBFAbandonar partida?"
+  - Forfeit Game?
+  - "\xBFAbandonar Partida?"
   OnlineForfeitMessage:
   - Your opponent will win this game.
   - "Tu rival ganar\xE1 esta partida."
@@ -11385,8 +11385,8 @@ MonoBehaviour:
   - Cancel Game
   - Cancelar Partida
   OnlineCancelGameTitle:
-  - Cancel this game?
-  - "\xBFCancelar esta partida?"
+  - Cancel this Game?
+  - "\xBFCancelar esta Partida?"
   OnlineCancelGameMessage:
   - The invite code will stop working and you can create or join a new game.
   - "El c\xF3digo de invitaci\xF3n dejar\xE1 de funcionar y podr\xE1s crear o unirte
@@ -11454,8 +11454,8 @@ MonoBehaviour:
   - Enter a six-character invite code
   - "Introduce un c\xF3digo de seis caracteres"
   OnlineResuming:
-  - Resuming match...
-  - Reanudando partida...
+  - Resuming Match...
+  - Reanudando Partida...
   OnlineSendingTurn:
   - Sending turn...
   - Enviando turno...
@@ -11484,11 +11484,11 @@ MonoBehaviour:
   - The creator's gameplay settings apply to both players.
   - Los ajustes de juego del creador se aplican a ambos jugadores.
   OnlineYouGoFirst:
-  - You go first!
-  - "\xA1Empiezas t\xFA!"
+  - You Go First!
+  - "\xA1Empiezas T\xFA!"
   OnlineOpponentGoesFirst:
-  - Opponent goes first
-  - Empieza el rival
+  - Opponent Goes First
+  - Empieza el Rival
   UndoPastDraw:
   - Can't undo past a draw.
   - "No puedes deshacer m\xE1s all\xE1 de un robo."
