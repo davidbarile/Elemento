@@ -11360,9 +11360,43 @@ MonoBehaviour:
   OnlineJoinMatch:
   - Join Match
   - Unirse a Partida
-  OnlineResumeMatch:
-  - Resume
-  - Continuar
+  OnlineActiveGames:
+  - Active games
+  - Partidas activas
+  OnlineMatchCodeFormat:
+  - 'Code: {0}'
+  - "C\xF3digo: {0}"
+  OnlineOpponentFormat:
+  - vs {0}
+  - vs {0}
+  OnlineRejoin:
+  - Rejoin
+  - Volver a entrar
+  OnlineForfeit:
+  - Forfeit
+  - Abandonar
+  OnlineForfeitTitle:
+  - Forfeit game?
+  - "\xBFAbandonar partida?"
+  OnlineForfeitMessage:
+  - Your opponent will win this game.
+  - "Tu rival ganar\xE1 esta partida."
+  OnlineCancelGame:
+  - Cancel Game
+  - Cancelar Partida
+  OnlineCancelGameTitle:
+  - Cancel this game?
+  - "\xBFCancelar esta partida?"
+  OnlineCancelGameMessage:
+  - The invite code will stop working and you can create or join a new game.
+  - "El c\xF3digo de invitaci\xF3n dejar\xE1 de funcionar y podr\xE1s crear o unirte
+    a otra partida."
+  OnlineGameCancelled:
+  - Game Cancelled
+  - Partida Cancelada
+  OnlineLeave:
+  - Leave
+  - Abandonar
   OnlineUpdateRequired:
   - Please update Elemento to play online.
   - "Actualiza Elemento para jugar en l\xEDnea."
@@ -11374,7 +11408,24 @@ MonoBehaviour:
   - "Introduce el C\xF3digo"
   OnlineInviteCodeLabel:
   - Invite Code
-  - "C\xF3digo de invitaci\xF3n"
+  - "C\xF3digo de Invitaci\xF3n"
+  OnlineShareInvite:
+  - Share Invite
+  - "Compartir Invitaci\xF3n"
+  OnlineCodeCopied:
+  - Code copied to clipboard
+  - "C\xF3digo copiado al portapapeles"
+  OnlineInviteCopied:
+  - Invitation copied to clipboard
+  - "Invitaci\xF3n copiada al portapapeles"
+  OnlineInviteSubject:
+  - Play Elemento with me!
+  - "\xA1Juega a Elemento conmigo!"
+  OnlineInviteMessage:
+  - 'You''re invited to an online game of Elemento! Open Online Match, tap Join Match
+    and enter this code: {0}'
+  - "\xA1Te invito a una partida en l\xEDnea de Elemento! Abre Partida en l\xEDnea,
+    toca Unirse a partida e introduce este c\xF3digo: {0}"
   OnlineWaiting:
   - Waiting for Opponent
   - Esperando al Rival
@@ -11382,14 +11433,14 @@ MonoBehaviour:
   - Waiting for Opponent...
   - Esperando al Rival...
   OnlineOpponentAway:
-  - Opponent away...
-  - Rival ausente...
+  - Opponent Away...
+  - Rival Ausente...
   OnlineKeepWaiting:
-  - Keep waiting
-  - Seguir esperando
+  - Keep Waiting
+  - Seguir Esperando
   OnlineLeaveAndContinueLater:
-  - Leave and continue later
-  - "Salir y continuar despu\xE9s"
+  - Leave and Continue Later
+  - "Salir y Continuar Despu\xE9s"
   OnlineBack:
   - Back
   - Volver
@@ -11402,6 +11453,9 @@ MonoBehaviour:
   OnlineInvalidInvite:
   - Enter a six-character invite code
   - "Introduce un c\xF3digo de seis caracteres"
+  OnlineResuming:
+  - Resuming match...
+  - Reanudando partida...
   OnlineSendingTurn:
   - Sending turn...
   - Enviando turno...
@@ -11420,6 +11474,12 @@ MonoBehaviour:
   OnlineOpponentLeft:
   - The other player has left the game
   - El otro jugador ha abandonado la partida
+  OnlineMatchAlreadyEnded:
+  - This match has already ended.
+  - Esta partida ya ha terminado.
+  OnlineMatchGone:
+  - This match is no longer available.
+  - "Esta partida ya no est\xE1 disponible."
   OnlineMatchSettings:
   - The creator's gameplay settings apply to both players.
   - Los ajustes de juego del creador se aplican a ambos jugadores.
@@ -24288,7 +24348,7 @@ MonoBehaviour:
   m_TargetGraphic: {fileID: 337578384}
   m_HandleRect: {fileID: 337578383}
   m_Direction: 0
-  m_Value: 1
+  m_Value: 0
   m_Size: 1
   m_NumberOfSteps: 0
   m_OnValueChanged:
