@@ -277,6 +277,11 @@ public class LocalizationManager : MonoBehaviour
     public string[] OnlineInviteCode = { "Join with a code", "Unirse con un código" };
     public string[] OnlineInviteCodePlaceholder = { "Enter code", "Introduce el código" };
     public string[] OnlineInviteCodeLabel = { "Invite Code", "Código de invitación" };
+    public string[] OnlineShareInvite = { "Share Invite", "Compartir invitación" };
+    public string[] OnlineCodeCopied = { "Code copied to clipboard", "Código copiado al portapapeles" };
+    public string[] OnlineInviteCopied = { "Invitation copied to clipboard", "Invitación copiada al portapapeles" };
+    public string[] OnlineInviteSubject = { "Play Elemento with me!", "¡Juega a Elemento conmigo!" };
+    public string[] OnlineInviteMessage = { "You're invited to an online game of Elemento! Open Online Match, tap Join Match and enter this code: {0}", "¡Te invito a una partida en línea de Elemento! Abre Partida en línea, toca Unirse a partida e introduce este código: {0}" };
     public string[] OnlineWaiting = { "Waiting for Opponent", "Esperando al rival" };
     public string[] OnlineWaitingForOpponent = { "Waiting for opponent...", "Esperando al rival..." };
     public string[] OnlineOpponentAway = { "Opponent away...", "Rival ausente..." };

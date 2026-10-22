@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Elemento.Domain.Net;
 using Elemento.Networking;
@@ -39,6 +40,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     [SerializeField] private Button backButton;
     [SerializeField] private Button cancelGameButton;
     [SerializeField] private TextMeshProUGUI cancelGameText;
+    [SerializeField] private Button shareButton;
+    [SerializeField] private TextMeshProUGUI shareText;
     [SerializeField] private GameObject activeGamesRoot;
     [SerializeField] private TextMeshProUGUI activeGamesHeaderText;
     [SerializeField] private RectTransform activeGamesContent;
@@ -68,12 +71,20 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.inviteCodeInput.gameObject.AddComponent<UIInputPlaceholderToggle>().Initialize(this.inviteCodeInput);
         LocalizationManager.OnLanguageChanged += HandleLanguageChanged;
         this.cancelGameButton?.onClick.AddListener(HandleCancelGameButtonPress);
+        this.shareButton?.onClick.AddListener(HandleShareButtonPress);
+
+        // Tapping the invite code in the status line copies it again.
+        this.statusText.raycastTarget = true;
+        Button codeButton = this.statusText.gameObject.AddComponent<Button>();
+        codeButton.transition = Selectable.Transition.None;
+        codeButton.onClick.AddListener(HandleInviteCodePress);
     }
 
     private void OnDestroy()
     {
         LocalizationManager.OnLanguageChanged -= HandleLanguageChanged;
         this.cancelGameButton?.onClick.RemoveListener(HandleCancelGameButtonPress);
+        this.shareButton?.onClick.RemoveListener(HandleShareButtonPress);
         ReleaseMatch();
     }
 
@@ -145,6 +156,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             this.inviteCode = this.transport.LastInviteCode;
             this.statusText.text = GetWaitingText();
             StartMatch(match);
+            CopyInviteCode();
         }
         catch (Exception exception) { ReleaseMatch(); ShowError(exception); }
         finally { SetBusy(false); }
@@ -442,6 +454,8 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         this.backText.text = LocalizationManager.GetOnlineText(loc.OnlineBack);
         if (this.cancelGameText != null)
             this.cancelGameText.text = LocalizationManager.GetOnlineText(loc.OnlineCancelGame);
+        if (this.shareText != null)
+            this.shareText.text = LocalizationManager.GetOnlineText(loc.OnlineShareInvite);
         if (this.activeGamesHeaderText != null)
             this.activeGamesHeaderText.text = LocalizationManager.GetOnlineText(loc.OnlineActiveGames);
         if (this.isResumeLoading)
@@ -466,6 +480,12 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             this.cancelGameButton.gameObject.SetActive(true);
         this.cancelGameButtonRoot.SetActive(isVisible);
         this.cancelGameButton.interactable = isVisible && !this.isBusy;
+        if (this.shareButton != null)
+        {
+            bool canShare = isVisible && !string.IsNullOrEmpty(this.inviteCode);
+            GetPanelChild(this.transform, this.shareButton).SetActive(canShare);
+            this.shareButton.interactable = canShare && !this.isBusy;
+        }
         if (isVisible)
         {
             this.createButton.gameObject.SetActive(false);
@@ -550,6 +570,60 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
                 EAlertMode.Notification);
         }
         await LoadLobbyAsync();
+    }
+
+    private void HandleInviteCodePress()
+    {
+        if (IsWaitingForJoiner())
+            CopyInviteCode();
+    }
+
+    private void CopyInviteCode()
+    {
+        if (string.IsNullOrEmpty(this.inviteCode))
+            return;
+        GUIUtility.systemCopyBuffer = this.inviteCode;
+        ShowNotice(LocalizationManager.IN.OnlineCodeCopied);
+    }
+
+    private void HandleShareButtonPress()
+    {
+        if (string.IsNullOrEmpty(this.inviteCode))
+            return;
+        var loc = LocalizationManager.IN;
+        string message = string.Format(LocalizationManager.GetOnlineText(loc.OnlineInviteMessage), this.inviteCode);
+#if UNITY_IOS && !UNITY_EDITOR
+        ElementoShareText(message);
+#elif UNITY_ANDROID && !UNITY_EDITOR
+        using var intent = new AndroidJavaObject("android.content.Intent", "android.intent.action.SEND");
+        intent.Call<AndroidJavaObject>("setType", "text/plain");
+        intent.Call<AndroidJavaObject>("putExtra", "android.intent.extra.SUBJECT",
+            LocalizationManager.GetOnlineText(loc.OnlineInviteSubject));
+        intent.Call<AndroidJavaObject>("putExtra", "android.intent.extra.TEXT", message);
+        using var intentClass = new AndroidJavaClass("android.content.Intent");
+        using var chooser = intentClass.CallStatic<AndroidJavaObject>("createChooser", intent,
+            LocalizationManager.GetOnlineText(loc.OnlineShareInvite));
+        using var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
+        using var activity = player.GetStatic<AndroidJavaObject>("currentActivity");
+        activity.Call("startActivity", chooser);
+#else
+        // ponytail: no share sheet on desktop/editor, so the full invitation goes to the clipboard.
+        GUIUtility.systemCopyBuffer = message;
+        ShowNotice(loc.OnlineInviteCopied);
+#endif
+    }
+
+#if UNITY_IOS && !UNITY_EDITOR
+    [DllImport("__Internal")]
+    private static extern void ElementoShareText(string inText);
+#endif
+
+    private static void ShowNotice(string[] inMessage)
+    {
+        if (UIAlertPanel.IN == null)
+            return;
+        UIAlertPanel.IN.transform.SetAsLastSibling();
+        UIAlertPanel.IN.Show(LocalizationManager.GetOnlineText(inMessage), 2f, EAlertMode.Notification);
     }
 
     private string GetWaitingText()

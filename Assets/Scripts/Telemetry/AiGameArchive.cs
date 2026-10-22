@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using Elemento.Domain;
 using Elemento.Domain.Net;
 
@@ -15,7 +17,11 @@ namespace Elemento.Telemetry
         private readonly string directoryPath;
         private readonly string pendingDirectoryPath;
         private readonly string activeFilePath;
+        private readonly object checkpointLock = new();
+        private Task checkpointTask = Task.CompletedTask;
+        private int checkpointGeneration;
         private AiGameData currentGame;
+        private readonly Dictionary<CardData, int> cardDefinitionCodes = new();
 
         public bool HasActiveGame => this.currentGame != null;
 
@@ -79,6 +85,7 @@ namespace Elemento.Telemetry
             if (inState.Move != null)
                 throw new InvalidOperationException("AI telemetry snapshots must not retain Unity move references.");
 
+            bool isFirstSnapshot = this.currentGame == null;
             StartIfNeeded(inContext);
             // shortcut: full snapshots favor diagnosis over payload size; switch to deltas if uploads approach function limits.
             this.currentGame.Snapshots.Add(new AiGameSnapshotData
@@ -86,9 +93,10 @@ namespace Elemento.Telemetry
                 CapturedAtUtc = UtcNow(),
                 Reason = inReason,
                 Move = inMove?.Clone(),
-                State = CloneState(inState)
+                CompactState = CreateCompactState(inState)
             });
-            WriteActive();
+            if (isFirstSnapshot)
+                WriteActive();
         }
 
         public void RecordDiagnostic(string inType, string inMessage, string inStackTrace)
@@ -105,20 +113,43 @@ namespace Elemento.Telemetry
                 Message = Truncate(inMessage, MaxDiagnosticLength),
                 StackTrace = Truncate(inStackTrace, MaxDiagnosticLength)
             });
-            WriteActive();
+        }
+
+        public Task CheckpointAsync()
+        {
+            lock (this.checkpointLock)
+            {
+                if (this.currentGame == null)
+                    return Task.CompletedTask;
+
+                int generation = this.checkpointGeneration;
+                AiGameData checkpoint = CopyForCheckpoint(this.currentGame);
+                this.checkpointTask = this.checkpointTask.ContinueWith(_ =>
+                    WriteActive(checkpoint, generation), CancellationToken.None,
+                    TaskContinuationOptions.None, TaskScheduler.Default);
+                return this.checkpointTask;
+            }
         }
 
         public void Complete(string inStatus, bool? inPlayerWon = null, string inResultMessage = null)
         {
-            if (this.currentGame == null)
-                return;
+            AiGameData completedGame;
+            lock (this.checkpointLock)
+            {
+                if (this.currentGame == null)
+                    return;
+                ++this.checkpointGeneration;
+                this.checkpointTask = Task.CompletedTask;
+                completedGame = this.currentGame;
+                this.currentGame = null;
+                this.cardDefinitionCodes.Clear();
+            }
 
-            this.currentGame.Status = inStatus;
-            this.currentGame.PlayerWon = inPlayerWon.HasValue ? inPlayerWon.Value ? 1 : 0 : -1;
-            this.currentGame.ResultMessage = inResultMessage;
-            this.currentGame.EndedAtUtc = UtcNow();
-            WritePending(this.currentGame);
-            this.currentGame = null;
+            completedGame.Status = inStatus;
+            completedGame.PlayerWon = inPlayerWon.HasValue ? inPlayerWon.Value ? 1 : 0 : -1;
+            completedGame.ResultMessage = inResultMessage;
+            completedGame.EndedAtUtc = UtcNow();
+            WritePending(completedGame);
             DeleteActiveFiles();
         }
 
@@ -146,10 +177,27 @@ namespace Elemento.Telemetry
 
         public void ClearLocal()
         {
-            this.currentGame = null;
+            lock (this.checkpointLock)
+            {
+                ++this.checkpointGeneration;
+                this.checkpointTask = Task.CompletedTask;
+                this.currentGame = null;
+                this.cardDefinitionCodes.Clear();
+            }
             if (Directory.Exists(this.directoryPath))
                 Directory.Delete(this.directoryPath, true);
             EnsureDirectories();
+        }
+
+        public void Suspend()
+        {
+            lock (this.checkpointLock)
+            {
+                ++this.checkpointGeneration;
+                this.checkpointTask = Task.CompletedTask;
+                this.currentGame = null;
+                this.cardDefinitionCodes.Clear();
+            }
         }
 
         private void StartIfNeeded(AiGameContextData inContext)
@@ -157,6 +205,7 @@ namespace Elemento.Telemetry
             if (this.currentGame != null)
                 return;
 
+            this.cardDefinitionCodes.Clear();
             this.currentGame = new AiGameData
             {
                 ClientGameId = Guid.NewGuid().ToString("N"),
@@ -175,6 +224,44 @@ namespace Elemento.Telemetry
         private void WriteActive()
         {
             WriteAtomic(this.activeFilePath, NetJson.Serialize(this.currentGame));
+        }
+
+        private void WriteActive(AiGameData inGame, int inGeneration)
+        {
+            string json = NetJson.Serialize(inGame);
+            lock (this.checkpointLock)
+            {
+                if (inGeneration != this.checkpointGeneration || this.currentGame == null)
+                    return;
+                WriteAtomic(this.activeFilePath, json);
+            }
+        }
+
+        private static AiGameData CopyForCheckpoint(AiGameData inGame)
+        {
+            return new AiGameData
+            {
+                SchemaVersion = inGame.SchemaVersion,
+                ClientGameId = inGame.ClientGameId,
+                Status = inGame.Status,
+                StartedAtUtc = inGame.StartedAtUtc,
+                EndedAtUtc = inGame.EndedAtUtc,
+                AppVersion = inGame.AppVersion,
+                BuildGuid = inGame.BuildGuid,
+                UnityVersion = inGame.UnityVersion,
+                Platform = inGame.Platform,
+                AiImplementation = inGame.AiImplementation,
+                AiDifficulty = inGame.AiDifficulty,
+                RandomSeed = inGame.RandomSeed,
+                PlayerWon = inGame.PlayerWon,
+                ResultMessage = inGame.ResultMessage,
+                RecoveryError = inGame.RecoveryError,
+                RecoveredJson = inGame.RecoveredJson,
+                Rules = inGame.Rules?.Clone(),
+                CardDefinitions = new List<AiGameCardDefinitionData>(inGame.CardDefinitions),
+                Snapshots = new List<AiGameSnapshotData>(inGame.Snapshots),
+                Diagnostics = new List<AiGameDiagnosticData>(inGame.Diagnostics)
+            };
         }
 
         private void WritePending(AiGameData inGame)
@@ -209,9 +296,119 @@ namespace Elemento.Telemetry
             return game;
         }
 
-        private static BoardState CloneState(BoardState inState)
+        private AiGameStateData CreateCompactState(BoardState inState)
         {
-            return NetJson.Deserialize<BoardState>(NetJson.Serialize(inState));
+            var result = new AiGameStateData
+            {
+                TurnNumber = inState.TurnNumber,
+                MoveNumber = inState.MoveNumber,
+                TotalMovesTaken = inState.TotalMovesTaken,
+                MovesRemaining = inState.MovesRemaining,
+                ActivePlayer = (int)inState.ActivePlayer,
+                IsDealHand = inState.IsDealHand
+            };
+            AddCardReferences(result.Deck, inState.Deck);
+            AddDefinitionCodes(result.ShuffledDeck, inState.ShuffledDeck);
+            AddDefinitionCodes(result.PowerDeck, inState.PowerDeck);
+            foreach (var player in inState.Players)
+            {
+                var compactPlayer = new AiGamePlayerData
+                {
+                    CurrentMoveNumber = player.CurrentMoveNumber,
+                    TotalMovesTaken = player.TotalMovesTaken
+                };
+                AddCardReferences(compactPlayer.Hand, player.Hand);
+                foreach (var zone in player.ElementZones)
+                {
+                    if (zone == null)
+                        continue;
+                    var compactZone = new AiGameZoneData
+                    {
+                        ElementType = (int)zone.ElementType,
+                        Points = zone.Points,
+                        FaceUpPoints = zone.FaceUpPoints,
+                        IsActivated = zone.IsActivated,
+                        Health = zone.Health,
+                        MaxHealth = zone.MaxHealth,
+                        FrozenHealth = zone.FrozenHealth,
+                        IsDestroyed = zone.IsDestroyed
+                    };
+                    AddCardReferences(compactZone.Cards, zone.Cards, zone.CardIds,
+                        zone.CardFaceUpStates);
+                    compactPlayer.Zones.Add(compactZone);
+                }
+                result.Players.Add(compactPlayer);
+            }
+            return result;
+        }
+
+        private void AddCardReferences(List<AiGameCardReferenceData> inTarget, BoardHand inSource)
+        {
+            if (inSource == null)
+                return;
+            AddCardReferences(inTarget, inSource.Cards, inSource.CardIds,
+                inSource.CardFaceUpStates);
+        }
+
+        private void AddCardReferences(List<AiGameCardReferenceData> inTarget,
+            List<CardData> inCards, List<string> inIds, List<bool> inFaceUpStates)
+        {
+            for (int i = 0; i < inCards.Count; ++i)
+            {
+                inTarget.Add(new AiGameCardReferenceData
+                {
+                    Id = i < inIds.Count ? inIds[i] : null,
+                    DefinitionCode = GetDefinitionCode(inCards[i]),
+                    IsFaceUp = i >= inFaceUpStates.Count || inFaceUpStates[i]
+                });
+            }
+        }
+
+        private void AddDefinitionCodes(List<int> inTarget, List<CardData> inCards)
+        {
+            foreach (var card in inCards)
+                inTarget.Add(GetDefinitionCode(card));
+        }
+
+        private int GetDefinitionCode(CardData inCard)
+        {
+            if (inCard == null)
+                return -1;
+            if (this.cardDefinitionCodes.TryGetValue(inCard, out int code))
+                return code;
+
+            code = this.currentGame.CardDefinitions.Count;
+            this.cardDefinitionCodes.Add(inCard, code);
+            this.currentGame.CardDefinitions.Add(new AiGameCardDefinitionData
+            {
+                OriginalIndex = inCard.Index,
+                Name = inCard.Name,
+                PrefabName = inCard.PrefabName,
+                FilterFlags = (int)inCard.FilterFlags,
+                Count = inCard.Count,
+                WildValues = new[]
+                {
+                    inCard.WildPoints, inCard.WildMultiplier, inCard.WildBomb,
+                    inCard.WildShield, inCard.WildZoneHeal, inCard.WildFreeze,
+                    inCard.WildLightning
+                },
+                ElementValues = CombineValues(inCard.Points, inCard.Multipliers,
+                    inCard.Bombs, inCard.Shields),
+                IsPowerCard = inCard.IsPowerCard
+            });
+            return code;
+        }
+
+        private static int[] CombineValues(params int[][] inValues)
+        {
+            var result = new int[16];
+            int targetIndex = 0;
+            foreach (var values in inValues)
+            {
+                for (int i = 0; i < 4; ++i)
+                    result[targetIndex++] = values != null && i < values.Length ? values[i] : 0;
+            }
+            return result;
         }
 
         private void EnsureDirectories()

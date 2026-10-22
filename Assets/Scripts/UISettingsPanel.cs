@@ -36,6 +36,7 @@ public class UISettingsPanel : UIPanelBase
     private int debugTitleTapCount;
     private float lastDebugTitleTapTime;
     private GameObject aiGameDebugMenu;
+    private TextMeshProUGUI aiGameRecordingButtonLabel;
     private TextMeshProUGUI settingsTitleText;
 
     private void Start()
@@ -475,6 +476,8 @@ public class UISettingsPanel : UIPanelBase
         if (this.aiGameDebugMenu == null)
             BuildAiGameDebugMenu();
 
+        RefreshAiGameRecordingLabel();
+
         TextMeshProUGUI title = this.aiGameDebugMenu.transform.Find("Title")
             ?.GetComponent<TextMeshProUGUI>();
         if (title != null)
@@ -500,7 +503,7 @@ public class UISettingsPanel : UIPanelBase
         rect.anchorMax = new Vector2(.5f, .5f);
         rect.pivot = new Vector2(.5f, .5f);
         rect.anchoredPosition = Vector2.zero;
-        rect.sizeDelta = new Vector2(760, 650);
+        rect.sizeDelta = new Vector2(760, 740);
 
         var background = this.aiGameDebugMenu.GetComponent<Image>();
         background.color = new Color(.05f, .05f, .05f, .98f);
@@ -515,6 +518,7 @@ public class UISettingsPanel : UIPanelBase
         layout.childForceExpandHeight = false;
 
         CreateDebugText("Title", 100, 34);
+        this.aiGameRecordingButtonLabel = CreateDebugButton("AI Game Recording", ToggleAiGameRecording);
         CreateDebugButton("Clear This Installation's Server Games",
             () => ConfirmClearServerAiGames(false));
         CreateDebugButton("Clear All Server AI Games",
@@ -539,7 +543,7 @@ public class UISettingsPanel : UIPanelBase
         return text;
     }
 
-    private void CreateDebugButton(string inLabel, Action inOnPress)
+    private TextMeshProUGUI CreateDebugButton(string inLabel, Action inOnPress)
     {
         var buttonObject = new GameObject(inLabel, typeof(RectTransform),
             typeof(CanvasRenderer), typeof(Image), typeof(Button), typeof(LayoutElement));
@@ -560,6 +564,32 @@ public class UISettingsPanel : UIPanelBase
         labelRect.offsetMax = new Vector2(-12, -4);
         label.text = inLabel;
         UnityEngine.Object.Destroy(label.GetComponent<LayoutElement>());
+        return label;
+    }
+
+    private void ToggleAiGameRecording()
+    {
+        if (GameManager.IN?.AiGameTelemetry == null)
+        {
+            ShowDebugStatus("AI game telemetry is unavailable.", true);
+            return;
+        }
+
+        bool isEnabled = !GameManager.IN.AiGameTelemetry.IsRecordingEnabled;
+        GameManager.IN.AiGameTelemetry.SetRecordingEnabled(isEnabled);
+        RefreshAiGameRecordingLabel();
+        ShowDebugStatus("AI game recording " + (isEnabled ? "enabled." : "disabled."), false);
+    }
+
+    private void RefreshAiGameRecordingLabel()
+    {
+        if (this.aiGameRecordingButtonLabel == null)
+            return;
+
+        var telemetry = GameManager.IN?.AiGameTelemetry;
+        this.aiGameRecordingButtonLabel.text = telemetry == null
+            ? "AI Game Recording: UNAVAILABLE"
+            : "AI Game Recording: " + (telemetry.IsRecordingEnabled ? "ON" : "OFF");
     }
 
     private void ConfirmClearServerAiGames(bool inAllGames)

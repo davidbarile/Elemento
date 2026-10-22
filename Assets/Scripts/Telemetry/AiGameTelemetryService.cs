@@ -17,6 +17,7 @@ namespace Elemento.Telemetry
         private bool isHandlingDiagnostic;
 
         public bool HasActiveGame => this.archive.HasActiveGame;
+        public bool IsRecordingEnabled => PlayerData.Data?.RecordAiGames ?? true;
         public string UserId => this.client.UserId;
 
         public AiGameTelemetryService()
@@ -28,14 +29,20 @@ namespace Elemento.Telemetry
 
         public void Initialize()
         {
-            this.archive.RecoverInterruptedGame();
             Application.logMessageReceived += HandleLogMessage;
-            _ = FlushPendingAsync();
+            if (this.IsRecordingEnabled)
+            {
+                this.archive.RecoverInterruptedGame();
+                _ = FlushPendingAsync();
+            }
         }
 
         public void RecordSnapshot(AiGameContextData inContext, BoardState inState,
             MoveData inMove, string inReason)
         {
+            if (!this.IsRecordingEnabled)
+                return;
+
             try
             {
                 this.archive.RecordSnapshot(inContext, inState, inMove, inReason);
@@ -46,9 +53,20 @@ namespace Elemento.Telemetry
             }
         }
 
+        public void Checkpoint()
+        {
+            if (!this.IsRecordingEnabled)
+                return;
+
+            _ = CheckpointAsync();
+        }
+
         public void Complete(string inStatus, bool? inPlayerWon = null,
             string inResultMessage = null)
         {
+            if (!this.IsRecordingEnabled)
+                return;
+
             try
             {
                 this.archive.Complete(inStatus, inPlayerWon, inResultMessage);
@@ -65,6 +83,26 @@ namespace Elemento.Telemetry
             this.archive.ClearLocal();
         }
 
+        public void SetRecordingEnabled(bool inIsEnabled)
+        {
+            if (PlayerData.Data == null || PlayerData.Data.RecordAiGames == inIsEnabled)
+                return;
+
+            PlayerData.Data.RecordAiGames = inIsEnabled;
+            PlayerData.Data.IsDirty = true;
+            if (SaveManager.IN != null)
+                SaveManager.IN.SaveGame();
+
+            if (!inIsEnabled)
+            {
+                this.archive.Suspend();
+                return;
+            }
+
+            this.archive.RecoverInterruptedGame();
+            _ = FlushPendingAsync();
+        }
+
         public Task<int> ClearServerAsync(bool inAllGames)
         {
             return this.client.ClearAsync(inAllGames);
@@ -77,7 +115,8 @@ namespace Elemento.Telemetry
 
         private async Task FlushPendingAsync()
         {
-            if (this.isUploading || Application.internetReachability == NetworkReachability.NotReachable)
+            if (!this.IsRecordingEnabled || this.isUploading
+                || Application.internetReachability == NetworkReachability.NotReachable)
                 return;
 
             this.isUploading = true;
@@ -86,10 +125,12 @@ namespace Elemento.Telemetry
                 IReadOnlyList<string> pendingFiles = this.archive.GetPendingFiles();
                 foreach (string pendingFile in pendingFiles)
                 {
+                    if (!this.IsRecordingEnabled)
+                        return;
+
                     try
                     {
-                        AiGameData game = this.archive.LoadPending(pendingFile);
-                        await this.client.UploadAsync(game);
+                        await this.client.UploadFileAsync(pendingFile);
                         this.archive.RemovePending(pendingFile);
                     }
                     catch (SupabaseHttpException exception) when (exception.ResponseCode == 400
@@ -112,7 +153,7 @@ namespace Elemento.Telemetry
 
         private void HandleLogMessage(string inCondition, string inStackTrace, LogType inType)
         {
-            if (this.isHandlingDiagnostic || inType == LogType.Log
+            if (!this.IsRecordingEnabled || this.isHandlingDiagnostic || inType == LogType.Log
                 || inCondition.StartsWith("AI game telemetry", StringComparison.Ordinal))
                 return;
 
@@ -121,6 +162,9 @@ namespace Elemento.Telemetry
             {
                 this.archive.RecordDiagnostic(inType.ToString(), Sanitize(inCondition),
                     Sanitize(inStackTrace));
+                if (inType == LogType.Error || inType == LogType.Assert
+                    || inType == LogType.Exception)
+                    Checkpoint();
             }
             catch (Exception)
             {
@@ -128,6 +172,21 @@ namespace Elemento.Telemetry
             finally
             {
                 this.isHandlingDiagnostic = false;
+            }
+        }
+
+        private async Task CheckpointAsync()
+        {
+            if (!this.IsRecordingEnabled)
+                return;
+
+            try
+            {
+                await this.archive.CheckpointAsync();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("AI game telemetry checkpoint failed: " + exception.Message);
             }
         }
 

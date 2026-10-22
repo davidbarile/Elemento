@@ -1,11 +1,17 @@
-# Online protocol v2 (client-authoritative turns) — shared contract
+# Online protocol v3 (compact client-authoritative turns) — shared contract
 
-ProtocolVersions.Current = 2. Every request body carries `ProtocolVersion`. Any function receiving a version != 2
-returns HTTP 426 `{ "Error": "update_required", "Reason": "Please update Elemento to play online.", "ProtocolVersion": 2 }`.
+ProtocolVersions.Current = 3. Every request body carries `ProtocolVersion`. Any function receiving a version != 3
+returns HTTP 426 `{ "Error": "update_required", "Reason": "Please update Elemento to play online.", "ProtocolVersion": 3 }`.
 
-The server performs NO rule validation and NO random generation. State/packages are opaque JSON (C# GameStateData via NetJson).
+The server performs NO rule validation and NO random generation. State/packages are opaque JSON.
+Supabase wire states store each distinct card definition once and ordered card references for decks,
+hands, and zones; the client expands them back to exact `GameStateData` before hashing or replay.
 
-## Types (C# in Assets/Scripts/Domain/Net/ProtocolData.cs, same field names in JSON)
+## Domain types (C# in Assets/Scripts/Domain/Net/ProtocolData.cs)
+
+Request and response envelopes use these PascalCase field names. `GameStateData` values stored in
+`InitialState`, `FinalState`, and `State` are encoded by `GameStateWireCodec` with compact field names;
+the client decodes them before hashing, replay, or gameplay.
 - TurnActionData { int Index; MoveData Move; List<CardInstanceData> DrawnCards; CardInstanceData PowerCard; string Kind }
   Kind: "Move" | "Undo" | "EndTurn". DrawnCards/PowerCard record every random outcome produced by that action
   (power card type + id, cards drawn incl. deck rebuilds). Undo rows restore the previous checkpoint.
@@ -45,7 +51,7 @@ The server performs NO rule validation and NO random generation. State/packages 
 ## Presence and interruption recovery (migration 0007)
 
 - match_players.last_seen is a nullable timestamptz, initially unknown for existing and new players.
-- Service-only RPC touch_match_presence(p_match_id uuid, p_user_id uuid) verifies protocol-v2
+- Service-only RPC touch_match_presence(p_match_id uuid, p_user_id uuid) verifies protocol-v3
   membership, stamps the caller with database time, and returns the opponent age (-1 unknown).
   A missing match/membership returns null, mapped by the Edge Function to HTTP 404.
 - The foreground client heartbeats about every 15 seconds while an online match is open and on

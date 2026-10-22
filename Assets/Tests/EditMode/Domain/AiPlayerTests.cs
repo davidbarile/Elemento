@@ -312,6 +312,54 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_UnlimitedPlanPlacesPointsBeforeShieldOnSamePile()
+        {
+            var view = CreateWholeTurnPlanningView();
+            view.Rules.MovesPerTurn = 0;
+            view.MovesRemaining = 99;
+            view.Player.Hand.Clear();
+            view.LegalMoves.Clear();
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "air-shield",
+                IsFaceUp = true,
+                Shields = new[] { 3, 0, 0, 0 }
+            });
+            view.Player.Hand.Add(new CardInstanceData
+            {
+                Id = "air-points",
+                IsFaceUp = true,
+                Points = new[] { 2, 0, 0, 0 }
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "shield-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "air-shield",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "points-move",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = "air-points",
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 0
+            });
+            view.LegalMoves.Add(CreateEndTurnMove("end-turn"));
+            IAiPlayer ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo("air-points"));
+        }
+
+        [Test]
         public void StrongAi_RebuildsExposedMultiplierBelowPointsAndShields()
         {
             var state = CreateMultiplierOrderingState(true, 0, true);
@@ -399,6 +447,74 @@ namespace Elemento.Tests.Domain
             }));
         }
 
+        [Test]
+        public void StrongAi_AddsAllBasicPointsInOneRebuildAndRestoresLowerCards()
+        {
+            var state = CreateMultiplierOrderingState(false, 0, false);
+            var ai = state.Players[0];
+            ai.Hand.Clear();
+            var zone = ai.Zones[0];
+            zone.Cards.Clear();
+            zone.Cards.Add(CreateWaterPointCard("existing-3-a", 3));
+            zone.Cards.Add(CreateWaterPointCard("existing-3-b", 3));
+            zone.Cards.Add(CreateWaterPointCard("existing-3-c", 3));
+            zone.Cards.Add(CreateWaterPointCard("existing-2", 2));
+            zone.Cards.Add(CreateWaterPointCard("existing-1-a", 1));
+            zone.Cards.Add(CreateWaterPointCard("existing-1-b", 1));
+            zone.Cards.Add(CreateWaterShieldCard("existing-shield-2", 2));
+            zone.Cards.Add(CreateWaterShieldCard("existing-shield-3", 3));
+            RefreshZonePoints(zone);
+            ai.Hand.Add(CreateWaterPointCard("new-3-a", 3));
+            ai.Hand.Add(CreateWaterPointCard("new-3-b", 3));
+
+            PlayStrongAiTurn(state, out var moves);
+
+            var ids = new List<string>();
+            foreach (var card in zone.Cards)
+                ids.Add(card.Id);
+            Assert.That(ids, Is.EqualTo(new[]
+            {
+                "existing-3-a", "existing-3-b", "existing-3-c", "new-3-a", "new-3-b",
+                "existing-2", "existing-1-a", "existing-1-b", "existing-shield-2",
+                "existing-shield-3"
+            }));
+            Assert.That(moves.FindAll(inMove => inMove.SourceZoneId == zone.Id
+                && inMove.TargetZoneId < 0), Has.Count.EqualTo(5),
+                "both new three-point cards must share one teardown");
+        }
+
+        [Test]
+        public void StrongAi_StopsQueuedBasicPointsAtActivationThreshold()
+        {
+            var state = CreateMultiplierOrderingState(false, 0, false);
+            state.Rules.ElementZonePointsRequiredToActivate = 10;
+            var ai = state.Players[0];
+            ai.Hand.Clear();
+            var zone = ai.Zones[0];
+            zone.Cards.Clear();
+            zone.Cards.Add(CreateWaterPointCard("existing-5", 5));
+            zone.Cards.Add(CreateWaterShieldCard("existing-shield", 2));
+            RefreshZonePoints(zone);
+            ai.Hand.Add(CreateWaterPointCard("new-3", 3));
+            ai.Hand.Add(CreateWaterPointCard("new-2", 2));
+            ai.Hand.Add(CreateWaterPointCard("new-1", 1));
+
+            PlayStrongAiTurn(state, out var moves);
+
+            int activationIndex = moves.FindIndex(inMove => inMove.Type == EMoveType.ActivateZone
+                && inMove.SourceZoneId == zone.Id);
+            Assert.That(activationIndex, Is.GreaterThan(0));
+            var cardsPlayedBeforeActivation = new List<string>();
+            for (int i = 0; i < activationIndex; ++i)
+            {
+                if (moves[i].SourceZoneId < 0 && moves[i].TargetZoneId == zone.Id)
+                    cardsPlayedBeforeActivation.Add(moves[i].CardId);
+            }
+            Assert.That(cardsPlayedBeforeActivation, Does.Contain("new-3"));
+            Assert.That(cardsPlayedBeforeActivation, Does.Contain("new-2"));
+            Assert.That(cardsPlayedBeforeActivation, Does.Not.Contain("new-1"));
+        }
+
         [TestCase(EAiDifficulty.Easy, 1)]
         [TestCase(EAiDifficulty.Medium, 2)]
         public void StrongAi_RebuildStripLimitedByDifficulty(EAiDifficulty inDifficulty, int inMaxStrip)
@@ -441,6 +557,93 @@ namespace Elemento.Tests.Domain
             Assert.That(cards[0].Id, Is.EqualTo("fire-x2"));
             Assert.That(cards[cards.Count - 1].Id, Is.EqualTo("fire-shield"));
             Assert.That(fireZone.Points, Is.EqualTo(14));
+        }
+
+        [Test]
+        public void StrongAi_BuriesDualMultiplierBombUnderExistingPoints()
+        {
+            var state = CreateMultiplierOrderingState(false, 0, false);
+            var ai = state.Players[0];
+            ai.Hand.Clear();
+            ai.Hand.Add(new CardInstanceData
+            {
+                Id = "water-dual-x2-bomb-3",
+                IsFaceUp = true,
+                Multipliers = new[] { 0, 0, 0, 2 },
+                Bombs = new[] { 0, 0, 0, 3 }
+            });
+
+            PlayStrongAiTurn(state, out var moves);
+
+            Assert.That(moves[0].CardId, Is.EqualTo("water-points-5"));
+            Assert.That(moves[0].TargetZoneId, Is.EqualTo(-1));
+            Assert.That(moves[1].CardId, Is.EqualTo("water-points-3"));
+            Assert.That(moves[1].TargetZoneId, Is.EqualTo(-1));
+            var cards = state.Players[0].Zones[0].Cards;
+            Assert.That(cards[0].Id, Is.EqualTo("water-dual-x2-bomb-3"));
+            Assert.That(cards[1].Id, Is.EqualTo("water-points-5"));
+            Assert.That(cards[2].Id, Is.EqualTo("water-points-3"));
+        }
+
+        [Test]
+        public void StrongAi_MovesShieldAsideBeforeCrossPilePointThenRestoresIt()
+        {
+            var state = CreateCrossPileShieldOrderingState();
+
+            PlayStrongAiTurn(state, out var moves);
+
+            Assert.That(moves, Has.Count.GreaterThanOrEqualTo(3));
+            Assert.That(moves[0].CardId, Is.EqualTo("fire-shield"));
+            Assert.That(moves[0].TargetZoneId, Is.EqualTo(-1));
+            Assert.That(moves[1].CardId, Is.EqualTo("air-fire-points"));
+            Assert.That(moves[1].SourceZoneId, Is.EqualTo(1));
+            Assert.That(moves[1].TargetZoneId, Is.EqualTo(0));
+            Assert.That(moves[2].CardId, Is.EqualTo("fire-shield"));
+            Assert.That(moves[2].SourceZoneId, Is.EqualTo(-1));
+            Assert.That(moves[2].TargetZoneId, Is.EqualTo(0));
+            var cards = state.Players[0].Zones[0].Cards;
+            Assert.That(cards[0].Id, Is.EqualTo("air-fire-points"));
+            Assert.That(cards[1].Id, Is.EqualTo("fire-shield"));
+        }
+
+        [Test]
+        public void StrongAiVsStrongAi_SeedSweepPreservesProtectionOrderAfterEveryMove()
+        {
+            const int matchCount = 32;
+            const int movesPerMatch = 1000;
+            var simulator = new GameSimulator();
+
+            for (int seed = 1; seed <= matchCount; ++seed)
+            {
+                var state = simulator.CreateGame(seed, null, seed % 2);
+                var players = new[] { new StrongAiPlayer(), new StrongAiPlayer() };
+                var randoms = new[]
+                {
+                    new DeterministicRandom(seed * 2 + 1),
+                    new DeterministicRandom(seed * 2 + 2)
+                };
+                int moveCount = 0;
+                var recentMoves = new List<string>();
+
+                while (!simulator.IsGameOver(state) && moveCount < movesPerMatch)
+                {
+                    int playerId = state.CurrentPlayerId;
+                    int turnNumber = state.TurnNumber;
+                    int handCount = state.Players[playerId].Hand.Count;
+                    var move = players[playerId].ChooseMove(
+                        simulator.GetPlayerView(state, playerId), randoms[playerId]);
+                    Assert.That(move, Is.Not.Null, $"seed {seed}, move {moveCount + 1}");
+                    recentMoves.Add($"turn {turnNumber}, player {playerId}, hand {handCount}, "
+                        + $"{move.CardId} {move.SourceZoneId}->{move.TargetPlayerId}:{move.TargetZoneId}");
+                    if (recentMoves.Count > 12)
+                        recentMoves.RemoveAt(0);
+                    simulator.ApplyMove(state, move);
+                    ++moveCount;
+                    AssertProtectionOrder(state, seed, moveCount, move,
+                        string.Join(" | ", recentMoves));
+                }
+
+            }
         }
 
         [Test]
@@ -1070,6 +1273,115 @@ namespace Elemento.Tests.Domain
                 });
             }
             return state;
+        }
+
+        private static GameStateData CreateCrossPileShieldOrderingState()
+        {
+            var state = CreateMultiplierOrderingState(false, 0, false);
+            var ai = state.Players[0];
+            ai.Hand.Clear();
+            ai.Zones.Clear();
+            var fireZone = new ZoneStateData
+            {
+                Id = 0,
+                ElementType = EElementType.Fire,
+                Health = 5,
+                MaxHealth = 5
+            };
+            fireZone.Cards.Add(new CardInstanceData
+            {
+                Id = "fire-shield",
+                IsFaceUp = true,
+                Shields = new[] { 0, 0, 3, 0 }
+            });
+            var airZone = new ZoneStateData
+            {
+                Id = 1,
+                ElementType = EElementType.Air,
+                Health = 5,
+                MaxHealth = 5
+            };
+            airZone.Cards.Add(new CardInstanceData
+            {
+                Id = "air-fire-points",
+                IsFaceUp = true,
+                Points = new[] { 2, 0, 1, 0 }
+            });
+            RefreshZonePoints(fireZone);
+            RefreshZonePoints(airZone);
+            ai.Zones.Add(fireZone);
+            ai.Zones.Add(airZone);
+            return state;
+        }
+
+        private static void AssertProtectionOrder(GameStateData inState, int inSeed,
+            int inMoveCount, MoveData inMove, string inRecentMoves)
+        {
+            foreach (var player in inState.Players)
+            {
+                foreach (var zone in player.Zones)
+                {
+                    int elementIndex = (int)zone.ElementType - 1;
+                    for (int i = 1; i < zone.Cards.Count; ++i)
+                    {
+                        if (CompareProtectionOrder(zone.Cards[i - 1], zone.Cards[i],
+                                elementIndex) <= 0)
+                            continue;
+
+                        var cardIds = new List<string>();
+                        foreach (var card in zone.Cards)
+                            cardIds.Add(card.Id + ":" + card.DefinitionName);
+                        Assert.Fail($"seed {inSeed}, move {inMoveCount}, {inMove.Id}, card "
+                            + $"{inMove.CardId}, source {inMove.SourceZoneId}, target player "
+                            + $"{inMove.TargetPlayerId}, target zone {inMove.TargetZoneId}; player "
+                            + $"{player.Id}, zone {zone.Id}, frozen {zone.IsFrozen}, hand "
+                            + $"{player.Hand.Count}/{inState.Rules.MaxCardsInHand}, moves/turn "
+                            + $"{inState.Rules.MovesPerTurn} is out of protection order: "
+                            + string.Join(" > ", cardIds) + "; recent moves: " + inRecentMoves);
+                    }
+                }
+            }
+        }
+
+        private static int CompareProtectionOrder(CardInstanceData inLeft,
+            CardInstanceData inRight, int inElementIndex)
+        {
+            int leftGroup = GetProtectionGroup(inLeft, inElementIndex);
+            int rightGroup = GetProtectionGroup(inRight, inElementIndex);
+            int comparison = leftGroup.CompareTo(rightGroup);
+            if (comparison != 0)
+                return comparison;
+            return GetProtectionRank(inLeft, inElementIndex, leftGroup).CompareTo(
+                GetProtectionRank(inRight, inElementIndex, rightGroup));
+        }
+
+        private static int GetProtectionGroup(CardInstanceData inCard, int inElementIndex)
+        {
+            int shield = System.Math.Max(GetCardValue(inCard.Shields, inElementIndex),
+                inCard.WildShield);
+            int multiplier = System.Math.Max(GetCardValue(inCard.Multipliers, inElementIndex),
+                inCard.WildMultiplier);
+            return shield > 0 ? 2 : multiplier > 1 ? 0 : 1;
+        }
+
+        private static int GetProtectionRank(CardInstanceData inCard, int inElementIndex,
+            int inGroup)
+        {
+            if (inGroup == 0)
+                return -System.Math.Max(GetCardValue(inCard.Multipliers, inElementIndex),
+                    inCard.WildMultiplier);
+            if (inGroup == 1)
+                return -System.Math.Max(GetCardValue(inCard.Points, inElementIndex),
+                    inCard.WildPoints);
+            return System.Math.Max(GetCardValue(inCard.Shields, inElementIndex),
+                inCard.WildShield);
+        }
+
+        private static int GetCardValue(int[] inValues, int inIndex)
+        {
+            return inValues != null && inIndex >= 0 && inIndex < inValues.Length
+                ? inValues[inIndex]
+                : 0;
         }
 
         private static CardInstanceData CreateWaterPointCard(string inId, int inPoints)

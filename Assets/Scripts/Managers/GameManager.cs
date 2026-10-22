@@ -26,6 +26,8 @@ using static UIPlayerBoard;
 
 public class GameManager : MonoBehaviour
 {
+    private const float speedUpOpponentTurnInputDelay = .5f;
+
     public static GameManager IN;
 
     public static bool IsDealingHand;
@@ -98,6 +100,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private GameObject replayButton;
     [SerializeField] private GameObject undoButtonParent;
     [SerializeField] private Button undoButton;
+    private float speedUpOpponentTurnInputBlockedUntil;
     public GameObject DiscardZone;
     public Transform DiscardZoneTransform;
     [SerializeField] private GameObject discardToEndTurnZone;
@@ -491,6 +494,7 @@ public class GameManager : MonoBehaviour
             Time.timeScale = 100;
             return;
         }
+        if (Time.unscaledTime < this.speedUpOpponentTurnInputBlockedUntil) return;
         if (UITutorialPanel.IsTutorialMode || UIDraggable.ShouldBlockInput) return;
 
         //TODO: this is breaking when in Opponent Draw mode
@@ -825,6 +829,7 @@ public class GameManager : MonoBehaviour
 
     private void SelectNextPlayer()
     {
+        CheckpointCurrentAiGame("turn_end");
         CancelInvoke(nameof(EndTurn));
         this.previousPlayerIndex = this.currentPlayerIndex;
         this.currentPlayerIndex = DomainTurnRules.GetNextPlayerIndex(this.currentPlayerIndex, this.PlayerBoards.Length);
@@ -921,6 +926,8 @@ public class GameManager : MonoBehaviour
 
                 if (this.gameSession.ShouldRunAI(this.currentPlayerIndex))
                 {
+                    this.speedUpOpponentTurnInputBlockedUntil = Time.unscaledTime
+                        + speedUpOpponentTurnInputDelay;
                     this.speedUpOpponentTurnButton.SetActive(true);
                     StartCoroutine(OpponentsTurnCo());
                 }
@@ -2251,7 +2258,7 @@ public class GameManager : MonoBehaviour
     private void OnApplicationPause(bool inIsPaused)
     {
         if (inIsPaused)
-            RecordCurrentAiGameSnapshot("paused");
+            CheckpointCurrentAiGame("paused");
         this.isApplicationPaused = inIsPaused;
         if (!inIsPaused)
             ResumeOnlineAfterInterruption();
@@ -2260,7 +2267,7 @@ public class GameManager : MonoBehaviour
     private void OnApplicationFocus(bool inHasFocus)
     {
         if (!inHasFocus)
-            RecordCurrentAiGameSnapshot("focus_lost");
+            CheckpointCurrentAiGame("focus_lost");
         this.isApplicationPaused = !inHasFocus;
         if (inHasFocus)
             ResumeOnlineAfterInterruption();
@@ -3606,7 +3613,7 @@ public class GameManager : MonoBehaviour
     private bool ShouldRecordAiGame()
     {
         return this.IsGameInProgress && !this.IsOnline && !this.IsPassAndPlay
-            && !UITutorialPanel.IsTutorialMode;
+            && !UITutorialPanel.IsTutorialMode && this.aiGameTelemetry?.IsRecordingEnabled == true;
     }
 
     private void RecordCurrentAiGameSnapshot(string inReason)
@@ -3622,6 +3629,15 @@ public class GameManager : MonoBehaviour
         {
             Debug.LogWarning("AI game telemetry state capture failed: " + exception.Message);
         }
+    }
+
+    private void CheckpointCurrentAiGame(string inReason)
+    {
+        if (!ShouldRecordAiGame() || !this.isGameInitialized)
+            return;
+
+        RecordCurrentAiGameSnapshot(inReason);
+        this.aiGameTelemetry?.Checkpoint();
     }
 
     private void RecordAiGameSnapshot(BoardState inState, DomainMoveData inMove, string inReason)

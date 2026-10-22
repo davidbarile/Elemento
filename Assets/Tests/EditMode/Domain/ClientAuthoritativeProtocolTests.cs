@@ -10,9 +10,9 @@ namespace Elemento.Domain.Tests
     public class ClientAuthoritativeProtocolTests
     {
         [Test]
-        public void ProtocolV2_UsesContractFieldsAndRoundTripsRandomOutcomes()
+        public void ProtocolV3_UsesContractFieldsAndRoundTripsRandomOutcomes()
         {
-            Assert.That(ProtocolVersions.Current, Is.EqualTo(2));
+            Assert.That(ProtocolVersions.Current, Is.EqualTo(3));
             AssertFields<TurnActionData>("Index", "Move", "DrawnCards", "PowerCard", "Kind");
             AssertFields<TurnPackageData>("MatchId", "Seat", "TurnNumber", "StartRevision", "Actions",
                 "FinalState", "FinalStateHash", "Status", "WinnerSeat", "WinCondition", "NextSeat");

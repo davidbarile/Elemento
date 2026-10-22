@@ -47,6 +47,15 @@ public class UnityDomainMapperTests
     }
 
     [Test]
+    public void ShouldStopAiTurn_PendingRebuildFinishesPastSoftTurnLimits()
+    {
+        Assert.That(UnityDomainMapper.ShouldStopAiTurn(20, 20,
+            UnityDomainMapper.MaxAiDecisionsPerTurn, 0, true, true), Is.False);
+        Assert.That(UnityDomainMapper.ShouldStopAiTurn(20, 20,
+            UnityDomainMapper.MaxAiDecisionsPerTurn, 0, false, true), Is.True);
+    }
+
+    [Test]
     public void TryCreateMove_NullEmptyOrEndTurn_EndsTurnWithoutCreatingUnityMove()
     {
         Assert.That(UnityDomainMapper.TryCreateMove(null, null, null, null,
@@ -78,7 +87,7 @@ public class UnityDomainMapperTests
     }
 
     [Test]
-    public void FilterMappableMoves_ExcludesZoneToHandButKeepsZoneToZone()
+    public void FilterMappableMoves_KeepsZoneToHandAndZoneToZone()
     {
         var zoneToHand = new MoveData
         {
@@ -97,9 +106,53 @@ public class UnityDomainMapperTests
 
         UnityDomainMapper.FilterMappableMoves(view);
 
-        Assert.That(view.LegalMoves, Has.Count.EqualTo(1));
-        Assert.That(view.LegalMoves[0].TargetZoneId,
+        Assert.That(view.LegalMoves, Has.Count.EqualTo(2));
+        Assert.That(view.LegalMoves[0].TargetZoneId, Is.EqualTo(-1));
+        Assert.That(view.LegalMoves[1].TargetZoneId,
             Is.EqualTo((int)CardData.EElementType.Earth));
+    }
+
+    [Test]
+    public void StrongAi_DualMultiplierBombRemovesPointBeforeMappingMultiplierPlay()
+    {
+        var aiBoard = CreateBoard("AI", UIPlayerBoard.EPlayerType.PlayerB);
+        var opponentBoard = CreateBoard("Opponent", UIPlayerBoard.EPlayerType.PlayerA);
+        var fireZone = aiBoard.ElementZones[2];
+        AddCard(fireZone.CardCell, "fire-points", 12, inPoints: 3);
+        fireZone.Points = 3;
+        fireZone.FaceUpPoints = 3;
+
+        var handCell = aiBoard.Hand.CardCells[0];
+        AddCard(handCell, "fire-dual", 337, inMultiplier: 2);
+        handCell.TopCard.Data.WildMultiplier = 0;
+        handCell.TopCard.Data.Multipliers[2] = 2;
+        handCell.TopCard.Data.Bombs[2] = 3;
+
+        var rules = new RulesConfigData
+        {
+            MaxCardsInHand = 20,
+            MaxCardsPerZone = 20,
+            MovesPerTurn = 0,
+            ElementZonePointsRequiredToActivate = 100,
+            TotalPointsRequiredToWin = 1000,
+            DiscardMode = Elemento.Domain.EDiscardMode.None
+        };
+        var boards = new[] { opponentBoard, aiBoard };
+        var view = UnityDomainMapper.CreatePlayerView(aiBoard, boards, 20, 20, 5,
+            GameManager.ETurnPhase.OpponentPlaying, 20, rules);
+        UnityDomainMapper.FilterMappableMoves(view);
+
+        var ai = new StrongAiPlayer();
+        MoveData move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+        Assert.That(move.CardId, Is.EqualTo("fire-points"));
+        Assert.That(move.SourceZoneId, Is.EqualTo((int)CardData.EElementType.Fire));
+        Assert.That(move.TargetZoneId, Is.EqualTo(-1));
+        Assert.That(UnityDomainMapper.TryCreateMove(move, view, aiBoard, boards,
+            out var unityMove, out bool shouldEndTurn, out string error), Is.True, error);
+        Assert.That(shouldEndTurn, Is.False);
+        Assert.That(unityMove.SourceCell, Is.SameAs(fireZone.CardCell));
+        Assert.That(unityMove.TargetCell, Is.SameAs(aiBoard.Hand.CardCells[1]));
     }
 
     [Test]

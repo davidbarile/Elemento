@@ -225,6 +225,28 @@ public class CurrentRulesRegressionTests
     }
 
     [Test]
+    public void GetCardLandingPosition_InactiveHandCellUsesHandCenter()
+    {
+        var handGrid = CreateUiComponent<HorizontalLayoutGroup>("Opponent Hand Grid", null);
+        handGrid.gameObject.SetActive(true);
+        var handGridRect = (RectTransform)handGrid.transform;
+        handGridRect.position = new Vector3(100, 500, 0);
+        handGridRect.sizeDelta = new Vector2(900, 300);
+
+        var cell = CreateUiComponent<UICardCell>("Inactive Hand Cell", handGrid.transform);
+        cell.CellType = UICardCell.ECellType.Hand;
+        cell.CardHolder = cell.transform;
+        cell.transform.position = new Vector3(2000, 500, 0);
+
+        var movingCard = CreateUiComponent<Card>("Returning Card", null);
+        Vector3 expectedPosition = handGridRect.TransformPoint(handGridRect.rect.center);
+
+        Vector3 landingPosition = cell.GetCardLandingPosition(movingCard);
+
+        Assert.That(Vector3.Distance(landingPosition, expectedPosition), Is.LessThan(.01f));
+    }
+
+    [Test]
     public void RetireForDestruction_DetachesViewBeforeSameFrameHierarchyRefresh()
     {
         var cardsManager = CreateComponent<CardsManager>("Cards Manager");
@@ -345,6 +367,13 @@ public class CurrentRulesRegressionTests
     [Test]
     public void ResetInputState_ClearsDragLocksWithoutClearingRemoteUpdateLock()
     {
+        var draggable = CreateComponent<UIDraggable>("Animated Draggable");
+        SetField(draggable, "<IsAnimateDragging>k__BackingField", true);
+        FieldInfo activeDraggedItem = typeof(UIDraggable).GetField("activeDraggedItem",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.That(activeDraggedItem, Is.Not.Null);
+        activeDraggedItem.SetValue(null, draggable);
+
         GameManager.IsDealingHand = false;
         GameManager.IsDoingActivateSequence = false;
         GameManager.IsDoingReplay = false;
@@ -356,6 +385,7 @@ public class CurrentRulesRegressionTests
 
         Assert.That(UIDraggable.ShouldBlockInput, Is.False);
         Assert.That(UIDraggable.IsDragPointerDown, Is.False);
+        Assert.That(draggable.IsAnimateDragging, Is.False);
         Assert.That(GameManager.ShouldBlockInput, Is.True);
 
         GameManager.IsApplyingRemoteUpdate = false;

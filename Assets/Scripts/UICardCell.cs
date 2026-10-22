@@ -827,7 +827,13 @@ public class UICardCell : MonoBehaviour
             ? this.GetComponentInParent<HorizontalLayoutGroup>()
             : null;
         if (parentGrid != null)
-            LayoutRebuilder.ForceRebuildLayoutImmediate(parentGrid.GetComponent<RectTransform>());
+        {
+            var parentGridRect = parentGrid.GetComponent<RectTransform>();
+            LayoutRebuilder.ForceRebuildLayoutImmediate(parentGridRect);
+
+            if (!this.gameObject.activeSelf)
+                return parentGridRect.TransformPoint(parentGridRect.rect.center);
+        }
 
         var cardHolderRect = this.CardHolder as RectTransform;
         if (cardHolderRect == null || this.CardHolder.GetComponent<LayoutGroup>() == null)

@@ -15,6 +15,7 @@ public class PlayerData
     public bool ShouldAutoDealHand;
     public bool AllowSelectPowerCardType;
     public bool AllowUndo;
+    public bool RecordAiGames;
 
     [Space]
     public int LanguageIndex;

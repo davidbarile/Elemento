@@ -1,13 +1,13 @@
-# Elemento Online Multiplayer v2
+# Elemento Online Multiplayer v3
 
-Protocol v2 uses client-authoritative turns. The active client applies the game rules, generates
+Protocol v3 uses client-authoritative turns. The active client applies the game rules, generates
 every random outcome, and submits one complete TurnPackageData at the end of the turn. Supabase
 authenticates the caller and provides durable storage, optimistic concurrency, resume, and
 Realtime notifications. It does not replay moves, validate game rules, shuffle decks, deal cards,
 or choose a starting player.
 
-PROTOCOL_V2.md is the binding wire contract. JSON field names use the same PascalCase names as the
-C# data types and must not be renamed.
+PROTOCOL_V2.md is the binding wire contract. Protocol-envelope field names remain PascalCase;
+protocol-v3 game states and turn packages use the compact fields documented there.
 
 ## Match creation and joining
 
@@ -30,7 +30,7 @@ the game state.
 submit-turn accepts SubmitTurnRequestData. It checks:
 
 1. the bearer token is valid;
-2. ProtocolVersion is 2;
+2. ProtocolVersion is 3;
 3. the authenticated user owns Seat;
 4. the nonce was not already committed for this match;
 5. the match is active;
@@ -126,25 +126,25 @@ Apply `20261021061500_0008_ai_game_telemetry.sql`, deploy `record-ai-game` and `
 secret, then run `functions/smoke-test.sh`. The smoke test verifies upload, owner deletion, and
 rejection of a non-admin all-record deletion.
 
-Every request carries ProtocolVersion. Versions other than 2 receive HTTP 426:
+Every request carries ProtocolVersion. Versions other than 3 receive HTTP 426:
 
     {
       "Error": "update_required",
       "Reason": "Please update Elemento to play online.",
-      "ProtocolVersion": 2
+      "ProtocolVersion": 3
     }
 
 ## Security boundary
 
-Protocol v2 intentionally favors a simple, deterministic client experience over anti-cheat:
+Protocol v3 intentionally favors a simple, deterministic client experience over anti-cheat:
 clients can submit any internally shaped final state while it is their turn. Server-side rule
 validation, signed turn proofs, anomaly detection, or another anti-cheat layer can be added later
 without changing the revision/idempotency storage model.
 
 ## Deploy and verify presence
 
-Apply migrations through `20261018070321_0007_presence.sql` before deploying the new heartbeat function and
-updated get-view and submit-turn functions. Redeploy create-match and join-match as well to pick
-up the shared response field default. Run functions/smoke-test.sh against the deployed test
-project; it checks unknown/recent presence, nonmember heartbeat rejection, unchanged revision,
-and protocol-v1 HTTP 426 for both get-view and heartbeat.
+Apply migrations through `20261021090000_0009_compact_multiplayer_wire.sql` before deploying the
+protocol-v3 functions. Migration 0009 removes incompatible pre-v3 match rows while preserving
+profiles and AI telemetry. Run functions/smoke-test.sh against the deployed test project; it checks
+unknown/recent presence, nonmember heartbeat rejection, unchanged revision, AI telemetry, and
+protocol-v1 HTTP 426 for both get-view and heartbeat.

@@ -47,7 +47,9 @@ serve(async (request) => {
   if (game == null || typeof game !== "object" || Array.isArray(game)) {
     throw new HttpError(400, "Game must be an object");
   }
-  if (game.SchemaVersion !== 1) throw new HttpError(400, "unsupported AI game schema");
+  if (game.SchemaVersion !== 1 && game.SchemaVersion !== 2) {
+    throw new HttpError(400, "unsupported AI game schema");
+  }
   if (typeof game.ClientGameId !== "string" || !/^[a-f0-9]{32}$/i.test(game.ClientGameId)) {
     throw new HttpError(400, "ClientGameId must be a 32-character hexadecimal ID");
   }

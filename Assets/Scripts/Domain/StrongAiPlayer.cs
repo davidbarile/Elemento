@@ -91,6 +91,8 @@ namespace Elemento.Domain
         private readonly List<MoveData> rebuildSteps = new();
         private PlayerViewData currentView;
 
+        public bool HasPendingRebuildSteps => this.rebuildSteps.Count > 0;
+
         public bool IsMoveAllowedThisTurn(PlayerViewData inView, MoveData inMove)
         {
             PrepareTurnState(inView);
@@ -154,7 +156,8 @@ namespace Elemento.Domain
             foreach (var candidate in original)
             {
                 // Only deliberate rebuild plans lift cards from own piles back to hand.
-                if (!IsBlockedReorder(candidate) && !IsStripToHand(candidate))
+                if (!IsBlockedReorder(candidate) && !IsStripToHand(candidate)
+                    && CanPreserveProtectionOrder(inView, candidate))
                     allowed.Add(candidate);
             }
             MoveData move;
@@ -181,6 +184,58 @@ namespace Elemento.Domain
             return StartRebuild(inView, move);
         }
 
+        private bool CanPreserveProtectionOrder(PlayerViewData inView, MoveData inMove)
+        {
+            if ((!IsFromHandPlay(inMove) && !IsTurnReorder(inMove))
+                || inMove.TargetPlayerId != inView.Player.Id
+                || inMove.TargetZoneId < 0)
+                return true;
+
+            var zone = FindZone(inView.Player.Zones, inMove.TargetZoneId);
+            var card = FindSourceCard(inView.Player, inMove);
+            if (zone == null || card == null || card.IsPowerCard)
+                return true;
+
+            int elementIndex = (int)zone.ElementType - 1;
+            bool hasBomb = card.WildBomb > 0;
+            foreach (int bomb in card.Bombs)
+                hasBomb |= bomb > 0;
+            bool isBasicPoint = Math.Max(GetValue(card.Points, elementIndex), card.WildPoints) > 0
+                && Math.Max(GetValue(card.Multipliers, elementIndex), card.WildMultiplier) <= 1
+                && Math.Max(GetValue(card.Shields, elementIndex), card.WildShield) <= 0
+                && !hasBomb;
+            if (zone.IsActivated && isBasicPoint && HasActivationMove(inView, zone.Id))
+                return false;
+
+            var cards = new List<CardInstanceData>(zone.Cards) { card };
+            var ordered = OrderForProtection(cards, zone.ElementType);
+            bool alreadyOrdered = true;
+            for (int i = 0; i < cards.Count; ++i)
+                alreadyOrdered &= cards[i].Id == ordered[i].Id;
+            if (alreadyOrdered)
+                return true;
+            if (inView.Rules.MovesPerTurn > 0)
+                return true;
+            if (zone.IsFrozen)
+                return false;
+            if (inView.TurnNumber >= antiStallTurn)
+                return false;
+
+            int strippable = Math.Min(GetMaxRebuildStrip(),
+                inView.Rules.MaxCardsInHand - inView.Player.Hand.Count);
+            return GetRebuiltTop(zone, card, strippable, out _) != null;
+        }
+
+        private static bool HasActivationMove(PlayerViewData inView, int inZoneId)
+        {
+            foreach (var move in inView.LegalMoves)
+            {
+                if (move.Type == EMoveType.ActivateZone && move.SourceZoneId == inZoneId)
+                    return true;
+            }
+            return false;
+        }
+
         // Unlimited moves: when a card lands on an own pile, or before the turn ends, restack the
         // pile so multipliers sit at the bottom, points above them and shields on top.
         private MoveData StartRebuild(PlayerViewData inView, MoveData inMove)
@@ -188,20 +243,26 @@ namespace Elemento.Domain
             if (inMove == null || inView.Rules.MovesPerTurn > 0 || inView.TurnNumber >= antiStallTurn)
                 return inMove;
 
-            if (IsFromHandPlay(inMove) && inMove.TargetPlayerId == inView.Player.Id)
+            bool isOwnPilePlay = (IsFromHandPlay(inMove) || IsTurnReorder(inMove))
+                && inMove.TargetPlayerId == inView.Player.Id
+                && inMove.TargetZoneId >= 0;
+            if (isOwnPilePlay)
             {
                 var zone = FindZone(inView.Player.Zones, inMove.TargetZoneId);
                 var card = FindSourceCard(inView.Player, inMove);
                 if (zone == null || card == null || card.IsPowerCard || zone.IsFrozen)
                     return inMove;
                 var move = inMove;
-                var multiplierFirst = FindPureMultiplierToPlayFirst(inView, zone, card);
-                if (multiplierFirst != null)
+                if (IsFromHandPlay(inMove))
                 {
-                    card = FindSourceCard(inView.Player, multiplierFirst);
-                    move = multiplierFirst;
+                    var protectionFirst = FindProtectionCardToPlayFirst(inView, zone, card);
+                    if (protectionFirst != null)
+                    {
+                        card = FindSourceCard(inView.Player, protectionFirst);
+                        move = protectionFirst;
+                    }
                 }
-                if (TryCreateRebuildSteps(inView, zone, card))
+                if (TryCreateRebuildSteps(inView, zone, card, move.SourceZoneId))
                     return TakeRebuildStep(inView) ?? move;
                 return move;
             }
@@ -211,29 +272,37 @@ namespace Elemento.Domain
 
             foreach (var zone in inView.Player.Zones)
             {
-                if (!zone.IsFrozen && !zone.IsDestroyed && TryCreateRebuildSteps(inView, zone, null))
+                if (!zone.IsFrozen && !zone.IsDestroyed
+                    && TryCreateRebuildSteps(inView, zone, null, -1))
                     return TakeRebuildStep(inView) ?? inMove;
             }
             return inMove;
         }
 
-        // A multiplier with no bomb side can only ever go on own piles; placing it before cards
-        // that belong above it saves tearing the pile down again later in the turn.
-        private static MoveData FindPureMultiplierToPlayFirst(PlayerViewData inView,
+        // Play cards from the bottom of the intended protection stack upward so a later card
+        // never covers a shield or forces the pile to be torn down again.
+        private MoveData FindProtectionCardToPlayFirst(PlayerViewData inView,
             ZoneStateData inZone, CardInstanceData inCard)
         {
             int elementIndex = (int)inZone.ElementType - 1;
             var cards = new List<CardInstanceData> { inCard };
             foreach (var handCard in inView.Player.Hand)
             {
-                if (handCard.Id == inCard.Id || handCard.IsPowerCard || handCard.WildBomb > 0
-                    || Math.Max(GetValue(handCard.Multipliers, elementIndex), handCard.WildMultiplier) <= 1)
+                if (handCard.Id == inCard.Id || handCard.IsPowerCard || handCard.WildBomb > 0)
                     continue;
                 bool hasBomb = false;
                 foreach (int bomb in handCard.Bombs)
                     hasBomb |= bomb > 0;
-                if (!hasBomb)
-                    cards.Add(handCard);
+                int multiplier = Math.Max(GetValue(handCard.Multipliers, elementIndex),
+                    handCard.WildMultiplier);
+                int points = Math.Max(GetValue(handCard.Points, elementIndex), handCard.WildPoints);
+                int shield = Math.Max(GetValue(handCard.Shields, elementIndex), handCard.WildShield);
+                var candidateMove = FindMatchingMove(inView.LegalMoves,
+                    CreateOwnPlay(inView.Player.Id, handCard.Id, -1, inZone.Id));
+                if (hasBomb || (multiplier <= 1 && points <= 0 && shield <= 0)
+                    || candidateMove == null || !CanPreserveProtectionOrder(inView, candidateMove))
+                    continue;
+                cards.Add(handCard);
             }
             var first = OrderForProtection(cards, inZone.ElementType)[0];
             if (first.Id == inCard.Id)
@@ -259,11 +328,17 @@ namespace Elemento.Domain
         }
 
         private bool TryCreateRebuildSteps(PlayerViewData inView, ZoneStateData inZone,
-            CardInstanceData inNewCard)
+            CardInstanceData inNewCard, int inNewCardSourceZoneId)
         {
             int strippable = Math.Min(GetMaxRebuildStrip(),
                 inView.Rules.MaxCardsInHand - inView.Player.Hand.Count);
-            var rebuiltTop = GetRebuiltTop(inZone, inNewCard, strippable, out int keep);
+            var newCards = GetRebuildCards(inView, inZone, inNewCard);
+            var rebuiltTop = GetRebuiltTop(inZone, newCards, strippable, out int keep);
+            if (rebuiltTop == null && newCards.Count > 1)
+            {
+                newCards.RemoveRange(1, newCards.Count - 1);
+                rebuiltTop = GetRebuiltTop(inZone, newCards, strippable, out keep);
+            }
             if (rebuiltTop == null)
                 return false;
 
@@ -272,8 +347,70 @@ namespace Elemento.Domain
             for (int i = inZone.Cards.Count - 1; i >= keep; --i)
                 this.rebuildSteps.Add(CreateOwnPlay(playerId, inZone.Cards[i].Id, inZone.Id, -1));
             foreach (var card in rebuiltTop)
-                this.rebuildSteps.Add(CreateOwnPlay(playerId, card.Id, -1, inZone.Id));
+            {
+                int sourceZoneId = inNewCard != null && card.Id == inNewCard.Id
+                    ? inNewCardSourceZoneId
+                    : -1;
+                this.rebuildSteps.Add(CreateOwnPlay(playerId, card.Id, sourceZoneId, inZone.Id));
+            }
             return true;
+        }
+
+        private static List<CardInstanceData> GetRebuildCards(PlayerViewData inView,
+            ZoneStateData inZone, CardInstanceData inNewCard)
+        {
+            var cards = new List<CardInstanceData>();
+            if (inNewCard == null)
+                return cards;
+
+            cards.Add(inNewCard);
+            int maxCards = inView.Rules.MaxCardsPerZone;
+            int availableSlots = maxCards <= 0
+                ? int.MaxValue
+                : maxCards - inZone.Cards.Count - 1;
+            if (availableSlots <= 0)
+                return cards;
+
+            int elementIndex = (int)inZone.ElementType - 1;
+            var additionalPoints = new List<CardInstanceData>();
+            foreach (var handCard in inView.Player.Hand)
+            {
+                if (handCard.Id == inNewCard.Id || handCard.IsPowerCard
+                    || Math.Max(GetValue(handCard.Multipliers, elementIndex),
+                        handCard.WildMultiplier) > 1
+                    || Math.Max(GetValue(handCard.Shields, elementIndex), handCard.WildShield) > 0
+                    || Math.Max(GetValue(handCard.Points, elementIndex), handCard.WildPoints) <= 0
+                    || FindMatchingMove(inView.LegalMoves,
+                        CreateOwnPlay(inView.Player.Id, handCard.Id, -1, inZone.Id)) == null)
+                    continue;
+                additionalPoints.Add(handCard);
+            }
+
+            additionalPoints = OrderForProtection(additionalPoints, inZone.ElementType);
+            bool capAtActivation = !inZone.IsActivated
+                && inView.Rules.ElementZonePointsRequiredToActivate > 0;
+            int activationPoints = inView.Rules.ElementZonePointsRequiredToActivate;
+            var simulatedZone = inZone.Clone();
+            simulatedZone.Cards.Add(inNewCard);
+            foreach (var pointCard in additionalPoints)
+            {
+                if (availableSlots <= 0)
+                    break;
+
+                simulatedZone.Cards.Add(pointCard);
+                int projectedPoints = GameRules.CalculateZonePoints(simulatedZone);
+                if (capAtActivation && projectedPoints > activationPoints)
+                {
+                    simulatedZone.Cards.RemoveAt(simulatedZone.Cards.Count - 1);
+                    continue;
+                }
+
+                cards.Add(pointCard);
+                --availableSlots;
+                if (capAtActivation && projectedPoints == activationPoints)
+                    break;
+            }
+            return cards;
         }
 
         // Most cards a rebuild may lift off one pile: Hard can tear a pile down completely.
@@ -305,16 +442,26 @@ namespace Elemento.Domain
         private static List<CardInstanceData> GetRebuiltTop(ZoneStateData inZone,
             CardInstanceData inNewCard, int inStrippable, out int outKeep)
         {
+            var newCards = new List<CardInstanceData>();
+            if (inNewCard != null)
+                newCards.Add(inNewCard);
+            return GetRebuiltTop(inZone, newCards, inStrippable, out outKeep);
+        }
+
+        private static List<CardInstanceData> GetRebuiltTop(ZoneStateData inZone,
+            List<CardInstanceData> inNewCards, int inStrippable, out int outKeep)
+        {
             var pile = inZone.Cards;
             var full = new List<CardInstanceData>(pile);
-            if (inNewCard != null)
-                full.Add(inNewCard);
+            full.AddRange(inNewCards);
             var ordered = OrderForProtection(full, inZone.ElementType);
 
             int prefix = 0;
             while (prefix < pile.Count && pile[prefix].Id == ordered[prefix].Id)
                 ++prefix;
-            outKeep = Math.Max(prefix, pile.Count - Math.Max(0, inStrippable));
+            outKeep = prefix;
+            if (pile.Count - outKeep > Math.Max(0, inStrippable))
+                return null;
             if (outKeep >= pile.Count)
                 return null;
 
@@ -324,17 +471,21 @@ namespace Elemento.Domain
                 if (!GameRules.CanPlayCardInZone(card, inZone.ElementType))
                     return null;
             }
-            if (inNewCard != null)
-                top.Add(inNewCard);
+            top.AddRange(inNewCards);
             var rebuiltTop = OrderForProtection(top, inZone.ElementType);
             for (int i = 0; i < pile.Count - outKeep; ++i)
             {
                 if (rebuiltTop[i].Id != pile[outKeep + i].Id)
                     return rebuiltTop;
             }
-            return inNewCard != null && rebuiltTop[rebuiltTop.Count - 1].Id != inNewCard.Id
-                ? rebuiltTop
-                : null;
+            if (inNewCards.Count == 0)
+                return null;
+            for (int i = 0; i < inNewCards.Count; ++i)
+            {
+                if (rebuiltTop[pile.Count - outKeep + i].Id != inNewCards[i].Id)
+                    return rebuiltTop;
+            }
+            return null;
         }
 
         // Bombs strip from the top and stop at a shield, so the most valuable cards go lowest:

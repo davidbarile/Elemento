@@ -408,6 +408,7 @@ public class UIDraggable : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
         if (draggedItem != null)
         {
             draggedItem.IsDragging = false;
+            draggedItem.IsAnimateDragging = false;
             draggedItem.animatedTargetCell = null;
             draggedItem.pointerClickFlag = false;
             draggedItem.isClickDraggingFlag = false;

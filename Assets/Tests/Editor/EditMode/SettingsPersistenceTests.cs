@@ -30,12 +30,13 @@ public class SettingsPersistenceTests
     }
 
     [Test]
-    public void PlayerData_RoundTripPreservesPlayModeAndAllowUndo()
+    public void PlayerData_RoundTripPreservesPlayModeAllowUndoAndAiGameRecording()
     {
         PlayerData saved = new()
         {
             PlayMode = (int)SettingsManager.EPlayMode.Multiplayer,
-            AllowUndo = true
+            AllowUndo = true,
+            RecordAiGames = false
         };
 
         PlayerData loaded = JSON.Serialize(saved).Deserialize<PlayerData>(CreateDeserializeSettings());
@@ -43,6 +44,7 @@ public class SettingsPersistenceTests
         Assert.That((SettingsManager.EPlayMode)loaded.PlayMode,
             Is.EqualTo(SettingsManager.EPlayMode.Multiplayer));
         Assert.That(loaded.AllowUndo, Is.True);
+        Assert.That(loaded.RecordAiGames, Is.False);
     }
 
     [Test]
@@ -53,6 +55,7 @@ public class SettingsPersistenceTests
         Assert.That((SettingsManager.EPlayMode)loaded.PlayMode,
             Is.EqualTo(SettingsManager.EPlayMode.AgainstAI));
         Assert.That(loaded.AllowUndo, Is.False);
+        Assert.That(loaded.RecordAiGames, Is.False);
     }
 
     [TestCase(0, SettingsManager.EPlayMode.AgainstAI)]

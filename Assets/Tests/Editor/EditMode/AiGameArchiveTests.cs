@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
+using System.Text;
+using System.Threading.Tasks;
 using Elemento.Domain;
 using Elemento.Domain.Net;
 using Elemento.Telemetry;
@@ -44,9 +47,67 @@ public sealed class AiGameArchiveTests
         Assert.That(game.Status, Is.EqualTo("completed"));
         Assert.That(game.PlayerWon, Is.EqualTo(1));
         Assert.That(game.Snapshots.Count, Is.EqualTo(1));
-        Assert.That(game.Snapshots[0].State.TurnNumber, Is.EqualTo(3));
+        Assert.That(game.SchemaVersion, Is.EqualTo(2));
+        Assert.That(game.Snapshots[0].CompactState.TurnNumber, Is.EqualTo(3));
         Assert.That(game.Snapshots[0].Move.Id, Is.EqualTo("move-1"));
         Assert.That(archive.HasActiveGame, Is.False);
+    }
+
+    [Test]
+    public void CompactSnapshots_StoreCardDefinitionOnceAndPreserveOrderedPositions()
+    {
+        var card = new CardData
+        {
+            Index = 17,
+            Name = "Water 3",
+            PrefabName = "Water3",
+            Points = new[] { 0, 0, 0, 3 },
+            Multipliers = new int[4],
+            Bombs = new int[4],
+            Shields = new int[4]
+        };
+        BoardState state = CreateState(1);
+        state.Deck.Cards.Add(card);
+        state.Deck.CardIds.Add("card-00000001");
+        state.Deck.CardFaceUpStates.Add(false);
+        for (int i = 0; i < 100; ++i)
+            state.ShuffledDeck.Add(card);
+        var archive = new AiGameArchive(this.directoryPath);
+
+        archive.RecordSnapshot(CreateContext(), state, null, "deal");
+        archive.RecordSnapshot(CreateContext(), state, null, "move");
+        archive.Complete("completed");
+
+        AiGameData game = archive.LoadPending(archive.GetPendingFiles()[0]);
+        Assert.That(game.CardDefinitions, Has.Count.EqualTo(1));
+        Assert.That(game.Snapshots[0].CompactState.Deck[0].Id,
+            Is.EqualTo("card-00000001"));
+        Assert.That(game.Snapshots[0].CompactState.ShuffledDeck,
+            Has.All.EqualTo(0));
+        Assert.That(game.Snapshots[1].CompactState.ShuffledDeck,
+            Has.All.EqualTo(0));
+    }
+
+    [Test]
+    public void UploadBody_WrapsPendingJsonWithoutReserializingIt()
+    {
+        var archive = new AiGameArchive(this.directoryPath);
+        archive.RecordSnapshot(CreateContext(), CreateState(1), null, "deal");
+        archive.Complete("completed");
+        string path = archive.GetPendingFiles()[0];
+        byte[] gameJson = File.ReadAllBytes(path);
+        MethodInfo method = typeof(AiGameTelemetryClient).GetMethod("CreateUploadBody",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        byte[] body = (byte[])method.Invoke(null, new object[] { path });
+
+        byte[] prefix = Encoding.UTF8.GetBytes("{\"Game\":");
+        Assert.That(body, Has.Length.EqualTo(prefix.Length + gameJson.Length + 1));
+        for (int i = 0; i < prefix.Length; ++i)
+            Assert.That(body[i], Is.EqualTo(prefix[i]));
+        for (int i = 0; i < gameJson.Length; ++i)
+            Assert.That(body[prefix.Length + i], Is.EqualTo(gameJson[i]));
+        Assert.That(body[body.Length - 1], Is.EqualTo((byte)'}'));
     }
 
     [Test]
@@ -62,7 +123,41 @@ public sealed class AiGameArchiveTests
         Assert.That(pending.Count, Is.EqualTo(1));
         AiGameData game = nextRun.LoadPending(pending[0]);
         Assert.That(game.Status, Is.EqualTo("interrupted"));
-        Assert.That(game.Snapshots[0].State.TurnNumber, Is.EqualTo(7));
+        Assert.That(game.Snapshots[0].CompactState.TurnNumber, Is.EqualTo(7));
+    }
+
+    [Test]
+    public async Task RecordSnapshot_AfterInitialRecoveryPoint_WaitsForCheckpoint()
+    {
+        var archive = new AiGameArchive(this.directoryPath);
+        archive.RecordSnapshot(CreateContext(), CreateState(1), null, "deal");
+        string activePath = Path.Combine(this.directoryPath, "Active.json");
+        string initialJson = File.ReadAllText(activePath);
+
+        archive.RecordSnapshot(CreateContext(), CreateState(2), null, "move");
+
+        Assert.That(File.ReadAllText(activePath), Is.EqualTo(initialJson));
+        await archive.CheckpointAsync();
+        AiGameData checkpoint = NetJson.Deserialize<AiGameData>(File.ReadAllText(activePath));
+        Assert.That(checkpoint.Snapshots.Count, Is.EqualTo(2));
+        Assert.That(checkpoint.Snapshots[1].CompactState.TurnNumber, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task Complete_InvalidatesQueuedActiveCheckpoint()
+    {
+        var archive = new AiGameArchive(this.directoryPath);
+        archive.RecordSnapshot(CreateContext(), CreateState(1), null, "deal");
+        archive.RecordSnapshot(CreateContext(), CreateState(2), null, "move");
+
+        Task checkpoint = archive.CheckpointAsync();
+        archive.Complete("completed");
+        await checkpoint;
+
+        Assert.That(File.Exists(Path.Combine(this.directoryPath, "Active.json")), Is.False);
+        Assert.That(archive.GetPendingFiles().Count, Is.EqualTo(1));
+        Assert.That(archive.LoadPending(archive.GetPendingFiles()[0]).Snapshots.Count,
+            Is.EqualTo(2));
     }
 
     [Test]
@@ -77,6 +172,24 @@ public sealed class AiGameArchiveTests
 
         Assert.That(archive.HasActiveGame, Is.False);
         Assert.That(archive.GetPendingFiles(), Is.Empty);
+    }
+
+    [Test]
+    public void Suspend_PreservesRecoveryJournalWithoutKeepingActiveGame()
+    {
+        var archive = new AiGameArchive(this.directoryPath);
+        archive.RecordSnapshot(CreateContext(), CreateState(6), null, "move");
+
+        archive.Suspend();
+
+        Assert.That(archive.HasActiveGame, Is.False);
+        Assert.That(File.Exists(Path.Combine(this.directoryPath, "Active.json")), Is.True);
+
+        var nextRun = new AiGameArchive(this.directoryPath);
+        nextRun.RecoverInterruptedGame();
+        IReadOnlyList<string> pending = nextRun.GetPendingFiles();
+        Assert.That(pending.Count, Is.EqualTo(1));
+        Assert.That(nextRun.LoadPending(pending[0]).Status, Is.EqualTo("interrupted"));
     }
 
     [Test]

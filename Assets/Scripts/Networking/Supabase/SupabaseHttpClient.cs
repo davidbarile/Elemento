@@ -46,8 +46,21 @@ namespace Elemento.Networking.Supabase
             return (await SendWithStatusAsync(inPath, inBody, inAccessToken, inMethod)).Body;
         }
 
+        public async Task<string> SendBytesAsync(string inPath, byte[] inBody,
+            string inAccessToken, string inMethod = "POST")
+        {
+            return (await SendBytesWithStatusAsync(inPath, inBody, inAccessToken, inMethod)).Body;
+        }
+
         public async Task<SupabaseHttpResponseData> SendWithStatusAsync(string inPath, string inBody,
             string inAccessToken, string inMethod = "POST")
+        {
+            byte[] body = inBody == null ? null : Encoding.UTF8.GetBytes(inBody);
+            return await SendBytesWithStatusAsync(inPath, body, inAccessToken, inMethod);
+        }
+
+        private async Task<SupabaseHttpResponseData> SendBytesWithStatusAsync(string inPath,
+            byte[] inBody, string inAccessToken, string inMethod)
         {
             var completion = new TaskCompletionSource<SupabaseHttpResponseData>();
             try
@@ -92,7 +105,7 @@ namespace Elemento.Networking.Supabase
             return message;
         }
 
-        private IEnumerator Send(string inPath, string inBody, string inAccessToken, string inMethod,
+        private IEnumerator Send(string inPath, byte[] inBody, string inAccessToken, string inMethod,
             TaskCompletionSource<SupabaseHttpResponseData> inCompletion)
         {
             using (var request = new UnityWebRequest(SupabaseConfig.Url + inPath, inMethod))
@@ -100,7 +113,7 @@ namespace Elemento.Networking.Supabase
                 request.downloadHandler = new DownloadHandlerBuffer();
                 request.timeout = TimeoutSeconds;
                 if (inBody != null)
-                    request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(inBody));
+                    request.uploadHandler = new UploadHandlerRaw(inBody);
                 request.SetRequestHeader("Content-Type", "application/json");
                 request.SetRequestHeader("apikey", SupabaseConfig.AnonKey);
                 request.SetRequestHeader("Authorization", "Bearer " + (inAccessToken ?? SupabaseConfig.AnonKey));

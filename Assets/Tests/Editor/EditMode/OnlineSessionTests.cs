@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Elemento.Domain;
 using Elemento.Domain.Net;
+using Elemento.Networking.Supabase;
 using NUnit.Framework;
 
 public class OnlineSessionTests
@@ -24,6 +25,35 @@ public class OnlineSessionTests
     {
         Assert.That(SessionFactory.Create(SettingsManager.EPlayMode.Multiplayer), Is.TypeOf<LocalAiSession>());
         Assert.That(OnlineMatchContext.LocalSeat, Is.EqualTo(-1));
+    }
+
+    [Test]
+    public void CompactGameStateWire_RoundTripsExactStateAtLessThanHalfTheJsonSize()
+    {
+        GameStateData state = InitialMatchFactory.Create(inSeed: 17).InitialState;
+        string originalJson = NetJson.Serialize(state);
+
+        string compactJson = NetJson.Serialize(GameStateWireCodec.Encode(state));
+        GameStateData restored = GameStateWireCodec.Decode(
+            NetJson.Deserialize<GameStateWireData>(compactJson));
+
+        Assert.That(GameStateHasher.CanonicalJson(restored),
+            Is.EqualTo(GameStateHasher.CanonicalJson(state)));
+        Assert.That(compactJson.Length, Is.LessThan(originalJson.Length / 2),
+            $"compact {compactJson.Length:N0} bytes; original {originalJson.Length:N0} bytes");
+        TestContext.WriteLine($"compact multiplayer state: {compactJson.Length:N0} bytes; "
+            + $"original: {originalJson.Length:N0} bytes");
+        Assert.That(compactJson, Does.Contain("\"CurrentPlayerId\":"));
+    }
+
+    [Test]
+    public void CompactGameStateWire_InvalidDefinitionCodeIsRejected()
+    {
+        GameStateWireData wire = GameStateWireCodec.Encode(
+            InitialMatchFactory.Create(inSeed: 17).InitialState);
+        wire.Deck[0].DefinitionCode = wire.Definitions.Count;
+
+        Assert.Throws<FormatException>(() => GameStateWireCodec.Decode(wire));
     }
 
     [TestCase(0)]
@@ -109,7 +139,7 @@ public class OnlineSessionTests
         Assert.That(NetJson.Serialize(transport.LastSubmission.Turn), Is.EqualTo(NetJson.Serialize(package)));
         Assert.That(transport.LastSubmission.ClientNonce, Is.EqualTo("turn-0"));
         Assert.That(transport.LastSubmission.ExpectedRevision, Is.Zero);
-        Assert.That(transport.LastSubmission.ProtocolVersion, Is.EqualTo(2));
+        Assert.That(transport.LastSubmission.ProtocolVersion, Is.EqualTo(ProtocolVersions.Current));
         Assert.That(transport.LastFetch.SinceRevision, Is.Zero);
         Assert.That(client.LastAppliedRevision, Is.EqualTo(1));
         Assert.That(client.IsLocalTurn, Is.False);

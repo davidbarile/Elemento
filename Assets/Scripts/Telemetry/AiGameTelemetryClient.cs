@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using Elemento.Domain.Net;
 using Elemento.Networking.Supabase;
@@ -16,14 +18,14 @@ namespace Elemento.Telemetry
             this.auth = new SupabaseAuthClient(inRunner);
         }
 
-        public async Task UploadAsync(AiGameData inGame)
+        public async Task UploadFileAsync(string inPath)
         {
-            if (inGame == null)
-                throw new ArgumentNullException(nameof(inGame));
+            if (string.IsNullOrEmpty(inPath))
+                throw new ArgumentException("An AI game telemetry file is required.", nameof(inPath));
 
             var session = await this.auth.EnsureSessionAsync();
-            await this.auth.Http.SendAsync("/functions/v1/record-ai-game",
-                NetJson.Serialize(new RecordAiGameRequestData { Game = inGame }),
+            byte[] body = await Task.Run(() => CreateUploadBody(inPath));
+            await this.auth.Http.SendBytesAsync("/functions/v1/record-ai-game", body,
                 session.AccessToken);
         }
 
@@ -38,10 +40,15 @@ namespace Elemento.Telemetry
             return NetJson.Deserialize<ClearAiGamesResponseData>(json)?.Deleted ?? 0;
         }
 
-        [Serializable]
-        private sealed class RecordAiGameRequestData
+        private static byte[] CreateUploadBody(string inPath)
         {
-            public AiGameData Game;
+            byte[] prefix = Encoding.UTF8.GetBytes("{\"Game\":");
+            byte[] game = File.ReadAllBytes(inPath);
+            var body = new byte[prefix.Length + game.Length + 1];
+            Buffer.BlockCopy(prefix, 0, body, 0, prefix.Length);
+            Buffer.BlockCopy(game, 0, body, prefix.Length, game.Length);
+            body[body.Length - 1] = (byte)'}';
+            return body;
         }
 
         [Serializable]

@@ -195,7 +195,20 @@ public static class UnityDomainMapper
             return Fail("Strong AI returned an unsupported move type.", out outError);
 
         if (inDomainMove.TargetZoneId < 0)
-            return Fail("Strong AI zone-to-hand moves are not executable by the Unity AI path.", out outError);
+        {
+            if (inDomainMove.SourceZoneId < 0
+                || inDomainMove.TargetPlayerId != inDomainMove.PlayerId)
+                return Fail("Strong AI returned an invalid zone-to-hand move.", out outError);
+
+            var handCell = FindOpenHandCell(inPlayerBoard);
+            if (handCell == null)
+                return Fail("Strong AI cannot return a card to a full hand.", out outError);
+
+            outMove = Move.CreateMove(sourceCell, handCell, false, null, false,
+                sourceCell.TopCard.CardType, inDomainMove.PlayerId, inDomainMove.CardId);
+            outMove.Data = inDomainMove.Clone();
+            return true;
+        }
 
         var targetBoard = FindBoard(inPlayerBoards, inDomainMove.TargetPlayerId);
         var targetZone = FindZone(targetBoard, inDomainMove.TargetZoneId);
@@ -274,7 +287,8 @@ public static class UnityDomainMapper
             case DomainMoveType.PlayCard:
                 return !string.IsNullOrEmpty(inMove.CardId)
                     && inMove.TargetPlayerId >= 0
-                    && inMove.TargetZoneId >= 0;
+                    && (inMove.TargetZoneId >= 0 || inMove.SourceZoneId >= 0
+                        && inMove.TargetPlayerId == inMove.PlayerId);
             default:
                 return false;
         }
@@ -324,10 +338,15 @@ public static class UnityDomainMapper
     }
 
     public static bool ShouldStopAiTurn(int inCompletedMoveCount, int inPlannedMoveCount,
-        int inDecisionCount, int inRemainingMoveBudget, bool inIsTurnActive)
+        int inDecisionCount, int inRemainingMoveBudget, bool inIsTurnActive,
+        bool inHasPendingRebuildSteps = false)
     {
-        return !inIsTurnActive
-            || inPlannedMoveCount <= 0
+        if (!inIsTurnActive)
+            return true;
+        if (inHasPendingRebuildSteps)
+            return false;
+
+        return inPlannedMoveCount <= 0
             || inCompletedMoveCount >= inPlannedMoveCount
             || inRemainingMoveBudget <= 0
             || inDecisionCount >= MaxAiDecisionsPerTurn;
@@ -461,6 +480,19 @@ public static class UnityDomainMapper
                 return cell;
         }
 
+        return null;
+    }
+
+    private static UICardCell FindOpenHandCell(UIPlayerBoard inBoard)
+    {
+        if (inBoard?.Hand?.CardCells == null)
+            return null;
+
+        foreach (var cell in inBoard.Hand.CardCells)
+        {
+            if (cell != null && cell.TopCard == null)
+                return cell;
+        }
         return null;
     }
 

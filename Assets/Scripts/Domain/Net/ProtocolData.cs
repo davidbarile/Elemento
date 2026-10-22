@@ -5,7 +5,7 @@ namespace Elemento.Domain.Net
 {
     public static class ProtocolVersions
     {
-        public const int Current = 2;
+        public const int Current = 3;
     }
 
     [Serializable]

@@ -491,13 +491,15 @@ public class UIPlayerBoard : MonoBehaviour
         bool useLegacyFallback = false;
 
         while (!UnityDomainMapper.ShouldStopAiTurn(completedMoveCount, plannedMoveCount,
-            decisionCount, GameManager.IN.MovesRemaining + movesOffset, IsAiTurnActive()))
+            decisionCount, GameManager.IN.MovesRemaining + movesOffset, IsAiTurnActive(),
+            this.strongAiPlayer?.HasPendingRebuildSteps == true))
         {
             if (!SettingsManager.IN.UseLegacyAi && !useLegacyFallback)
                 yield return null;
 
             if (UnityDomainMapper.ShouldStopAiTurn(completedMoveCount, plannedMoveCount,
-                decisionCount, GameManager.IN.MovesRemaining + movesOffset, IsAiTurnActive()))
+                decisionCount, GameManager.IN.MovesRemaining + movesOffset, IsAiTurnActive(),
+                this.strongAiPlayer?.HasPendingRebuildSteps == true))
                 break;
 
             ++decisionCount;

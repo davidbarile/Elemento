@@ -299,16 +299,30 @@ public static class OnlineUiPrefabBuilder
         cancelGameRect.anchoredPosition = createRect.anchoredPosition;
         cancelGameRect.sizeDelta = createRect.sizeDelta;
 
+        GameObject shareObject = GetOrCreateButton(rootRect, buttonSource, "Share Button");
+        Button shareButton = RequireButton(shareObject, "Share Button");
+        TextMeshProUGUI shareText = RequireButtonText(shareObject, "Share Button");
+        shareText.text = "Share Invite";
+        RectTransform shareRect = (RectTransform)shareObject.transform;
+        shareRect.anchorMin = createRect.anchorMin;
+        shareRect.anchorMax = createRect.anchorMax;
+        shareRect.pivot = createRect.pivot;
+        shareRect.anchoredPosition = new Vector2(createRect.anchoredPosition.x, -40f);
+        shareRect.sizeDelta = createRect.sizeDelta;
+
         Assign(serializedPanel, "activeGamesRoot", activeGames.gameObject);
         Assign(serializedPanel, "activeGamesHeaderText", header);
         Assign(serializedPanel, "activeGamesContent", content);
         Assign(serializedPanel, "activeGameRowPrefab", rowPrefab);
         Assign(serializedPanel, "cancelGameButton", cancelGameButton);
         Assign(serializedPanel, "cancelGameText", cancelGameText);
+        Assign(serializedPanel, "shareButton", shareButton);
+        Assign(serializedPanel, "shareText", shareText);
         serializedPanel.ApplyModifiedPropertiesWithoutUndo();
 
         activeGames.gameObject.SetActive(false);
         cancelGameObject.SetActive(false);
+        shareObject.SetActive(false);
         SavePrefab(root, lobbyPrefabPath);
         Debug.Log("[OnlineUiPrefabBuilder] Updated Online Lobby Panel prefab.");
     }

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
+using Elemento.Domain;
 using Elemento.Domain.Net;
 using UnityEngine;
 
@@ -27,9 +29,16 @@ namespace Elemento.Networking.Supabase
         public async Task<MatchStateUpdateData> CreateMatch(CreateMatchRequestData inRequest)
         {
             if (inRequest == null) throw new ArgumentNullException(nameof(inRequest));
-            string json = await PostAsync("create-match", NetJson.Serialize(inRequest));
+            string body = await Task.Run(() => NetJson.Serialize(new CreateMatchWireRequestData
+            {
+                ProtocolVersion = inRequest.ProtocolVersion,
+                Rules = inRequest.Rules,
+                InitialState = GameStateWireCodec.Encode(inRequest.InitialState),
+                InitialStateHash = inRequest.InitialStateHash
+            }));
+            string json = await PostAsync("create-match", body);
             this.LastInviteCode = NetJson.Deserialize<InviteCodeData>(json).InviteCode;
-            return NetJson.Deserialize<MatchStateUpdateData>(json);
+            return await DecodeUpdateAsync(json);
         }
 
         public async Task<MatchStateUpdateData> JoinMatch(JoinMatchRequestData inRequest)
@@ -44,14 +53,15 @@ namespace Elemento.Networking.Supabase
                 ProtocolVersion = inRequest.ProtocolVersion,
                 InviteCode = inRequest.MatchId.Trim().ToUpperInvariant()
             });
-            return NetJson.Deserialize<MatchStateUpdateData>(await PostAsync("join-match", body));
+            return await DecodeUpdateAsync(await PostAsync("join-match", body));
         }
 
         public async Task<SubmitTurnResultData> SubmitTurn(SubmitTurnRequestData inTurn)
         {
             if (inTurn == null) throw new ArgumentNullException(nameof(inTurn));
+            string body = await Task.Run(() => NetJson.Serialize(CreateWireRequest(inTurn)));
             SupabaseHttpResponseData response = await PostResponseAsync(
-                "submit-turn", NetJson.Serialize(inTurn));
+                "submit-turn", body);
             var result = NetJson.Deserialize<SubmitTurnResultData>(response.Body);
             result.HttpStatusCode = response.StatusCode;
             result.ResponseBody = response.Body;
@@ -110,7 +120,8 @@ namespace Elemento.Networking.Supabase
             {
                 try
                 {
-                    var update = NetJson.Deserialize<MatchStateUpdateData>(await PostAsync("get-view", NetJson.Serialize(inRequest)));
+                    string json = await PostAsync("get-view", NetJson.Serialize(inRequest));
+                    var update = await DecodeUpdateAsync(json);
                     if (update?.State == null || update.MatchId != inRequest.MatchId)
                         throw new FormatException("Missing or mismatched match state.");
                     return update;
@@ -169,6 +180,78 @@ namespace Elemento.Networking.Supabase
                 "/functions/v1/" + inFunction, inBody, session.AccessToken);
         }
 
+        private static SubmitTurnWireRequestData CreateWireRequest(SubmitTurnRequestData inRequest)
+        {
+            return new SubmitTurnWireRequestData
+            {
+                ProtocolVersion = inRequest.ProtocolVersion,
+                MatchId = inRequest.MatchId,
+                Seat = inRequest.Seat,
+                ExpectedRevision = inRequest.ExpectedRevision,
+                ClientNonce = inRequest.ClientNonce,
+                Turn = CreateWireTurn(inRequest.Turn)
+            };
+        }
+
+        private static TurnPackageWireData CreateWireTurn(TurnPackageData inTurn)
+        {
+            return new TurnPackageWireData
+            {
+                MatchId = inTurn.MatchId,
+                Seat = inTurn.Seat,
+                TurnNumber = inTurn.TurnNumber,
+                StartRevision = inTurn.StartRevision,
+                Actions = inTurn.Actions,
+                FinalState = GameStateWireCodec.Encode(inTurn.FinalState),
+                FinalStateHash = inTurn.FinalStateHash,
+                Status = inTurn.Status,
+                WinnerSeat = inTurn.WinnerSeat,
+                WinCondition = inTurn.WinCondition,
+                NextSeat = inTurn.NextSeat
+            };
+        }
+
+        private static Task<MatchStateUpdateData> DecodeUpdateAsync(string inJson)
+        {
+            return Task.Run(() =>
+            {
+                var wire = NetJson.Deserialize<MatchStateUpdateWireData>(inJson);
+                if (wire == null)
+                    return null;
+                var result = new MatchStateUpdateData
+                {
+                    MatchId = wire.MatchId,
+                    Status = wire.Status,
+                    MatchRevision = wire.MatchRevision,
+                    CurrentSeat = wire.CurrentSeat,
+                    YourSeat = wire.YourSeat,
+                    WinnerSeat = wire.WinnerSeat,
+                    OpponentLastSeenSecondsAgo = wire.OpponentLastSeenSecondsAgo,
+                    Rules = wire.Rules,
+                    State = wire.State == null ? null : GameStateWireCodec.Decode(wire.State),
+                    SeatNames = wire.SeatNames
+                };
+                foreach (var turn in wire.Turns)
+                {
+                    result.Turns.Add(new TurnPackageData
+                    {
+                        MatchId = turn.MatchId,
+                        Seat = turn.Seat,
+                        TurnNumber = turn.TurnNumber,
+                        StartRevision = turn.StartRevision,
+                        Actions = turn.Actions,
+                        FinalState = GameStateWireCodec.Decode(turn.FinalState),
+                        FinalStateHash = turn.FinalStateHash,
+                        Status = turn.Status,
+                        WinnerSeat = turn.WinnerSeat,
+                        WinCondition = turn.WinCondition,
+                        NextSeat = turn.NextSeat
+                    });
+                }
+                return result;
+            });
+        }
+
         [Serializable]
         private sealed class InviteCodeData { public string InviteCode; }
 
@@ -177,6 +260,58 @@ namespace Elemento.Networking.Supabase
         {
             public int ProtocolVersion;
             public string InviteCode;
+        }
+
+        [Serializable]
+        private sealed class CreateMatchWireRequestData
+        {
+            public int ProtocolVersion;
+            public RulesConfigData Rules;
+            public GameStateWireData InitialState;
+            public string InitialStateHash;
+        }
+
+        [Serializable]
+        private sealed class SubmitTurnWireRequestData
+        {
+            public int ProtocolVersion;
+            public string MatchId;
+            public int Seat;
+            public int ExpectedRevision;
+            public string ClientNonce;
+            public TurnPackageWireData Turn;
+        }
+
+        [Serializable]
+        private sealed class TurnPackageWireData
+        {
+            public string MatchId;
+            public int Seat;
+            public int TurnNumber;
+            public int StartRevision;
+            public List<TurnActionData> Actions = new();
+            public GameStateWireData FinalState;
+            public string FinalStateHash;
+            public string Status;
+            public int WinnerSeat = -1;
+            public EWinCondition WinCondition;
+            public int NextSeat;
+        }
+
+        [Serializable]
+        private sealed class MatchStateUpdateWireData
+        {
+            public string MatchId;
+            public string Status;
+            public int MatchRevision;
+            public int CurrentSeat;
+            public int YourSeat;
+            public int WinnerSeat = -1;
+            public int OpponentLastSeenSecondsAgo = -1;
+            public RulesConfigData Rules;
+            public GameStateWireData State;
+            public List<TurnPackageWireData> Turns = new();
+            public List<string> SeatNames = new();
         }
 
         [Serializable]

@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-export const protocolVersion = 2;
+export const protocolVersion = 3;
 export const publicMatchFields = "id,status,mode,protocol_version,rules,invite_code,revision,turn_number,current_seat,winner_seat,turn_deadline,created_at,updated_at";
 
 export const corsHeaders = {

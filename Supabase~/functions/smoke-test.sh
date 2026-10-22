@@ -81,21 +81,21 @@ elif kind == "create":
         with open(fixture_path, encoding="utf-8") as source:
             state = json.load(source)
         value = {
-            "ProtocolVersion": 2,
+            "ProtocolVersion": 3,
             "Rules": state["Rules"],
             "InitialState": state,
-            "InitialStateHash": "smoke-initial-v2",
+            "InitialStateHash": "smoke-initial-v3",
         }
 elif kind == "join":
-    value = {"ProtocolVersion": 2, "InviteCode": args[0]}
+    value = {"ProtocolVersion": 3, "InviteCode": args[0]}
 elif kind == "view":
-    value = {"ProtocolVersion": 2, "MatchId": args[0], "SinceRevision": int(args[1])}
+    value = {"ProtocolVersion": 3, "MatchId": args[0], "SinceRevision": int(args[1])}
 elif kind == "list":
-    value = {"ProtocolVersion": 2}
+    value = {"ProtocolVersion": 3}
 elif kind == "old_view":
     value = {"ProtocolVersion": 1, "MatchId": args[0], "SinceRevision": 0}
 elif kind == "heartbeat":
-    value = {"ProtocolVersion": 2, "MatchId": args[0]}
+    value = {"ProtocolVersion": 3, "MatchId": args[0]}
 elif kind == "old_heartbeat":
     value = {"ProtocolVersion": 1, "MatchId": args[0]}
 elif kind == "turn":
@@ -124,7 +124,7 @@ elif kind == "turn":
             "CurrentPlayerId": next_seat,
         })
         value = {
-            "ProtocolVersion": 2,
+            "ProtocolVersion": 3,
             "MatchId": match_id,
             "Seat": seat,
             "ExpectedRevision": revision,
@@ -282,14 +282,14 @@ old_status=${old_response##*$'\n'}
 old_body=${old_response%$'\n'*}
 [[ $old_status == 426 ]] || { echo "expected HTTP 426, got $old_status" >&2; exit 1; }
 assert_json "$old_body" Error update_required
-assert_json "$old_body" ProtocolVersion 2
+assert_json "$old_body" ProtocolVersion 3
 
 old_heartbeat_response=$(call_function_with_status heartbeat "$token0" "$(make_json old_heartbeat "$match_id")")
 old_heartbeat_status=${old_heartbeat_response##*$'\n'}
 old_heartbeat_body=${old_heartbeat_response%$'\n'*}
 [[ $old_heartbeat_status == 426 ]] || { echo "expected heartbeat HTTP 426, got $old_heartbeat_status" >&2; exit 1; }
 assert_json "$old_heartbeat_body" Error update_required
-assert_json "$old_heartbeat_body" ProtocolVersion 2
+assert_json "$old_heartbeat_body" ProtocolVersion 3
 
 stored_ai_game=$(call_function record-ai-game "$token0" "$(make_json ai_game "$user0")")
 assert_json "$stored_ai_game" stored true
@@ -302,4 +302,4 @@ unauthorized_clear_body=${unauthorized_clear%$'\n'*}
 [[ $unauthorized_clear_status == 403 ]] || { echo "expected clear-all HTTP 403, got $unauthorized_clear_status" >&2; exit 1; }
 assert_json "$unauthorized_clear_body" error "this user is not authorized to clear all AI games"
 
-echo "Protocol v2 smoke test passed for match $match_id"
+echo "Protocol v3 smoke test passed for match $match_id"
