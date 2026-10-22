@@ -201,6 +201,7 @@ RectTransform:
   m_Children:
   - {fileID: 1371848499}
   - {fileID: 6227461722818274970}
+  - {fileID: 7500000000000000002}
   - {fileID: 4558594291038627150}
   - {fileID: 1813318174}
   - {fileID: 5615489674433948953}
@@ -213,7 +214,6 @@ RectTransform:
   - {fileID: 1812156663608734450}
   - {fileID: 7300000000000000002}
   - {fileID: 7300000000000000012}
-  - {fileID: 7500000000000000002}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
@@ -10530,6 +10530,7 @@ MonoBehaviour:
   delayBetweenDeal: 0.35
   dealTweenDuration: 0.22
   OpponentMoveTweenDuration: 0.45
+  OpponentMovePauseDuration: 0.4
   ActivateDiscardTweenDuration: 0.3
   HandInsertTweenDuration: 0.06
   CardSnapBackTweenSpeed: 0.1
@@ -10945,6 +10946,15 @@ MonoBehaviour:
   GameDeck:
   - 'Game Deck:'
   - 'Mazo del Juego:'
+  GameModeAI:
+  - Against AI
+  - Contra IA
+  GameModeMultiplayer:
+  - Multiplayer
+  - Multijugador
+  GameModePassAndPlay:
+  - Pass & Play
+  - Pasar & Jugar
   Hide:
   - Hide
   - Esconder
@@ -11000,6 +11010,12 @@ MonoBehaviour:
   Replay:
   - Replay
   - Repetir
+  Undo:
+  - Undo
+  - Deshacer
+  AllowUndo:
+  - Allow Undo
+  - Permitir Deshacer
   Rename:
   - 'Re-
 
@@ -11344,9 +11360,43 @@ MonoBehaviour:
   OnlineJoinMatch:
   - Join Match
   - Unirse a Partida
-  OnlineResumeMatch:
-  - Resume
-  - Continuar
+  OnlineActiveGames:
+  - Active Games
+  - Partidas Activas
+  OnlineMatchCodeFormat:
+  - 'Code: {0}'
+  - "C\xF3digo: {0}"
+  OnlineOpponentFormat:
+  - vs {0}
+  - vs {0}
+  OnlineRejoin:
+  - Rejoin
+  - Volver a Entrar
+  OnlineForfeit:
+  - Forfeit
+  - Abandonar
+  OnlineForfeitTitle:
+  - Forfeit Game?
+  - "\xBFAbandonar Partida?"
+  OnlineForfeitMessage:
+  - Your opponent will win this game.
+  - "Tu rival ganar\xE1 esta partida."
+  OnlineCancelGame:
+  - Cancel Game
+  - Cancelar Partida
+  OnlineCancelGameTitle:
+  - Cancel this Game?
+  - "\xBFCancelar esta Partida?"
+  OnlineCancelGameMessage:
+  - The invite code will stop working and you can create or join a new game.
+  - "El c\xF3digo de invitaci\xF3n dejar\xE1 de funcionar y podr\xE1s crear o unirte
+    a otra partida."
+  OnlineGameCancelled:
+  - Game Cancelled
+  - Partida Cancelada
+  OnlineLeave:
+  - Leave
+  - Abandonar
   OnlineUpdateRequired:
   - Please update Elemento to play online.
   - "Actualiza Elemento para jugar en l\xEDnea."
@@ -11358,22 +11408,39 @@ MonoBehaviour:
   - "Introduce el C\xF3digo"
   OnlineInviteCodeLabel:
   - Invite Code
-  - "C\xF3digo de invitaci\xF3n"
+  - "C\xF3digo de Invitaci\xF3n"
+  OnlineShareInvite:
+  - Share Invite
+  - "Compartir Invitaci\xF3n"
+  OnlineCodeCopied:
+  - Code copied to clipboard
+  - "C\xF3digo copiado al portapapeles"
+  OnlineInviteCopied:
+  - Invitation copied to clipboard
+  - "Invitaci\xF3n copiada al portapapeles"
+  OnlineInviteSubject:
+  - Play Elemento with me!
+  - "\xA1Juega a Elemento conmigo!"
+  OnlineInviteMessage:
+  - 'You''re invited to an online game of Elemento! Open Online Match, tap Join Match
+    and enter this code: {0}'
+  - "\xA1Te invito a una partida en l\xEDnea de Elemento! Abre Partida en l\xEDnea,
+    toca Unirse a partida e introduce este c\xF3digo: {0}"
   OnlineWaiting:
   - Waiting for Opponent
-  - Esperando al rival
+  - Esperando al Rival
   OnlineWaitingForOpponent:
-  - Waiting for opponent...
-  - Esperando al rival...
+  - Waiting for Opponent...
+  - Esperando al Rival...
   OnlineOpponentAway:
-  - Opponent away...
-  - Rival ausente...
+  - Opponent Away...
+  - Rival Ausente...
   OnlineKeepWaiting:
-  - Keep waiting
-  - Seguir esperando
+  - Keep Waiting
+  - Seguir Esperando
   OnlineLeaveAndContinueLater:
-  - Leave and continue later
-  - "Salir y continuar despu\xE9s"
+  - Leave and Continue Later
+  - "Salir y Continuar Despu\xE9s"
   OnlineBack:
   - Back
   - Volver
@@ -11386,6 +11453,9 @@ MonoBehaviour:
   OnlineInvalidInvite:
   - Enter a six-character invite code
   - "Introduce un c\xF3digo de seis caracteres"
+  OnlineResuming:
+  - Resuming Match...
+  - Reanudando Partida...
   OnlineSendingTurn:
   - Sending turn...
   - Enviando turno...
@@ -11404,33 +11474,33 @@ MonoBehaviour:
   OnlineOpponentLeft:
   - The other player has left the game
   - El otro jugador ha abandonado la partida
+  OnlineMatchAlreadyEnded:
+  - This match has already ended.
+  - Esta partida ya ha terminado.
+  OnlineMatchGone:
+  - This match is no longer available.
+  - "Esta partida ya no est\xE1 disponible."
   OnlineMatchSettings:
   - The creator's gameplay settings apply to both players.
   - Los ajustes de juego del creador se aplican a ambos jugadores.
   OnlineYouGoFirst:
-  - You go first!
-  - ¡Empiezas tú!
+  - You Go First!
+  - "\xA1Empiezas T\xFA!"
   OnlineOpponentGoesFirst:
-  - Opponent goes first
-  - Empieza el rival
-  Undo:
-  - Undo
-  - Deshacer
-  AllowUndo:
-  - Allow Undo
-  - Permitir deshacer
+  - Opponent Goes First
+  - Empieza el Rival
   UndoPastDraw:
   - Can't undo past a draw.
-  - No puedes deshacer más allá de un robo.
+  - "No puedes deshacer m\xE1s all\xE1 de un robo."
   UndoPastReveal:
   - Can't undo past revealing a hidden card.
-  - No puedes deshacer más allá de revelar una carta oculta.
+  - "No puedes deshacer m\xE1s all\xE1 de revelar una carta oculta."
   UndoPastActivateDeck:
   - Can't undo past Activate Deck.
-  - No puedes deshacer más allá de Activar Mazo.
+  - "No puedes deshacer m\xE1s all\xE1 de Activar Mazo."
   UndoPastPowerChoice:
   - Can't undo past choosing a power card.
-  - No puedes deshacer más allá de elegir una carta de poder.
+  - "No puedes deshacer m\xE1s all\xE1 de elegir una carta de poder."
   UndoTurnLocked:
   - This turn can no longer be undone.
   - Este turno ya no se puede deshacer.
@@ -11456,9 +11526,6 @@ MonoBehaviour:
 
     To End Turn'
   - "Oprima el Bot\xF3n\nPara Terminar el Turno"
-  ReturnHomeToChangeMode:
-  - Return Home to change mode
-  - Vuelve al inicio para cambiar de modo
   LeaveGame:
   - Leave Game?
   - "\xBFSalir del juego?"
@@ -11485,6 +11552,9 @@ MonoBehaviour:
     This will quit the app!'
   - "\xBFEst\xE1 seguro de que desea eliminar todos los datos?\n\n\xA1Esto cerrar\xE1
     la aplicaci\xF3n!"
+  ReturnHomeToChangeMode:
+  - Return Home to change mode
+  - Vuelve al inicio para cambiar de modo
   DropdownOptions_DiscardMode:
   - Options:
     - None
@@ -12216,6 +12286,7 @@ MonoBehaviour:
     TurnNumber: 0
     MoveNumber: 0
     TotalMovesTaken: 0
+    MovesRemaining: 0
     ActivePlayer: 0
     IsDealHand: 0
     Value: 0
@@ -12240,6 +12311,12 @@ MonoBehaviour:
         TargetZoneId: 0
         PowerCardType: 0
         ExpectedRevision: 0
+    Deck:
+      Cards: []
+      CardIds: []
+      CardFaceUpStates: 
+    ShuffledDeck: []
+    PowerDeck: []
     Players: []
   BoardHistory:
     BoardStates: []
@@ -47821,6 +47898,50 @@ PrefabInstance:
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
       value: 
       objectReference: {fileID: 523220428}
+    - target: {fileID: 3073096069101649437, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 3073096069101649437, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
+      value: 
+      objectReference: {fileID: 523220428}
+    - target: {fileID: 3073096069101649437, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
+      value: HandlePlayModePlayButtonPress
+      objectReference: {fileID: 0}
+    - target: {fileID: 3073096069101649437, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_IntArgument
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 3457369358286236774, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 3457369358286236774, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
+      value: 
+      objectReference: {fileID: 523220428}
+    - target: {fileID: 3457369358286236774, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
+      value: HandlePlayModePlayButtonPress
+      objectReference: {fileID: 0}
+    - target: {fileID: 3457369358286236774, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Arguments.m_IntArgument
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 4493789946084172982, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 4493789946084172982, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
+      value: 
+      objectReference: {fileID: 523220428}
+    - target: {fileID: 4493789946084172982, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
+      propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_MethodName
+      value: HandlePlayModePlayButtonPress
+      objectReference: {fileID: 0}
     - target: {fileID: 6927421928935805124, guid: 6535b73fb559c41b98feed06cf5b92f6, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Target
       value: 
@@ -48420,70 +48541,6 @@ PrefabInstance:
       propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_AnchorMin.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_AnchorMin.y
-      value: 0.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_AnchorMax.x
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_AnchorMax.y
-      value: 0.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_Pivot.x
-      value: 0.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_Pivot.y
-      value: 0.5
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_AnchoredPosition.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_AnchoredPosition.y
-      value: 246.9
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_SizeDelta.x
-      value: -100
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_SizeDelta.y
-      value: 82.7
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_fontAsset
-      value:
-      objectReference: {fileID: 11400000, guid: c309455a113c04e2585f896c78a2d05c, type: 2}
-    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_sharedMaterial
-      value:
-      objectReference: {fileID: -1214882625775132628, guid: c309455a113c04e2585f896c78a2d05c, type: 2}
-    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_fontSize
-      value: 50
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_fontSizeBase
-      value: 50
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_enableAutoSizing
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
-      propertyPath: m_lineSpacing
-      value: 0
-      objectReference: {fileID: 0}
     - target: {fileID: 7200000000000000002, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
       propertyPath: m_Pivot.x
       value: 0.5
@@ -48564,6 +48621,70 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_Pivot.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_Pivot.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMin.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: -100
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 82.7
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000010, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 246.9
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_fontSize
+      value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_fontAsset
+      value: 
+      objectReference: {fileID: 11400000, guid: c309455a113c04e2585f896c78a2d05c, type: 2}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_lineSpacing
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_fontSizeBase
+      value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_sharedMaterial
+      value: 
+      objectReference: {fileID: -1214882625775132628, guid: c309455a113c04e2585f896c78a2d05c, type: 2}
+    - target: {fileID: 7200000000000000012, guid: 940572d99f3348f4b901f63955bf6f57, type: 3}
+      propertyPath: m_enableAutoSizing
+      value: 0
+      objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
@@ -48585,6 +48706,167 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cb83b271f11c49388527caac6a47a720, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::UIOnlineLobbyPanel
+--- !u!1001 &7500000000000000001
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 1769517}
+    m_Modifications:
+    - target: {fileID: 7400000000000000001, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_Name
+      value: Waiting For Opponent Panel
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000001, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_Pivot.x
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_Pivot.y
+      value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchorMin.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_SizeDelta.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000011, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 667.04
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000021, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000021, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000021, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 50
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000021, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 55
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000021, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: -46
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000031, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000031, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchorMin.y
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000031, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_SizeDelta.x
+      value: 537.04
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000031, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 368.52
+      objectReference: {fileID: 0}
+    - target: {fileID: 7400000000000000031, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+      propertyPath: m_AnchoredPosition.y
+      value: -46
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+--- !u!224 &7500000000000000002 stripped
+RectTransform:
+  m_CorrespondingSourceObject: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+  m_PrefabInstance: {fileID: 7500000000000000001}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &7500000000000000003 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 7400000000000000004, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
+  m_PrefabInstance: {fileID: 7500000000000000001}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1bb25b0145d1620d7378e6e2f2d12421, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::UIWaitingForOpponentPanel
 --- !u!1001 &7509295732000694047
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -49724,43 +50006,6 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 9095895148664334326, guid: 2695effa51e7645b1b3b8d494f5a3c04, type: 3}
   m_PrefabInstance: {fileID: 126042204616027643}
   m_PrefabAsset: {fileID: 0}
---- !u!1001 &7500000000000000001
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 1769517}
-    m_Modifications:
-    - target: {fileID: 7400000000000000001, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
-      propertyPath: m_Name
-      value: Waiting For Opponent Panel
-      objectReference: {fileID: 0}
-    - target: {fileID: 7400000000000000001, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
-      propertyPath: m_IsActive
-      value: 0
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
---- !u!224 &7500000000000000002 stripped
-RectTransform:
-  m_CorrespondingSourceObject: {fileID: 7400000000000000002, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
-  m_PrefabInstance: {fileID: 7500000000000000001}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &7500000000000000003 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 7400000000000000004, guid: 73902bb32692e67d9111e0f93a9829be, type: 3}
-  m_PrefabInstance: {fileID: 7500000000000000001}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1bb25b0145d1620d7378e6e2f2d12421, type: 3}
-  m_Name:
-  m_EditorClassIdentifier: Assembly-CSharp::UIWaitingForOpponentPanel
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

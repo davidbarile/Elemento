@@ -72,6 +72,8 @@ public class UIOnlineLobbyPanelTests
     {
         AssertSerializedField("cancelGameButton", typeof(Button));
         AssertSerializedField("cancelGameText", typeof(TextMeshProUGUI));
+        AssertSerializedField("cancelGameButtonRoot", typeof(GameObject));
+        AssertSerializedField("shareButtonRoot", typeof(GameObject));
         AssertSerializedField("shareButton", typeof(Button));
         AssertSerializedField("shareText", typeof(TextMeshProUGUI));
         Assert.That(typeof(OnlineUiPrefabBuilder).GetMethod("ConfigureLobbyPrefab",
@@ -141,10 +143,7 @@ public class UIOnlineLobbyPanelTests
         Canvas.ForceUpdateCanvases();
         Assert.That(shareButton.gameObject.activeInHierarchy, Is.True);
         Assert.That(shareButton.interactable, Is.True);
-        RectTransform shareRoot = (RectTransform)shareButton.transform.parent;
-        RectTransform cancelRoot = (RectTransform)cancelGameButton.transform.parent;
-        Assert.That(shareRoot.anchoredPosition.y + shareRoot.rect.height / 2f,
-            Is.LessThan(cancelRoot.anchoredPosition.y - cancelRoot.rect.height / 2f));
+        Assert.That(cancelGameButton.gameObject.activeInHierarchy, Is.True);
     }
 
     private static void AssertSerializedField(string inName, Type inType)

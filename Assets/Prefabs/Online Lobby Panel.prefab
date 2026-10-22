@@ -2026,7 +2026,9 @@ MonoBehaviour:
   joinButton: {fileID: 603058340620889549}
   backButton: {fileID: 8019498137005434654}
   cancelGameButton: {fileID: 1974094512187446686}
+  cancelGameButtonRoot: {fileID: 5477213282071774447}
   cancelGameText: {fileID: 5912710829010801395}
+  shareButtonRoot: {fileID: 6410359542161247295}
   shareButton: {fileID: 685017955047375259}
   shareText: {fileID: 4481252174807499138}
   activeGamesRoot: {fileID: 7552516759541070364}

@@ -282,7 +282,9 @@ public static class OnlineUiPrefabBuilder
         if (createButton == null)
             throw new InvalidOperationException("[OnlineUiPrefabBuilder] Lobby Create Match Button was not found.");
 
-        GameObject cancelGameObject = GetOrCreateButton(rootRect, buttonSource, "Cancel Game Button");
+        // Cancel and Share sit in a vertical layout group when the prefab has one.
+        RectTransform waitingButtonsRect = FindDirectRect(rootRect, "VLG") ?? rootRect;
+        GameObject cancelGameObject = GetOrCreateButton(waitingButtonsRect, buttonSource, "Cancel Game Button");
         Button cancelGameButton = RequireButton(cancelGameObject, "Cancel Game Button");
         TextMeshProUGUI cancelGameText = RequireButtonText(cancelGameObject, "Cancel Game Button");
         cancelGameText.text = "Cancel game";
@@ -299,23 +301,20 @@ public static class OnlineUiPrefabBuilder
         cancelGameRect.anchoredPosition = createRect.anchoredPosition;
         cancelGameRect.sizeDelta = createRect.sizeDelta;
 
-        GameObject shareObject = GetOrCreateButton(rootRect, buttonSource, "Share Button");
+        GameObject shareObject = GetOrCreateButton(waitingButtonsRect, buttonSource, "Share Button");
         Button shareButton = RequireButton(shareObject, "Share Button");
         TextMeshProUGUI shareText = RequireButtonText(shareObject, "Share Button");
         shareText.text = "Share Invite";
-        RectTransform shareRect = (RectTransform)shareObject.transform;
-        shareRect.anchorMin = createRect.anchorMin;
-        shareRect.anchorMax = createRect.anchorMax;
-        shareRect.pivot = createRect.pivot;
-        shareRect.anchoredPosition = new Vector2(createRect.anchoredPosition.x, -40f);
-        shareRect.sizeDelta = createRect.sizeDelta;
+        ((RectTransform)shareObject.transform).sizeDelta = createRect.sizeDelta;
 
         Assign(serializedPanel, "activeGamesRoot", activeGames.gameObject);
         Assign(serializedPanel, "activeGamesHeaderText", header);
         Assign(serializedPanel, "activeGamesContent", content);
         Assign(serializedPanel, "activeGameRowPrefab", rowPrefab);
         Assign(serializedPanel, "cancelGameButton", cancelGameButton);
+        Assign(serializedPanel, "cancelGameButtonRoot", cancelGameObject);
         Assign(serializedPanel, "cancelGameText", cancelGameText);
+        Assign(serializedPanel, "shareButtonRoot", shareObject);
         Assign(serializedPanel, "shareButton", shareButton);
         Assign(serializedPanel, "shareText", shareText);
         serializedPanel.ApplyModifiedPropertiesWithoutUndo();

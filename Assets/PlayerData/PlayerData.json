@@ -4,6 +4,7 @@
 	"ShouldAutoDealHand": true,
 	"AllowSelectPowerCardType": true,
 	"AllowUndo": true,
+	"RecordAiGames": false,
 	"LanguageIndex": 1,
 	"SkinTypeIndex": 0,
 	"CardBackIndex": 0,

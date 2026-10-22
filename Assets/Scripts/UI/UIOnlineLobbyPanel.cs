@@ -39,7 +39,9 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     [SerializeField] private Button joinButton;
     [SerializeField] private Button backButton;
     [SerializeField] private Button cancelGameButton;
+    [SerializeField] private GameObject cancelGameButtonRoot;
     [SerializeField] private TextMeshProUGUI cancelGameText;
+    [SerializeField] private GameObject shareButtonRoot;
     [SerializeField] private Button shareButton;
     [SerializeField] private TextMeshProUGUI shareText;
     [SerializeField] private GameObject activeGamesRoot;
@@ -62,7 +64,6 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
     private bool pendingCancelGameConfirmation;
     private readonly List<UIActiveGameRow> activeGameRows = new();
     private readonly HashSet<string> forgottenMatchIds = new();
-    private GameObject cancelGameButtonRoot;
 
     public bool IsRecoveryPending => this.isRecoveryPending;
 
@@ -475,7 +476,6 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             return;
 
         bool isVisible = !this.isResumeLoading && IsWaitingForJoiner();
-        this.cancelGameButtonRoot ??= GetPanelChild(this.transform, this.cancelGameButton);
         if (isVisible)
             this.cancelGameButton.gameObject.SetActive(true);
         this.cancelGameButtonRoot.SetActive(isVisible);
@@ -483,7 +483,7 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
         if (this.shareButton != null)
         {
             bool canShare = isVisible && !string.IsNullOrEmpty(this.inviteCode);
-            GetPanelChild(this.transform, this.shareButton).SetActive(canShare);
+            this.shareButtonRoot.SetActive(canShare);
             this.shareButton.interactable = canShare && !this.isBusy;
         }
         if (isVisible)
@@ -498,15 +498,6 @@ public sealed class UIOnlineLobbyPanel : UIPanelBase
             this.inviteCodeInput.gameObject.SetActive(true);
             this.joinButton.gameObject.SetActive(true);
         }
-    }
-
-    private static GameObject GetPanelChild(Transform inPanel, Component inComponent)
-    {
-        Transform current = inComponent.transform;
-        while (current.parent != null && current.parent != inPanel)
-            current = current.parent;
-
-        return current.parent == inPanel ? current.gameObject : inComponent.gameObject;
     }
 
     private void HandleCancelGameButtonPress()
