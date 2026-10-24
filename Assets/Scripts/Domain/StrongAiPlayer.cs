@@ -134,7 +134,9 @@ namespace Elemento.Domain
         {
             PrepareTurnState(inView);
 
-            var move = TakeRebuildStep(inView);
+            var move = FindImmediateWinningMove(inView);
+            if (move == null)
+                move = TakeRebuildStep(inView);
             if (move == null)
                 move = ChooseSearchMove(inView, inRandom);
             RecordMoveVersions(move);
@@ -147,6 +149,25 @@ namespace Elemento.Domain
                 zones.Add(move.SourceZoneId);
             }
             return move;
+        }
+
+        private static MoveData FindImmediateWinningMove(PlayerViewData inView)
+        {
+            var simulator = new GameSimulator();
+            var state = CreatePlanningState(inView);
+            var legalMoves = simulator.GetLegalMoves(state, inView.Player.Id);
+            foreach (var move in inView.LegalMoves)
+            {
+                var stateMove = FindMatchingMove(legalMoves, move);
+                if (stateMove == null)
+                    continue;
+
+                var result = state.Clone();
+                simulator.ApplyMove(result, stateMove);
+                if (result.WinnerPlayerId == inView.Player.Id)
+                    return move.Clone();
+            }
+            return null;
         }
 
         private MoveData ChooseSearchMove(PlayerViewData inView, IRandom inRandom)

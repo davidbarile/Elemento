@@ -339,12 +339,14 @@ public static class UnityDomainMapper
 
     public static bool ShouldStopAiTurn(int inCompletedMoveCount, int inPlannedMoveCount,
         int inDecisionCount, int inRemainingMoveBudget, bool inIsTurnActive,
-        bool inHasPendingRebuildSteps = false)
+        bool inHasPendingRebuildSteps = false, bool inWaitForExplicitEndTurn = false)
     {
         if (!inIsTurnActive)
             return true;
         if (inHasPendingRebuildSteps)
             return false;
+        if (inWaitForExplicitEndTurn)
+            return inRemainingMoveBudget <= 0;
 
         return inPlannedMoveCount <= 0
             || inCompletedMoveCount >= inPlannedMoveCount

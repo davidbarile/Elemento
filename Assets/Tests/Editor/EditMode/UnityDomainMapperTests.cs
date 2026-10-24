@@ -56,6 +56,15 @@ public class UnityDomainMapperTests
     }
 
     [Test]
+    public void ShouldStopAiTurn_StrongAiWaitsForExplicitEndTurn()
+    {
+        Assert.That(UnityDomainMapper.ShouldStopAiTurn(20, 5,
+            UnityDomainMapper.MaxAiDecisionsPerTurn, 99, true, false, true), Is.False);
+        Assert.That(UnityDomainMapper.ShouldStopAiTurn(20, 5,
+            UnityDomainMapper.MaxAiDecisionsPerTurn, 0, true, false, true), Is.True);
+    }
+
+    [Test]
     public void TryCreateMove_NullEmptyOrEndTurn_EndsTurnWithoutCreatingUnityMove()
     {
         Assert.That(UnityDomainMapper.TryCreateMove(null, null, null, null,

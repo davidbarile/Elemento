@@ -360,6 +360,82 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_ImmediateWinInterruptsQueuedRebuild()
+        {
+            var view = CreateRebuildView();
+            var zone = view.Player.Zones[0];
+            var points = new CardInstanceData
+            {
+                Id = "fire-points",
+                IsFaceUp = true,
+                WildPoints = 2
+            };
+            var multiplier = new CardInstanceData
+            {
+                Id = "fire-multiplier",
+                IsFaceUp = true,
+                WildMultiplier = 2
+            };
+            zone.Cards.Add(points);
+            zone.Cards.Add(multiplier);
+            RefreshZonePoints(zone);
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "strip-multiplier",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = multiplier.Id,
+                SourceZoneId = zone.Id,
+                TargetPlayerId = 0,
+                TargetZoneId = -1
+            });
+            view.LegalMoves.Add(CreateEndTurnMove("end-turn"));
+            var ai = new StrongAiPlayer();
+
+            var rebuildMove = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(rebuildMove.CardId, Is.EqualTo(multiplier.Id));
+            zone.Cards.Remove(multiplier);
+            view.Player.Hand.Add(multiplier);
+            RefreshZonePoints(zone);
+            var winningCard = new CardInstanceData
+            {
+                Id = "win-now",
+                IsFaceUp = true,
+                WildPoints = 1
+            };
+            view.Player.Hand.Add(winningCard);
+            view.Rules.TotalPointsRequiredToWin = GameRules.CalculatePlayerPoints(view.Player) + 1;
+            ++view.Revision;
+            view.LegalMoves.Clear();
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "queued-strip",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = points.Id,
+                SourceZoneId = zone.Id,
+                TargetPlayerId = 0,
+                TargetZoneId = -1
+            });
+            view.LegalMoves.Add(new MoveData
+            {
+                Id = "winning-play",
+                PlayerId = 0,
+                Type = EMoveType.PlayCard,
+                CardId = winningCard.Id,
+                SourceZoneId = -1,
+                TargetPlayerId = 0,
+                TargetZoneId = 1
+            });
+            view.LegalMoves.Add(CreateEndTurnMove("end-after-win"));
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Is.EqualTo(winningCard.Id));
+        }
+
+        [Test]
         public void StrongAi_RebuildsExposedMultiplierBelowPointsAndShields()
         {
             var state = CreateMultiplierOrderingState(true, 0, true);
@@ -639,8 +715,11 @@ namespace Elemento.Tests.Domain
                         recentMoves.RemoveAt(0);
                     simulator.ApplyMove(state, move);
                     ++moveCount;
-                    AssertProtectionOrder(state, seed, moveCount, move,
-                        string.Join(" | ", recentMoves));
+                    if (!simulator.IsGameOver(state))
+                    {
+                        AssertProtectionOrder(state, seed, moveCount, move,
+                            string.Join(" | ", recentMoves));
+                    }
                 }
 
             }
