@@ -560,6 +560,41 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_PlaysHigherComboPointsBeforeLowerPointsWithoutRestack()
+        {
+            var state = CreateMultiplierOrderingState(false, 0, false);
+            state.Rules.ElementZonePointsRequiredToActivate = 10;
+            var ai = state.Players[0];
+            ai.Hand.Clear();
+            var zone = ai.Zones[0];
+            zone.ElementType = EElementType.Earth;
+            zone.Cards.Clear();
+            zone.Cards.Add(CreateCard("earth-x2", inMultipliers: new[] { 0, 2, 0, 0 }));
+            zone.Cards.Add(CreateCard("earth-1", inPoints: new[] { 2, 1, 0, 0 }));
+            zone.Cards.Add(CreateCard("earth-shield-2", inShields: new[] { 0, 2, 0, 0 },
+                inBombs: new[] { 0, 0, 1, 0 }));
+            zone.Cards.Add(CreateCard("earth-shield-3", inShields: new[] { 2, 3, 0, 0 }));
+            RefreshZonePoints(zone);
+            ai.Hand.Add(CreateCard("hand-x2-bomb", inMultipliers: new[] { 0, 2, 0, 0 },
+                inBombs: new[] { 3, 0, 0, 0 }));
+            ai.Hand.Add(CreateCard("hand-1", inPoints: new[] { 1, 1, 0, 0 }));
+            ai.Hand.Add(CreateCard("hand-3-bomb", inPoints: new[] { 0, 3, 0, 0 },
+                inBombs: new[] { 0, 0, 2, 0 }));
+
+            PlayStrongAiTurn(state, out var moves);
+
+            var playedFromHand = new HashSet<string>();
+            foreach (var move in moves)
+            {
+                if (move.SourceZoneId < 0 && move.TargetZoneId == zone.Id)
+                    playedFromHand.Add(move.CardId);
+                Assert.That(move.SourceZoneId == zone.Id && move.TargetZoneId < 0
+                    && playedFromHand.Contains(move.CardId), Is.False,
+                    "a card played from hand this turn must not be lifted to fit a bigger one");
+            }
+        }
+
+        [Test]
         public void StrongAi_StopsQueuedBasicPointsAtActivationThreshold()
         {
             var state = CreateMultiplierOrderingState(false, 0, false);
@@ -1471,6 +1506,21 @@ namespace Elemento.Tests.Domain
                 IsFaceUp = true,
                 Points = new[] { 0, 0, 0, inPoints }
             };
+        }
+
+        private static CardInstanceData CreateCard(string inId, int[] inPoints = null,
+            int[] inMultipliers = null, int[] inShields = null, int[] inBombs = null)
+        {
+            var card = new CardInstanceData { Id = inId, IsFaceUp = true };
+            if (inPoints != null)
+                card.Points = inPoints;
+            if (inMultipliers != null)
+                card.Multipliers = inMultipliers;
+            if (inShields != null)
+                card.Shields = inShields;
+            if (inBombs != null)
+                card.Bombs = inBombs;
+            return card;
         }
 
         private static CardInstanceData CreateWaterMultiplierCard()

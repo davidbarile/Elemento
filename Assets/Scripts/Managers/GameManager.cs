@@ -1530,10 +1530,11 @@ public class GameManager : MonoBehaviour
         Vector3 destination = this.DiscardZoneTransform.position;
         if (target != null)
         {
+            // Measure while a hidden hand cell is still hidden so the card lands mid-hand, as in live play.
+            destination = target.GetCardLandingPosition(card);
             if (target.CellType == UICardCell.ECellType.Hand)
                 target.gameObject.SetActive(true);
 
-            destination = target.GetCardLandingPosition(card);
             Vector3 destinationScale = target.GetCardLandingLocalScale(card.transform.parent);
             if ((card.transform.localScale - destinationScale).sqrMagnitude > 0.0001f)
                 card.transform.DOScale(destinationScale, this.OpponentMoveTweenDuration)
@@ -3252,8 +3253,6 @@ public class GameManager : MonoBehaviour
             {
                 var child = playerBoard.Hand.HandGrid.GetChild(move.TargetCellIndex);
                 move.TargetCell = child.GetComponent<UICardCell>();
-                move.TargetCell.gameObject.SetActive(true);
-                yield return null;
             }
 
             yield return null;
@@ -3267,6 +3266,9 @@ public class GameManager : MonoBehaviour
                 sourceCard.Draggable.AnimateTo(discardPile.position, tweenDuration, delayAtTweenEnd);
             else
                 sourceCard.Draggable.AnimateTo(move.TargetCell, tweenDuration, delayAtTweenEnd);
+            // AnimateTo has measured the landing spot; a hidden hand cell lands mid-hand, as in live play.
+            if (move.TargetCellIndex > -1)
+                move.TargetCell.gameObject.SetActive(true);
             sourceCard.transform.DORotate(Vector3.zero, tweenDuration);
 
             if (move.IsDiscard)

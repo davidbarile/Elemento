@@ -17,6 +17,7 @@ namespace Elemento.Domain
         private const float mediumTemperature = 2.5f;
         private const float easyTemperature = 20f;
         private const float reorderPenalty = .35f; // Reorders must overcome this score margin.
+        private const float rebuildLiftPenalty = .1f; // Prefer play orders that avoid restacks.
         private const float orderingPruneWeight = .1f;
         private const float orderingPlanWeight = .1f;
         private const float b2MoveBonus = 20f;
@@ -309,18 +310,15 @@ namespace Elemento.Domain
             var cards = new List<CardInstanceData> { inCard };
             foreach (var handCard in inView.Player.Hand)
             {
-                if (handCard.Id == inCard.Id || handCard.IsPowerCard || handCard.WildBomb > 0)
+                if (handCard.Id == inCard.Id || handCard.IsPowerCard)
                     continue;
-                bool hasBomb = false;
-                foreach (int bomb in handCard.Bombs)
-                    hasBomb |= bomb > 0;
                 int multiplier = Math.Max(GetValue(handCard.Multipliers, elementIndex),
                     handCard.WildMultiplier);
                 int points = Math.Max(GetValue(handCard.Points, elementIndex), handCard.WildPoints);
                 int shield = Math.Max(GetValue(handCard.Shields, elementIndex), handCard.WildShield);
                 var candidateMove = FindMatchingMove(inView.LegalMoves,
                     CreateOwnPlay(inView.Player.Id, handCard.Id, -1, inZone.Id));
-                if (hasBomb || (multiplier <= 1 && points <= 0 && shield <= 0)
+                if ((multiplier <= 1 && points <= 0 && shield <= 0)
                     || candidateMove == null || !CanPreserveProtectionOrder(inView, candidateMove))
                     continue;
                 cards.Add(handCard);
@@ -420,15 +418,9 @@ namespace Elemento.Domain
 
                 simulatedZone.Cards.Add(pointCard);
                 int projectedPoints = GameRules.CalculateZonePoints(simulatedZone);
-                if (capAtActivation && projectedPoints > activationPoints)
-                {
-                    simulatedZone.Cards.RemoveAt(simulatedZone.Cards.Count - 1);
-                    continue;
-                }
-
                 cards.Add(pointCard);
                 --availableSlots;
-                if (capAtActivation && projectedPoints == activationPoints)
+                if (capAtActivation && projectedPoints >= activationPoints)
                     break;
             }
             return cards;
@@ -540,14 +532,15 @@ namespace Elemento.Domain
             return ordered;
         }
 
-        private static void ApplyPlannedRebuild(PlayerViewData inSourceView, GameStateData inState,
+        // Returns how many pile cards the rebuild lifts back to hand.
+        private static int ApplyPlannedRebuild(PlayerViewData inSourceView, GameStateData inState,
             MoveData inMove, int inMaxStrip)
         {
             var player = FindPlayer(inState, inSourceView.Player.Id);
             var zone = FindZone(player.Zones, inMove.TargetZoneId);
             if (zone == null || zone.IsFrozen || zone.Cards.Count == 0
                 || zone.Cards[zone.Cards.Count - 1].Id != inMove.CardId)
-                return;
+                return 0;
 
             var newCard = zone.Cards[zone.Cards.Count - 1];
             zone.Cards.RemoveAt(zone.Cards.Count - 1);
@@ -557,10 +550,12 @@ namespace Elemento.Domain
             if (rebuiltTop == null)
             {
                 zone.Cards.Add(newCard);
-                return;
+                return 0;
             }
-            zone.Cards.RemoveRange(keep, zone.Cards.Count - keep);
+            int lifted = zone.Cards.Count - keep;
+            zone.Cards.RemoveRange(keep, lifted);
             zone.Cards.AddRange(rebuiltTop);
+            return lifted;
         }
 
         private static string ZoneKey(int inPlayerId, int inZoneId)
@@ -913,10 +908,10 @@ namespace Elemento.Domain
                 inSimulator.ApplyMove(candidate.State, candidate.Move);
                 if (inSourceView.Rules.MovesPerTurn <= 0 && inSourceView.TurnNumber < antiStallTurn
                     && IsFromHandPlay(candidate.Move) && candidate.Move.TargetPlayerId == inSourceView.Player.Id)
-                    ApplyPlannedRebuild(inSourceView, candidate.State, candidate.Move,
-                        GetMaxRebuildStrip());
+                    candidate.TacticalValue -= ApplyPlannedRebuild(inSourceView, candidate.State,
+                        candidate.Move, GetMaxRebuildStrip()) * rebuildLiftPenalty;
                 int reorderMoves = inNode.ReorderMoves + (candidate.IsReorder ? 1 : 0);
-                candidate.TacticalValue = inNode.TacticalValue
+                candidate.TacticalValue += inNode.TacticalValue
                     + GetStrategicMoveValue(planningView, candidate.Move);
                 candidate.Value = EvaluateEndOfTurn(inSourceView, candidate.State, reorderMoves);
                 candidate.OrderingValue = EvaluatePileOrdering(inSourceView, candidate.State);
