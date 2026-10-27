@@ -29,6 +29,7 @@ namespace Elemento.Domain
         private const int maxReorderMoves = 3;
         private const int maxExpectedBombAttacks = 2;
         private const int antiStallTurn = 100;
+        private const int activationThreatMargin = 15; // Activate once the opponent is this close to winning.
 
         private sealed class PlanNode
         {
@@ -179,7 +180,8 @@ namespace Elemento.Domain
             {
                 // Only deliberate rebuild plans lift cards from own piles back to hand.
                 if (!IsBlockedReorder(candidate) && !IsStripToHand(candidate)
-                    && CanPreserveProtectionOrder(inView, candidate))
+                    && CanPreserveProtectionOrder(inView, candidate)
+                    && IsActivationAllowed(inView, candidate))
                     allowed.Add(candidate);
             }
             MoveData move;
@@ -218,15 +220,8 @@ namespace Elemento.Domain
             if (zone == null || card == null || card.IsPowerCard)
                 return true;
 
-            int elementIndex = (int)zone.ElementType - 1;
-            bool hasBomb = card.WildBomb > 0;
-            foreach (int bomb in card.Bombs)
-                hasBomb |= bomb > 0;
-            bool isBasicPoint = Math.Max(GetValue(card.Points, elementIndex), card.WildPoints) > 0
-                && Math.Max(GetValue(card.Multipliers, elementIndex), card.WildMultiplier) <= 1
-                && Math.Max(GetValue(card.Shields, elementIndex), card.WildShield) <= 0
-                && !hasBomb;
-            if (zone.IsActivated && isBasicPoint && HasActivationMove(inView, zone.Id))
+            // Anything played onto a pile about to be activated is thrown away with it.
+            if (zone.IsActivated && HasActivationMove(inView, zone.Id))
                 return false;
 
             var cards = new List<CardInstanceData>(zone.Cards) { card };
@@ -252,10 +247,30 @@ namespace Elemento.Domain
         {
             foreach (var move in inView.LegalMoves)
             {
-                if (move.Type == EMoveType.ActivateZone && move.SourceZoneId == inZoneId)
+                if (move.Type == EMoveType.ActivateZone && move.SourceZoneId == inZoneId
+                    && IsActivationAllowed(inView, move))
                     return true;
             }
             return false;
+        }
+
+        // Activation throws the whole pile away, which drags games out, so only activate to
+        // recover a destroyed zone or for a Lightning once the opponent is close to winning.
+        private static bool IsActivationWarranted(PlayerViewData inView)
+        {
+            int opponentPoints = 0;
+            foreach (var opponent in inView.Opponents)
+                opponentPoints += GetTotalPoints(opponent.Zones);
+            return opponentPoints >= inView.Rules.TotalPointsRequiredToWin - activationThreatMargin;
+        }
+
+        private static bool IsActivationAllowed(PlayerViewData inView, MoveData inMove)
+        {
+            return inMove.Type != EMoveType.ActivateZone
+                || TryGetRecoveryPowerTypeValue(inView, inMove.PowerCardType, out _)
+                || inMove.PowerCardType != EPowerCardType.Heal
+                    && inMove.PowerCardType != EPowerCardType.Freeze
+                    && IsActivationWarranted(inView);
         }
 
         // Unlimited moves: when a card lands on an own pile, or before the turn ends, restack the
@@ -407,7 +422,8 @@ namespace Elemento.Domain
 
             additionalPoints = OrderForProtection(additionalPoints, inZone.ElementType);
             bool capAtActivation = !inZone.IsActivated
-                && inView.Rules.ElementZonePointsRequiredToActivate > 0;
+                && inView.Rules.ElementZonePointsRequiredToActivate > 0
+                && IsActivationWarranted(inView);
             int activationPoints = inView.Rules.ElementZonePointsRequiredToActivate;
             var simulatedZone = inZone.Clone();
             simulatedZone.Cards.Add(inNewCard);
@@ -865,6 +881,8 @@ namespace Elemento.Domain
                 if (move.Type != EMoveType.PlayCard && move.Type != EMoveType.ActivateZone)
                     continue;
                 if (move.Type == EMoveType.ActivateZone && move.PowerCardType == EPowerCardType.None)
+                    continue;
+                if (!IsActivationAllowed(planningView, move))
                     continue;
 
                 bool isReorder = IsTurnReorder(move);

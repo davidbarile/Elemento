@@ -599,6 +599,7 @@ namespace Elemento.Tests.Domain
         {
             var state = CreateMultiplierOrderingState(false, 0, false);
             state.Rules.ElementZonePointsRequiredToActivate = 10;
+            AddOpponentNearWin(state);
             var ai = state.Players[0];
             ai.Hand.Clear();
             var zone = ai.Zones[0];
@@ -624,6 +625,27 @@ namespace Elemento.Tests.Domain
             Assert.That(cardsPlayedBeforeActivation, Does.Contain("new-3"));
             Assert.That(cardsPlayedBeforeActivation, Does.Contain("new-2"));
             Assert.That(cardsPlayedBeforeActivation, Does.Not.Contain("new-1"));
+        }
+
+        [Test]
+        public void StrongAi_KeepsScoringInsteadOfActivatingWhileOpponentIsFarFromWinning()
+        {
+            var state = CreateMultiplierOrderingState(false, 0, false);
+            state.Rules.ElementZonePointsRequiredToActivate = 10;
+            state.Rules.TotalPointsRequiredToWin = 50;
+            var ai = state.Players[0];
+            ai.Hand.Clear();
+            var zone = ai.Zones[0];
+            zone.Cards.Clear();
+            zone.Cards.Add(CreateWaterPointCard("existing-12", 12));
+            RefreshZonePoints(zone);
+            ai.Hand.Add(CreateWaterPointCard("new-3", 3));
+
+            PlayStrongAiTurn(state, out var moves);
+
+            Assert.That(moves.Exists(inMove => inMove.Type == EMoveType.ActivateZone), Is.False);
+            Assert.That(moves.Exists(inMove => inMove.CardId == "new-3"
+                && inMove.TargetZoneId == zone.Id), Is.True);
         }
 
         [TestCase(EAiDifficulty.Easy, 1)]
@@ -1387,6 +1409,14 @@ namespace Elemento.Tests.Domain
                 });
             }
             return state;
+        }
+
+        private static void AddOpponentNearWin(GameStateData inState)
+        {
+            inState.Rules.TotalPointsRequiredToWin = 50;
+            var zone = inState.Players[1].Zones[0];
+            zone.Cards.Add(CreateWaterPointCard("opponent-40", 40));
+            RefreshZonePoints(zone);
         }
 
         private static GameStateData CreateCrossPileShieldOrderingState()
