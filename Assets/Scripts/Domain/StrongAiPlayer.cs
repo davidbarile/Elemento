@@ -29,7 +29,10 @@ namespace Elemento.Domain
         private const int maxReorderMoves = 3;
         private const int maxExpectedBombAttacks = 2;
         private const int antiStallTurn = 100;
-        private const int activationThreatMargin = 15; // Activate once the opponent is this close to winning.
+        // Activation thresholds as fractions of the points needed to win, so they follow the settings.
+        private const float activationThreatFraction = .3f; // Opponent this close to winning: Lightning.
+        private const float activationEmergencyFraction = .1f; // Opponent this close: drain any pile.
+        private const float maxActivationPileFraction = .4f; // Otherwise keep piles worth this much.
 
         private sealed class PlanNode
         {
@@ -258,16 +261,31 @@ namespace Elemento.Domain
         // recover a destroyed zone or for a Lightning once the opponent is close to winning.
         private static bool IsActivationWarranted(PlayerViewData inView)
         {
+            return IsOpponentNearWin(inView, activationThreatFraction);
+        }
+
+        private static bool IsOpponentNearWin(PlayerViewData inView, float inFraction)
+        {
             int opponentPoints = 0;
             foreach (var opponent in inView.Opponents)
                 opponentPoints += GetTotalPoints(opponent.Zones);
-            return opponentPoints >= inView.Rules.TotalPointsRequiredToWin - activationThreatMargin;
+            int winTarget = inView.Rules.TotalPointsRequiredToWin;
+            return opponentPoints >= winTarget - winTarget * inFraction;
         }
 
         private static bool IsActivationAllowed(PlayerViewData inView, MoveData inMove)
         {
-            return inMove.Type != EMoveType.ActivateZone
-                || TryGetRecoveryPowerTypeValue(inView, inMove.PowerCardType, out _)
+            if (inMove.Type != EMoveType.ActivateZone)
+                return true;
+
+            // Draining a big pile sets the race back further than most Lightning strikes gain.
+            var zone = FindZone(inView.Player.Zones, inMove.SourceZoneId);
+            if (zone != null
+                && zone.Points >= inView.Rules.TotalPointsRequiredToWin * maxActivationPileFraction
+                && !IsOpponentNearWin(inView, activationEmergencyFraction))
+                return false;
+
+            return TryGetRecoveryPowerTypeValue(inView, inMove.PowerCardType, out _)
                 || inMove.PowerCardType != EPowerCardType.Heal
                     && inMove.PowerCardType != EPowerCardType.Freeze
                     && IsActivationWarranted(inView);

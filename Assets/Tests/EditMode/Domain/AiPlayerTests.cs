@@ -189,6 +189,25 @@ namespace Elemento.Tests.Domain
             Assert.That(move.PowerCardType, Is.EqualTo(EPowerCardType.Heal));
         }
 
+        [TestCase(false, EMoveType.EndTurn)]
+        [TestCase(true, EMoveType.ActivateZone)]
+        public void StrongAi_DrainsBigPileOnlyWhenOpponentIsAboutToWin(bool inOpponentAboutToWin,
+            EMoveType inExpectedMove)
+        {
+            var view = CreatePowerRecoveryView(true, true, false);
+            var pile = view.Player.Zones[1];
+            pile.Cards[0].Points = new[] { 0, 25, 0, 0 };
+            RefreshZonePoints(pile);
+            var threat = view.Opponents[0].Zones[0];
+            threat.Cards[0].Points = new[] { inOpponentAboutToWin ? 16 : 12, 0, 0, 0 };
+            RefreshZonePoints(threat);
+            view.LegalMoves.Add(CreateEndTurnMove("end-turn"));
+
+            var move = new StrongAiPlayer().ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.Type, Is.EqualTo(inExpectedMove));
+        }
+
         [Test]
         public void StrongAi_UsesHealForDestroyedBaseAgainstWeakPile()
         {
