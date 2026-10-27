@@ -381,14 +381,15 @@ namespace Elemento.Domain
 
             if (inCard.WildFreeze > 0)
             {
-                if (inZone.FrozenHealth > 2 || inZone.IsDestroyed)
+                if (inZone.FrozenHealth > inView.Rules.FrozenZoneHealth * .4f || inZone.IsDestroyed)
                     return inZone.IsDestroyed ? 0f : 1f;
                 if (inZone.Id == inOpponent.HighestActivatedZoneId)
                     value += 10f;
                 value += inOpponent.MultsInZone[GetElementIndex(inZone.ElementType)] * 2f;
             }
 
-            if (inCard.WildLightning > 0 && (inZone.IsDestroyed || inZone.IsFrozen || inZone.Health < 3))
+            if (inCard.WildLightning > 0 && (inZone.IsDestroyed || inZone.IsFrozen
+                || inZone.Health < inView.Rules.ElementZoneStartingHealth * .6f))
                 value = 0f;
             if (inCard.WildZoneHeal > 0)
                 value = 0f;
@@ -764,7 +765,7 @@ namespace Elemento.Domain
             {
                 if (inOwn.DestroyedZones >= 2 && inOwn.HealCardsInHand <= 0)
                 {
-                    if (inOwn.DestroyedZones == 3)
+                    if (inOwn.DestroyedZones == inView.Player.Zones.Count - 1)
                     {
                         outStop = true;
                         useValue = highValue;
@@ -778,7 +779,7 @@ namespace Elemento.Domain
                             outType = EPowerCardType.Heal;
                             return highValue;
                         }
-                        if (pointsNeeded - highestScoringMove < 5)
+                        if (pointsNeeded - highestScoringMove < inView.Rules.TotalPointsRequiredToWin * .1f)
                         {
                             useValue = 50f;
                             choices.Add(new PowerChoice { Type = EPowerCardType.Heal, Value = useValue });
@@ -798,9 +799,9 @@ namespace Elemento.Domain
             int pointsForOpponentToWin = inView.Rules.TotalPointsRequiredToWin - inOpponent.TotalFaceUpPoints;
             if (!outStop)
             {
-                if (pointsForOpponentToWin < 10)
+                if (pointsForOpponentToWin < inView.Rules.TotalPointsRequiredToWin * .2f)
                 {
-                    if (pointsForOpponentToWin < 5)
+                    if (pointsForOpponentToWin < inView.Rules.TotalPointsRequiredToWin * .1f)
                     {
                         outStop = true;
                         useValue = highValue;
@@ -861,17 +862,18 @@ namespace Elemento.Domain
 
                     if (inZone.Id == inOwn.LowestActivatedZoneId)
                     {
-                        int pointsAboveMinimum = inView.Rules.ElementZonePointsRequiredToActivate - inZone.Points;
-                        if (pointsAboveMinimum <= 2)
+                        int activationPoints = inView.Rules.ElementZonePointsRequiredToActivate;
+                        int pointsAboveMinimum = inZone.Points - activationPoints;
+                        if (pointsAboveMinimum <= activationPoints * .2f)
                         {
                             outStop = true;
                             useValue = highValue;
                         }
-                        else if (pointsAboveMinimum <= 5)
+                        else if (pointsAboveMinimum <= activationPoints * .5f)
                             useValue += 99f;
-                        else if (pointsAboveMinimum <= 10)
+                        else if (pointsAboveMinimum <= activationPoints)
                             useValue += 50f;
-                        else if (pointsAboveMinimum <= 15)
+                        else if (pointsAboveMinimum <= activationPoints * 1.5f)
                             useValue += 5f;
 
                         if (inOwn.HealCardsInHand <= 0)
