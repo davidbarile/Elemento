@@ -84,6 +84,35 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_NeverBombsStrongerShieldAtAnyDifficulty()
+        {
+            var view = CreateBombDecisionView();
+            view.Opponents[0].Zones[0].Cards.Add(new CardInstanceData
+            {
+                Id = "shield-3",
+                DefinitionName = "Shield 3",
+                IsFaceUp = true,
+                Points = new int[4],
+                Multipliers = new int[4],
+                Bombs = new int[4],
+                Shields = new[] { 3, 0, 0, 0 }
+            });
+            view.Player.Hand[1].WildBomb = 2;
+            view.LegalMoves[0] = new MoveData { Id = "end-turn", PlayerId = 0, Type = EMoveType.EndTurn };
+
+            foreach (EAiDifficulty difficulty in new[]
+                     { EAiDifficulty.Easy, EAiDifficulty.Medium, EAiDifficulty.Hard })
+            {
+                for (int seed = 0; seed < 50; ++seed)
+                {
+                    var ai = new StrongAiPlayer(new StrongAiOptions { Difficulty = difficulty });
+                    var move = ai.ChooseMove(view, new DeterministicRandom(seed));
+                    Assert.That(move.CardId, Is.Not.EqualTo("bomb"), $"{difficulty} seed {seed}");
+                }
+            }
+        }
+
+        [Test]
         public void StrongAi_ThreeDamageBombBeatsTwoPointPlay()
         {
             var view = CreateBombDecisionView();

@@ -184,7 +184,8 @@ namespace Elemento.Domain
                 // Only deliberate rebuild plans lift cards from own piles back to hand.
                 if (!IsBlockedReorder(candidate) && !IsStripToHand(candidate)
                     && CanPreserveProtectionOrder(inView, candidate)
-                    && IsActivationAllowed(inView, candidate))
+                    && IsActivationAllowed(inView, candidate)
+                    && !IsDeadBomb(inView, candidate))
                     allowed.Add(candidate);
             }
             MoveData move;
@@ -209,6 +210,23 @@ namespace Elemento.Domain
                 }
             }
             return StartRebuild(inView, move);
+        }
+
+        // A bomb that changes nothing (e.g. bounces off a stronger shield) only throws the card away.
+        private static bool IsDeadBomb(PlayerViewData inView, MoveData inMove)
+        {
+            if (inMove.Type != EMoveType.PlayCard || inMove.TargetPlayerId == inView.Player.Id
+                || inMove.TargetZoneId < 0)
+                return false;
+
+            var card = FindSourceCard(inView.Player, inMove);
+            var zone = FindTargetZone(inView, inMove.TargetPlayerId, inMove.TargetZoneId);
+            if (card == null || zone == null || card.IsPowerCard)
+                return false;
+
+            var result = GameRules.ResolveBomb(zone, card, inView.Rules);
+            return result.Cards.Count == zone.Cards.Count && result.Health == zone.Health
+                && result.FrozenHealth == zone.FrozenHealth;
         }
 
         private bool CanPreserveProtectionOrder(PlayerViewData inView, MoveData inMove)
