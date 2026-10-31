@@ -15,7 +15,7 @@ namespace Elemento.Domain
         private const float zoneKillBonus = 5f;
         private const float multiplierStripBonus = 3f;
         private const float mediumTemperature = 2.5f;
-        private const float easyTemperature = 20f;
+        private const float easyTemperature = 4f;
         private const float reorderPenalty = .35f; // Reorders must overcome this score margin.
         private const float rebuildLiftPenalty = .1f; // Prefer play orders that avoid restacks.
         private const float orderingPruneWeight = .1f;
@@ -503,9 +503,9 @@ namespace Elemento.Domain
         private int GetMaxRebuildStrip()
         {
             if (this.Difficulty == EAiDifficulty.Easy)
-                return 1;
-            if (this.Difficulty == EAiDifficulty.Medium)
                 return 2;
+            if (this.Difficulty == EAiDifficulty.Medium)
+                return 3;
             return int.MaxValue;
         }
 

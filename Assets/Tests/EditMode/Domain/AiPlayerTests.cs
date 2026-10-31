@@ -756,8 +756,8 @@ namespace Elemento.Tests.Domain
                 && inMove.TargetZoneId == zone.Id), Is.True);
         }
 
-        [TestCase(EAiDifficulty.Easy, 1)]
-        [TestCase(EAiDifficulty.Medium, 2)]
+        [TestCase(EAiDifficulty.Easy, 2)]
+        [TestCase(EAiDifficulty.Medium, 3)]
         public void StrongAi_RebuildStripLimitedByDifficulty(EAiDifficulty inDifficulty, int inMaxStrip)
         {
             var state = CreateMultiplierOrderingState(true, 0, true);
