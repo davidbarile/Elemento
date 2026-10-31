@@ -187,7 +187,8 @@ namespace Elemento.Domain
                 if (!IsBlockedReorder(candidate) && !IsStripToHand(candidate)
                     && CanPreserveProtectionOrder(inView, candidate)
                     && IsActivationAllowed(inView, candidate)
-                    && !IsDeadBomb(inView, candidate))
+                    && !IsDeadBomb(inView, candidate)
+                    && !IsBombWorthSaving(inView, candidate))
                     allowed.Add(candidate);
             }
             MoveData move;
@@ -229,6 +230,24 @@ namespace Elemento.Domain
             var result = GameRules.ResolveBomb(zone, card, inView.Rules);
             return result.Cards.Count == zone.Cards.Count && result.Health == zone.Health
                 && result.FrozenHealth == zone.FrozenHealth;
+        }
+
+        // Unlimited moves: a hand small enough to refill fully next turn holds a card for free,
+        // so keep a bomb that would only chip a pile for one that kills, strips or unfreezes.
+        private static bool IsBombWorthSaving(PlayerViewData inView, MoveData inMove)
+        {
+            if (inView.Rules.MovesPerTurn > 0 || inView.TurnNumber >= antiStallTurn
+                || !IsFromHandPlay(inMove) || inMove.TargetPlayerId == inView.Player.Id
+                || inView.Player.Hand.Count > inView.Rules.MaxCardsInHand - inView.Rules.NumCardsToDeal
+                || inView.LegalMoves.Find(inEndTurn => inEndTurn.Type == EMoveType.EndTurn) == null)
+                return false;
+
+            var card = FindSourceCard(inView.Player, inMove);
+            var zone = FindTargetZone(inView, inMove.TargetPlayerId, inMove.TargetZoneId);
+            if (card == null || zone == null || card.IsPowerCard)
+                return false;
+
+            return !IsHighValueBomb(zone, GameRules.ResolveBomb(zone, card, inView.Rules));
         }
 
         private bool CanPreserveProtectionOrder(PlayerViewData inView, MoveData inMove)

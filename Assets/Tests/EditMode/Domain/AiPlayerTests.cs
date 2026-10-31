@@ -84,6 +84,24 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_SavesChipBombWhileHandRefillsFreely()
+        {
+            var view = CreateBombDecisionView();
+            view.Player.Hand.RemoveAt(0);
+            view.LegalMoves[0] = new MoveData { Id = "end-turn", PlayerId = 0, Type = EMoveType.EndTurn };
+            view.Opponents[0].Zones[0].Health = 5;
+            view.Opponents[0].Zones[0].MaxHealth = 5;
+
+            var chipMove = new StrongAiPlayer().ChooseMove(view, new DeterministicRandom(17));
+
+            view.Opponents[0].Zones[0].Health = 1;
+            var killMove = new StrongAiPlayer().ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(chipMove.Type, Is.EqualTo(EMoveType.EndTurn));
+            Assert.That(killMove.CardId, Is.EqualTo("bomb"));
+        }
+
+        [Test]
         public void StrongAi_NeverBombsStrongerShieldAtAnyDifficulty()
         {
             var view = CreateBombDecisionView();
