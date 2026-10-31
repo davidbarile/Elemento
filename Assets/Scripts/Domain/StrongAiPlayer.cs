@@ -21,7 +21,9 @@ namespace Elemento.Domain
         private const float orderingPruneWeight = .1f;
         private const float orderingPlanWeight = .1f;
         private const float b2MoveBonus = 20f;
-        private const float expectedExposureWeight = 3f;
+        private const float expectedExposureWeight = .75f;
+        private const float shieldExposureWeight = 1f;
+        private const float exposureSpreadDecay = .5f; // Each next most exposed pile counts half as much.
         private const float winningPlanBonus = 10000f;
         private const int maxPlanDepth = 3;
         private const int beamWidth = 6;
@@ -966,7 +968,8 @@ namespace Elemento.Domain
                         candidate.Move, GetMaxRebuildStrip()) * rebuildLiftPenalty;
                 int reorderMoves = inNode.ReorderMoves + (candidate.IsReorder ? 1 : 0);
                 candidate.TacticalValue += inNode.TacticalValue
-                    + GetStrategicMoveValue(planningView, candidate.Move);
+                    + GetStrategicMoveValue(planningView, candidate.Move,
+                        GetTotalPoints(inSourceView.Player.Zones));
                 candidate.Value = EvaluateEndOfTurn(inSourceView, candidate.State, reorderMoves);
                 candidate.OrderingValue = EvaluatePileOrdering(inSourceView, candidate.State);
                 candidate.Value += candidate.OrderingValue * orderingPlanWeight
@@ -1166,7 +1169,9 @@ namespace Elemento.Domain
             return value;
         }
 
-        private static float GetStrategicMoveValue(PlayerViewData inView, MoveData inMove)
+        // inTurnStartPoints keeps a shield worth the same whichever order the turn's cards land in.
+        private static float GetStrategicMoveValue(PlayerViewData inView, MoveData inMove,
+            int inTurnStartPoints)
         {
             if (inMove.Type == EMoveType.ActivateZone)
             {
@@ -1190,7 +1195,7 @@ namespace Elemento.Domain
             if (isOwnBoard)
             {
                 return GetShieldProtectionValue(inView, card, targetZone,
-                    GetTotalPoints(inView.Player.Zones))
+                    inTurnStartPoints)
                     - (targetZone.IsFrozen ? wildcardBombCost : 0f);
             }
 
@@ -1396,11 +1401,21 @@ namespace Elemento.Domain
             return value - inReorderMoves * reorderPenalty;
         }
 
+        // The opponent spends each bomb on one pile, so the worst-exposed pile counts in full
+        // and each next one counts for less.
         private static float GetExpectedExposure(PlayerViewData inView, int inOwnPoints)
         {
-            float exposure = 0f;
+            var exposures = new List<float>();
             foreach (var zone in inView.Player.Zones)
-                exposure += GetExpectedZoneExposure(inView, zone, inOwnPoints);
+                exposures.Add(GetExpectedZoneExposure(inView, zone, inOwnPoints));
+            exposures.Sort((inLeft, inRight) => inRight.CompareTo(inLeft));
+            float exposure = 0f;
+            float weight = 1f;
+            foreach (float zoneExposure in exposures)
+            {
+                exposure += zoneExposure * weight;
+                weight *= exposureSpreadDecay;
+            }
             return exposure;
         }
 
@@ -1502,14 +1517,14 @@ namespace Elemento.Domain
             var firstResult = GameRules.ResolveBomb(inZone,
                 new CardInstanceData { WildBomb = inFirstStrength }, inView.Rules);
             float loss = ScoreBombEffect(inZone, firstResult, inOwnPoints,
-                inView.Rules.TotalPointsRequiredToWin);
+                inView.Rules.TotalPointsRequiredToWin, false);
             if (inSecondStrength <= 0)
                 return loss;
 
             var secondResult = GameRules.ResolveBomb(firstResult,
                 new CardInstanceData { WildBomb = inSecondStrength }, inView.Rules);
             return loss + ScoreBombEffect(firstResult, secondResult, inOwnPoints,
-                inView.Rules.TotalPointsRequiredToWin);
+                inView.Rules.TotalPointsRequiredToWin, false);
         }
 
         private static double GetNoExcludedAtLeastProbability(int inPopulation, int inDraws,
@@ -1590,14 +1605,16 @@ namespace Elemento.Domain
                 new CardInstanceData { WildLightning = Math.Max(1, inView.Rules.LightningDamage) },
                 inView.Rules);
             return (float)probability * ScoreBombEffect(inZone, result, inOwnPoints,
-                inView.Rules.TotalPointsRequiredToWin);
+                inView.Rules.TotalPointsRequiredToWin, false);
         }
 
         private static int GetOpponentHandSize(PlayerViewData inView)
         {
             int count = 0;
+            // Threats come from the hand the opponent holds on their turn, after drawing.
             foreach (var opponent in inView.Opponents)
-                count += opponent.HandCount;
+                count += Math.Min(opponent.HandCount + inView.Rules.NumCardsToDeal,
+                    Math.Max(opponent.HandCount, inView.Rules.MaxCardsInHand));
             return count;
         }
 
@@ -1751,7 +1768,7 @@ namespace Elemento.Domain
             shieldedZone.FaceUpPoints = GameRules.CalculateZonePoints(shieldedZone, true);
             float shieldedLoss = GetExpectedBombExposure(inView, shieldedZone, inOwnPoints,
                 opponentHandSize, 1);
-            return Math.Max(0f, exposedLoss - shieldedLoss) * expectedExposureWeight;
+            return Math.Max(0f, exposedLoss - shieldedLoss) * shieldExposureWeight;
         }
 
         private static bool HasPointCardForZone(List<CardInstanceData> inCards,
@@ -1777,8 +1794,10 @@ namespace Elemento.Domain
             return inPointDelta * (1f + proximity);
         }
 
+        // inCountStripBonus: a stripped multiplier is a prize for the attacker; for the defender its
+        // cost is already in the points lost.
         private static float ScoreBombEffect(ZoneStateData inBefore, ZoneStateData inAfter,
-            int inCurrentPoints, int inWinTarget)
+            int inCurrentPoints, int inWinTarget, bool inCountStripBonus = true)
         {
             int pointsRemoved = Math.Max(0, inBefore.Points - inAfter.Points);
             int effectiveDamage = inBefore.Cards.Count - inAfter.Cards.Count
@@ -1790,7 +1809,7 @@ namespace Elemento.Domain
                 value += zoneKillBonus;
             if (inBefore.IsFrozen && !inAfter.IsFrozen)
                 value += zoneKillBonus;
-            if (WasMultiplierStripped(inBefore, inAfter))
+            if (inCountStripBonus && WasMultiplierStripped(inBefore, inAfter))
                 value += multiplierStripBonus;
             return value;
         }
