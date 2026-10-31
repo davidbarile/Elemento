@@ -1388,7 +1388,8 @@ namespace Elemento.Domain
             int winTarget = inSourceView.Rules.TotalPointsRequiredToWin;
             float proximity = winTarget <= 0 ? 0f : Math.Min(1f, (float)ownPoints / winTarget);
             float value = ownPoints * (1f + proximity) - opponentPoints;
-            if (winTarget > 0 && ownPoints >= winTarget)
+            // Destroying every opponent zone wins too, not just reaching the points target.
+            if (inState.WinnerPlayerId == own.Id || winTarget > 0 && ownPoints >= winTarget)
                 value += winningPlanBonus;
             var planningView = CreatePlanningView(inSourceView, inState, 0);
             value -= GetExpectedExposure(planningView, ownPoints) * expectedExposureWeight;

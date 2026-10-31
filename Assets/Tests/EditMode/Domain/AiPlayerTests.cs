@@ -113,6 +113,48 @@ namespace Elemento.Tests.Domain
         }
 
         [Test]
+        public void StrongAi_TwoBombPlanDestroyingLastZoneBeatsPointPlays()
+        {
+            var view = CreateBombDecisionView();
+            view.Rules.MovesPerTurn = 2;
+            view.Rules.ElementZoneStartingHealth = 2;
+            var lastZone = view.Opponents[0].Zones[0];
+            lastZone.Health = 2;
+            lastZone.MaxHealth = 2;
+            for (int id = 1; id <= 3; ++id)
+            {
+                view.Opponents[0].Zones.Add(new ZoneStateData
+                {
+                    Id = id,
+                    ElementType = (EElementType)(id + 1),
+                    MaxHealth = 2,
+                    IsDestroyed = true
+                });
+            }
+            view.Player.Hand[0].Points[0] = 9;
+            var secondPoints = view.Player.Hand[0].Clone();
+            secondPoints.Id = "point-2";
+            view.Player.Hand.Add(secondPoints);
+            var secondPointsMove = view.LegalMoves[0].Clone();
+            secondPointsMove.Id = "point-2-move";
+            secondPointsMove.CardId = "point-2";
+            view.LegalMoves.Add(secondPointsMove);
+            var secondBomb = view.Player.Hand[1].Clone();
+            secondBomb.Id = "bomb-2";
+            view.Player.Hand.Add(secondBomb);
+            var secondBombMove = view.LegalMoves[1].Clone();
+            secondBombMove.Id = "bomb-2-move";
+            secondBombMove.CardId = "bomb-2";
+            view.LegalMoves.Add(secondBombMove);
+            var ai = new StrongAiPlayer();
+
+            var move = ai.ChooseMove(view, new DeterministicRandom(17));
+
+            Assert.That(move.CardId, Does.StartWith("bomb"));
+            Assert.That(move.TargetPlayerId, Is.EqualTo(1));
+        }
+
+        [Test]
         public void StrongAi_ThreeDamageBombBeatsTwoPointPlay()
         {
             var view = CreateBombDecisionView();
